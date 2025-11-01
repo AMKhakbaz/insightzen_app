@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% load custom_tags %}
+{% block title %}{% if lang == 'fa' %}ویرایش کیفی داده{% else %}Quality Control Edit{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="margin:2rem auto;max-width:1200px;padding:1.5rem;">
+    <h1 style="margin-bottom:1rem;">
+        {% if lang == 'fa' %}کنترل کیفیت داده{% else %}Data Quality Control{% endif %}
+    </h1>
+    <!-- Project selector -->
+    <div style="margin-bottom:1rem;">
+        <label for="project-select">{% if lang == 'fa' %}پروژه:{% else %}Project:{% endif %}</label>
+        <select id="project-select" class="form-select" style="max-width:300px;">
+            <option value="" disabled {% if not selected_project %}selected{% endif %}>{% if lang == 'fa' %}انتخاب پروژه{% else %}Select Project{% endif %}</option>
+            {% for p in projects %}
+                <option value="{{ p.pk }}" {% if selected_project and p.pk == selected_project.pk %}selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <!-- Database entry selector -->
+    {% if selected_project %}
+    <div style="margin-bottom:1rem;">
+        <label for="entry-select">{% if lang == 'fa' %}پایگاه داده:{% else %}Database:{% endif %}</label>
+        <select id="entry-select" class="form-select" style="max-width:300px;">
+            <option value="" disabled {% if not selected_entry %}selected{% endif %}>{% if lang == 'fa' %}انتخاب پایگاه داده{% else %}Select Database{% endif %}</option>
+            {% for e in entries %}
+                <option value="{{ e.pk }}" {% if selected_entry and e.pk == selected_entry.pk %}selected{% endif %}>{{ e.db_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    <!-- Display row error if any -->
+    {% if row_error %}
+        <div class="alert alert-warning">{{ row_error }}</div>
+    {% endif %}
+    <!-- Editable data table -->
+    {% if selected_entry and table_columns %}
+        <div class="table-wrap" style="max-height:600px;overflow:auto;">
+            <table class="table" style="width:100%;min-width:800px;">
+                <thead>
+                    <tr>
+                        {% for col in table_columns %}<th>{{ col }}</th>{% endfor %}
+                        <th>{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table_rows %}
+                        <tr>
+                            <form method="post">
+                                {% csrf_token %}
+                                <input type="hidden" name="project_id" value="{{ selected_project.pk }}" />
+                                <input type="hidden" name="entry_id" value="{{ selected_entry.pk }}" />
+                                <input type="hidden" name="row_id" value="{{ row.row_id }}" />
+                                {% for col in table_columns %}
+                                    <td>
+                                        {% if col == '_id' %}
+                                            {{ row|get:col }}
+                                        {% else %}
+                                            <input type="text" name="col__{{ col }}" value="{{ row|get:col }}" class="form-control" style="width:100%;" />
+                                        {% endif %}
+                                    </td>
+                                {% endfor %}
+                                <td style="white-space:nowrap;">
+                                    <button type="submit" class="btn btn-sm">
+                                        {% if lang == 'fa' %}ذخیره{% else %}Save{% endif %}
+                                    </button>
+                                </td>
+                            </form>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% elif selected_entry %}
+        <p>{% if lang == 'fa' %}هیچ داده‌ای یافت نشد.{% else %}No data found.{% endif %}</p>
+    {% endif %}
+</div>
+<script>
+// Handle project and entry selection to reload the page with query parameters
+document.addEventListener('DOMContentLoaded', function() {
+    const projectSelect = document.getElementById('project-select');
+    if (projectSelect) {
+        projectSelect.addEventListener('change', function() {
+            const val = this.value;
+            if (val) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('project', val);
+                url.searchParams.delete('entry');
+                window.location.href = url.toString();
+            }
+        });
+    }
+    const entrySelect = document.getElementById('entry-select');
+    if (entrySelect) {
+        entrySelect.addEventListener('change', function() {
+            const val = this.value;
+            const url = new URL(window.location.href);
+            if (val) {
+                url.searchParams.set('entry', val);
+            } else {
+                url.searchParams.delete('entry');
+            }
+            window.location.href = url.toString();
+        });
+    }
+});
+</script>
+{% endblock %}

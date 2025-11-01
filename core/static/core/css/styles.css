@@ -1,0 +1,454 @@
+/*
+ * Core styles for InsightZen.
+ *
+ * The application uses a dark mode aesthetic throughout. Two accent colours
+ * (#15b8d9 and #ff4955) provide highlights for interactive elements. A
+ * gentle transition effect on colours provides a soft animated feel when
+ * hovering over links or buttons.
+ */
+
+body {
+    margin: 0;
+    /* Use a very dark gradient instead of flat black for a richer feel */
+    background: linear-gradient(180deg, #0f0f0f 0%, #121212 100%);
+    color: #e8e8e8;
+    font-family: 'Poppins', sans-serif;
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+body.rtl {
+    direction: rtl;
+    font-family: 'Vazirmatn', sans-serif;
+}
+
+/* Layout containers */
+.wrapper {
+    display: flex;
+    min-height: 100vh;
+}
+
+.sidebar {
+    width: 240px;
+    /* Enhance glass effect with slightly higher opacity and stronger blur */
+    background: rgba(30, 30, 30, 0.6);
+    backdrop-filter: blur(10px);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.35);
+    transition: transform 0.3s ease;
+}
+
+.sidebar .logo {
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.sidebar .logo img {
+    max-width: 140px;
+}
+
+.sidebar nav ul,
+.sidebar nav details ul {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.sidebar nav li {
+    margin: 0.25rem 0;
+}
+
+.sidebar nav a {
+    color: #e8e8e8;
+    text-decoration: none;
+    display: block;
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.sidebar nav a:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar nav a.disabled {
+    color: #666666;
+    cursor: default;
+    pointer-events: none;
+}
+
+.sidebar nav summary {
+    cursor: pointer;
+    color: #d0d0d0;
+    font-weight: 600;
+    padding: 0.55rem 0.75rem;
+    border-radius: 10px;
+    transition: color 0.2s ease, background-color 0.2s ease;
+    position: relative;
+    padding-left: 2rem;
+}
+
+.sidebar nav details[open] summary {
+    color: #15b8d9;
+    background: rgba(21, 184, 217, 0.25);
+}
+
+/* Remove the default disclosure arrow */
+.sidebar nav summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Custom indicator for collapsed and expanded groups */
+.sidebar nav summary::before {
+    content: '+';
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-weight: bold;
+    transition: transform 0.2s ease;
+}
+.sidebar nav details[open] > summary::before {
+    content: '-';
+}
+
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #121212;
+}
+
+.header {
+    background: #1a1a1a;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.language-toggle a {
+    color: #15b8d9;
+    margin: 0 0.5rem;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.2s ease;
+}
+
+.language-toggle a:hover {
+    color: #0e8aa8;
+    text-decoration: underline;
+}
+
+.user-info {
+    color: #ff4955;
+    font-weight: 600;
+}
+
+.page-content {
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
+}
+
+/* Cards */
+.card {
+    /* Use a subtle gradient and border for cards */
+    background: linear-gradient(180deg, #1d1d1d 0%, #141414 100%);
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid #2a2a2a;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    margin-bottom: 1.5rem;
+}
+
+.card h1 {
+    margin-top: 0;
+    color: #15b8d9;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+/* Forms */
+.form-control,
+.form-select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #333;
+    border-radius: 6px;
+    background: #2a2a2a;
+    color: #e8e8e8;
+    margin-bottom: 0.75rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-check-input {
+    margin-right: 0.3rem;
+}
+
+.form-control:focus,
+.form-select:focus {
+    outline: none;
+    border-color: #15b8d9;
+    box-shadow: 0 0 0 2px rgba(21, 184, 217, 0.4);
+}
+
+/* Buttons */
+.btn {
+    display: inline-block;
+    padding: 0.55rem 1.4rem;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    background: linear-gradient(90deg, #15b8d9 0%, #ff4955 100%);
+    color: #0d0d0d;
+    font-weight: 600;
+    transition: background 0.3s ease, transform 0.1s ease, box-shadow 0.2s ease;
+}
+
+/* Highlight quota cells where assigned counts exceed targets */
+.table-danger {
+    background: #722323;
+    color: #ffffff;
+}
+
+.btn:hover {
+    background: linear-gradient(90deg, #128fa8 0%, #e23f4a 100%);
+    box-shadow: 0 2px 6px rgba(21, 184, 217, 0.3);
+}
+
+.btn:active {
+    transform: scale(0.97);
+}
+
+.btn-secondary {
+    background: linear-gradient(90deg, #ff4955 0%, #ff914d 100%);
+    color: #ffffff;
+    border-radius: 10px;
+}
+
+.btn-secondary:hover {
+    background: linear-gradient(90deg, #e23f4a 0%, #e37233 100%);
+}
+
+/* Tables */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 900px;
+}
+
+.table th,
+.table td {
+    padding: 0.5rem;
+    border-bottom: 1px solid #333;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.table th {
+    background: #1a1a1a;
+    color: #15b8d9;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.table tr:nth-child(even) {
+    background: #181818;
+}
+
+.table tr:hover {
+    background: #292929;
+}
+
+/* Alerts */
+.alert {
+    padding: 0.8rem 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.alert-success {
+    background: #0d6640;
+    color: #bdf2d6;
+}
+
+.alert-warning {
+    background: #664d0d;
+    color: #f2e0bd;
+}
+
+.alert-error,
+.alert-danger {
+    background: #66110d;
+    color: #f2bdbd;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .sidebar {
+        width: 200px;
+    }
+    .table th,
+    .table td {
+        padding: 0.4rem;
+    }
+}
+
+/* Header brand and actions */
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.logo {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+.brand-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    background: linear-gradient(90deg, #15b8d9, #ff4955);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    letter-spacing: 0.2px;
+}
+
+.top-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.lang-btn {
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    opacity: 0.85;
+    transition: opacity 0.2s ease;
+    color: #15b8d9;
+    text-decoration: none;
+}
+
+.lang-btn:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+
+.btn-outline {
+    background: transparent;
+    border: 2px solid #15b8d9;
+    color: #15b8d9;
+    border-radius: 10px;
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+.btn-outline:hover {
+    background: linear-gradient(90deg, #15b8d9 0%, #ff4955 100%);
+    color: #0d0d0d;
+    box-shadow: 0 2px 6px rgba(21, 184, 217, 0.3);
+}
+
+.btn-sm {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.85rem;
+    border-radius: 6px;
+}
+
+.btn-danger {
+    background: linear-gradient(90deg, #ff4955 0%, #e23f4a 100%);
+    color: #ffffff;
+    border-radius: 10px;
+}
+
+.btn-danger:hover {
+    background: #d23a44;
+}
+
+/* Result batch card for coding/category outputs */
+.result-batch {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+}
+
+/* Table wrapper for horizontal scroll */
+.table-wrap {
+    width: 100%;
+    overflow-x: auto;
+}
+
+/* Dashboard grid for conjoint outputs */
+/* Dashboard grid layout.
+   The grid automatically adjusts the number of columns based on the available
+   width. Cards will be at least 300px wide on large screens and stack on
+   smaller screens. */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+    width: 100%;
+}
+
+/* Dashboard card styling */
+.dashboard-card {
+    background: linear-gradient(180deg, #1d1d1d 0%, #141414 100%);
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    padding: 1rem;
+    overflow: hidden;
+}
+.dashboard-card h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    color: #15b8d9;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+/* Constrain tables inside dashboard cards to prevent overflow. */
+.dashboard-card .table-wrap {
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+/* Adjust tables inside dashboard cards */
+.dashboard-card .table {
+    min-width: 100%;
+}
+
+/* Sidebar collapsed state */
+/* When collapsed, rely on the width set in theme.css (70px) instead of
+   translating the sidebar completely offscreen.  Removing the
+   translation keeps the navigation visible as a narrow bar with
+   icons only. */
+body.sidebar-collapsed .sidebar {
+    transform: none;
+}
+
+/* Menu toggle button */
+.menu-toggle {
+    background: transparent;
+    border: none;
+    color: #e8e8e8;
+    font-size: 1.5rem;
+    margin-right: 1rem;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.menu-toggle:hover {
+    color: #15b8d9;
+}

@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:600px;margin:2rem auto;">
+    <h1>{% if lang == 'fa' %}
+        {% if title == 'Add Project' %}پروژه جدید{% elif title == 'Edit Project' %}ویرایش پروژه{% else %}پروژه{% endif %}
+    {% else %}
+        {{ title }}
+    {% endif %}</h1>
+    <form method="post" id="project-form">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        {# Project name #}
+        <div>
+            {{ form.name.label_tag }}
+            {{ form.name }}
+            {{ form.name.errors }}
+        </div>
+        {# Project status #}
+        <div>
+            {{ form.status.label_tag }}
+            {{ form.status }}
+            {{ form.status.errors }}
+        </div>
+        {# Project types: allow user to add multiple types with a + button.  We display
+           one input initially and allow cloning more inputs.  The values
+           will be collected into a hidden 'types' field on submission. #}
+        <div id="types-section" style="margin-bottom:1rem;">
+            <label>{% if lang == 'fa' %}نوع پروژه{% else %}Project Type(s){% endif %}</label>
+            <div id="types-container" style="display:flex;flex-direction:column;gap:0.5rem;">
+                <div class="type-row" style="display:flex;gap:0.5rem;align-items:center;">
+                    <input type="text" class="form-control type-input" placeholder="{% if lang == 'fa' %}نوع{% else %}Type{% endif %}">
+                    <button type="button" class="btn btn-secondary add-type" title="{% if lang == 'fa' %}افزودن نوع{% else %}Add Type{% endif %}">+</button>
+                </div>
+            </div>
+            <input type="hidden" name="types" id="types-hidden">
+            {% if form.types.errors %}<div class="text-danger">{{ form.types.errors }}</div>{% endif %}
+        </div>
+        {# Start date #}
+        <div>
+            {{ form.start_date.label_tag }}
+            {{ form.start_date }}
+            {{ form.start_date.errors }}
+        </div>
+        {# Deadline #}
+        <div>
+            {{ form.deadline.label_tag }}
+            {{ form.deadline }}
+            {{ form.deadline.errors }}
+        </div>
+        {# Sample size #}
+        <div>
+            {{ form.sample_size.label_tag }}
+            {{ form.sample_size }}
+            {{ form.sample_size.errors }}
+        </div>
+        <button type="submit" class="btn" style="margin-top:1rem;">
+            {% if lang == 'fa' %}
+                {% if title == 'Add Project' %}ثبت پروژه{% else %}ذخیره تغییرات{% endif %}
+            {% else %}
+                {% if title == 'Add Project' %}Create Project{% else %}Save Changes{% endif %}
+            {% endif %}
+        </button>
+    </form>
+
+    <script>
+    // Dynamic type input handling
+    document.addEventListener('DOMContentLoaded', function() {
+        const container = document.getElementById('types-container');
+        const form = document.getElementById('project-form');
+        container.addEventListener('click', function(e) {
+            if (e.target.classList.contains('add-type')) {
+                e.preventDefault();
+                const row = document.createElement('div');
+                row.className = 'type-row';
+                row.style.display = 'flex';
+                row.style.gap = '0.5rem';
+                row.style.alignItems = 'center';
+                row.innerHTML = `<input type="text" class="form-control type-input" placeholder="{% if lang == 'fa' %}نوع{% else %}Type{% endif %}"> <button type="button" class="btn btn-outline btn-sm remove-type" title="{% if lang == 'fa' %}حذف{% else %}Remove{% endif %}">-</button>`;
+                container.appendChild(row);
+            } else if (e.target.classList.contains('remove-type')) {
+                e.preventDefault();
+                const row = e.target.closest('.type-row');
+                if (row) row.remove();
+            }
+        });
+        form.addEventListener('submit', function() {
+            const values = Array.from(container.querySelectorAll('.type-input')).map(el => el.value.trim()).filter(Boolean);
+            document.getElementById('types-hidden').value = values.join(',');
+        });
+    });
+    </script>
+</div>
+{% endblock %}

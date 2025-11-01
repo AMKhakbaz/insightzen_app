@@ -1,0 +1,200 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:1100px;margin:2rem auto;">
+    <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}</h1>
+    <form method="post" onsubmit="return prepareQuotaData();">
+        {% csrf_token %}
+        <div style="margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+            <label for="project-select">{% if lang == 'fa' %}پروژه:{% else %}Project:{% endif %}</label>
+            <select id="project-select" name="project" class="form-select" style="min-width:220px;">
+                <option value="" disabled>{% if lang == 'fa' %}انتخاب پروژه{% else %}Select Project{% endif %}</option>
+                {% for p in projects %}
+                    <option value="{{ p.pk }}" {% if selected_project and p.pk == selected_project.pk %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="margin-bottom:1rem;">
+            <label>{% if lang == 'fa' %}شهرها:{% else %}Cities:{% endif %}</label><br>
+            <input type="text" id="city-search" placeholder="{% if lang == 'fa' %}جستجوی شهر{% else %}Search city{% endif %}" class="form-control" style="max-width:300px;margin-bottom:0.5rem;" oninput="filterCities()">
+            <div id="city-options" style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);padding:0.5rem;border-radius:6px;">
+                {% for city in cities %}
+                    <label style="display:block;margin-bottom:0.25rem;cursor:pointer;">
+                        <input type="checkbox" name="city" value="{{ city }}" onchange="updateCityQuotas()">
+                        {{ city }}
+                    </label>
+                {% endfor %}
+            </div>
+        </div>
+        <div id="city-quotas-container" style="margin-bottom:1rem;">
+            <!-- Dynamic city quota inputs will appear here -->
+        </div>
+        <div style="margin-bottom:1rem;">
+            <label>{% if lang == 'fa' %}رنج‌های سنی:{% else %}Age Ranges:{% endif %}</label>
+            <div id="age-ranges-container"></div>
+            <button type="button" class="btn btn-sm" onclick="addAgeRange()" style="margin-top:0.5rem;">{% if lang == 'fa' %}+ رنج سنی{% else %}+ Add Age Range{% endif %}</button>
+        </div>
+        <input type="hidden" name="city_data" id="city-data-field">
+        <input type="hidden" name="age_data" id="age-data-field">
+        <button type="submit" class="btn">{% if lang == 'fa' %}ثبت سهمیه‌ها{% else %}Save Quotas{% endif %}</button>
+    </form>
+</div>
+
+{% if selected_project and table_rows %}
+<div class="card" style="max-width:1100px;margin:2rem auto;">
+    <h2 style="margin-bottom:1rem;">{% if lang == 'fa' %}جدول سهمیه برای{% else %}Quota Table for{% endif %} {{ selected_project.name }}</h2>
+    <div style="overflow-x:auto;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>{% if lang == 'fa' %}رنج سنی / شهر{% else %}Age Range / City{% endif %}</th>
+                    {% for city in city_headers %}<th>{{ city }}</th>{% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                    <tr>
+                        <th>{{ row.age_label }}</th>
+                        {% for count in row.counts %}
+                            <td{% if count.over %} class="table-danger"{% endif %}>{{ count.assigned }} / {{ count.target }}</td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<script>
+// When a project is selected reload page with ?project=id
+document.addEventListener('DOMContentLoaded', function() {
+    const sel = document.getElementById('project-select');
+    if (sel) {
+        sel.addEventListener('change', function() {
+            const val = this.value;
+            if (val) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('project', val);
+                window.location.href = url.toString();
+            }
+        });
+    }
+});
+// Filter city list by search input
+function filterCities() {
+    const query = document.getElementById('city-search').value.toLowerCase();
+    const options = document.querySelectorAll('#city-options label');
+    options.forEach(opt => {
+        const text = opt.textContent.toLowerCase();
+        opt.style.display = text.includes(query) ? '' : 'none';
+    });
+}
+// Update city quota inputs when selecting/deselecting cities
+function updateCityQuotas() {
+    const container = document.getElementById('city-quotas-container');
+    container.innerHTML = '';
+    const checkboxes = document.querySelectorAll('#city-options input[type=checkbox]:checked');
+    checkboxes.forEach(cb => {
+        const city = cb.value;
+        const row = document.createElement('div');
+        row.style.marginBottom = '0.25rem';
+        row.innerHTML = `<label>${city} (%): <input type="number" min="0" max="100" step="0.1" data-city="${city}" class="city-quota" style="width:80px;"></label>`;
+        container.appendChild(row);
+    });
+}
+// Add a new age range row
+function addAgeRange() {
+    const container = document.getElementById('age-ranges-container');
+    const row = document.createElement('div');
+    row.className = 'age-range-row';
+    row.style.display = 'flex';
+    row.style.gap = '0.5rem';
+    row.style.marginBottom = '0.25rem';
+    row.innerHTML = `
+        <input type="number" min="0" max="120" placeholder="{% if lang == 'fa' %}شروع{% else %}Start{% endif %}" class="age-start" style="width:80px;">
+        <input type="number" min="0" max="120" placeholder="{% if lang == 'fa' %}پایان{% else %}End{% endif %}" class="age-end" style="width:80px;">
+        <input type="number" min="0" max="100" placeholder="%" class="age-quota" style="width:80px;">
+        <button type="button" onclick="this.parentElement.remove()">×</button>
+    `;
+    container.appendChild(row);
+}
+// Prepare JSON data before submit
+function prepareQuotaData() {
+    const cityInputs = document.querySelectorAll('.city-quota');
+    const cityData = [];
+    let cityTotal = 0;
+    cityInputs.forEach(inp => {
+        const city = inp.getAttribute('data-city');
+        const val = parseFloat(inp.value || '0');
+        cityTotal += val;
+        cityData.push({city: city, quota: val});
+    });
+    const ageRows = document.querySelectorAll('.age-range-row');
+    const ageData = [];
+    let ageTotal = 0;
+    let valid = true;
+    const ranges = [];
+    ageRows.forEach(row => {
+        const start = parseInt(row.querySelector('.age-start').value || '0');
+        const end = parseInt(row.querySelector('.age-end').value || '0');
+        const quota = parseFloat(row.querySelector('.age-quota').value || '0');
+        if (start >= end) {
+            alert('Age range start must be less than end.');
+            valid = false;
+        }
+        ranges.push({start, end});
+        ageTotal += quota;
+        ageData.push({start: start, end: end, quota: quota});
+    });
+    ranges.sort((a,b) => a.start - b.start);
+    for (let i=1; i<ranges.length; i++) {
+        if (ranges[i].start < ranges[i-1].end) {
+            alert('Age ranges must not overlap.');
+            valid = false;
+            break;
+        }
+    }
+    if (Math.abs(cityTotal - 100) > 0.01 || Math.abs(ageTotal - 100) > 0.01) {
+        alert('City quotas and age quotas must each sum to 100%.');
+        return false;
+    }
+    if (!valid) return false;
+    document.getElementById('city-data-field').value = JSON.stringify(cityData);
+    document.getElementById('age-data-field').value = JSON.stringify(ageData);
+    return true;
+}
+// Prefill existing quota values into the form
+{% if prefill_json %}
+const PREFILL = {{ prefill_json|safe }};
+document.addEventListener('DOMContentLoaded', function() {
+    // Select cities that have quotas
+    document.querySelectorAll('#city-options input[type=checkbox]').forEach(cb => {
+        if (PREFILL.cities.hasOwnProperty(cb.value)) {
+            cb.checked = true;
+        }
+    });
+    updateCityQuotas();
+    // Fill in city percentages
+    document.querySelectorAll('.city-quota').forEach(inp => {
+        const city = inp.getAttribute('data-city');
+        if (PREFILL.cities.hasOwnProperty(city)) {
+            inp.value = PREFILL.cities[city];
+        }
+    });
+    // Fill in age ranges
+    const container = document.getElementById('age-ranges-container');
+    container.innerHTML = '';
+    PREFILL.ages.forEach(function(r) {
+        addAgeRange();
+        const rows = container.querySelectorAll('.age-range-row');
+        const row = rows[rows.length - 1];
+        row.querySelector('.age-start').value = r.start;
+        row.querySelector('.age-end').value = r.end;
+        row.querySelector('.age-quota').value = r.quota;
+    });
+});
+{% endif %}
+</script>
+{% endblock %}

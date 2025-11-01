@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}گزارش فعالیت‌ها{% else %}Activity Logs{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:1000px;margin:2rem auto;">
+    <h1 style="margin-bottom:1rem;">
+        {% if lang == 'fa' %}گزارش فعالیت‌ها{% else %}Activity Logs{% endif %}
+    </h1>
+    {% if logs %}
+    <div style="overflow-x:auto;">
+        <table class="table" style="min-width:600px;">
+            <thead>
+                <tr>
+                    <th>{% if lang == 'fa' %}زمان{% else %}Timestamp{% endif %}</th>
+                    <th>{% if lang == 'fa' %}کاربر{% else %}User{% endif %}</th>
+                    <th>{% if lang == 'fa' %}عملیات{% else %}Action{% endif %}</th>
+                    <th>{% if lang == 'fa' %}جزئیات{% else %}Details{% endif %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.timestamp|date:"Y-m-d H:i:s" }}</td>
+                    <td>{{ log.user.username if log.user else '–' }}</td>
+                    <td>{{ log.action }}</td>
+                    <td>{{ log.details }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <p>{% if lang == 'fa' %}هیچ لاگی وجود ندارد.{% else %}No logs available.{% endif %}</p>
+    {% endif %}
+</div>
+{% endblock %}

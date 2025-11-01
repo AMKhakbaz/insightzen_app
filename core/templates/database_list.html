@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:1000px;margin:2rem auto;padding:1.5rem;">
+    <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}</h1>
+    <div style="display:flex;justify-content:flex-start;align-items:center;margin-bottom:1rem;">
+        <a href="{% url 'database_add' %}" class="btn btn-secondary">
+            {% if lang == 'fa' %}افزودن پایگاه داده{% else %}Add Database{% endif %}
+        </a>
+    </div>
+    <div class="table-wrap">
+        <table class="table" style="min-width:900px;">
+            <thead>
+                <tr>
+                    <th>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</th>
+                    <th>{% if lang == 'fa' %}نام پایگاه{% else %}DB Name{% endif %}</th>
+                    <th>{% if lang == 'fa' %}توکن{% else %}Token{% endif %}</th>
+                    <th>{% if lang == 'fa' %}شناسه دارایی{% else %}Asset ID{% endif %}</th>
+                    <th>{% if lang == 'fa' %}XLSForm{% else %}XLSForm{% endif %}</th>
+                    <th>{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}</th>
+                    <th>{% if lang == 'fa' %}اقدامات{% else %}Actions{% endif %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                <tr>
+                    <td>{{ entry.project.name }}</td>
+                    <td>{{ entry.db_name }}</td>
+                    <td>{{ entry.token|truncatechars:15 }}</td>
+                    <td>{{ entry.asset_id }}</td>
+                    <td>{{ entry.xlsform }}</td>
+                    <td>{% if entry.status %}<span class="text-success">✓</span>{% else %}<span class="text-danger">×</span>{% endif %}</td>
+                    <td>
+                        <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary">{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</a>
+                        <form action="{% url 'database_delete' entry.pk %}" method="post" style="display:inline;" onsubmit="return confirm('{% if lang == 'fa' %}آیا مطمئن هستید؟{% else %}Are you sure?{% endif %}');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline">{% if lang == 'fa' %}حذف{% else %}Delete{% endif %}</button>
+                        </form>
+                        <a href="{% url 'database_view' entry.pk %}" class="btn btn-sm btn-outline">{% if lang == 'fa' %}نمایش داده‌ها{% else %}View Data{% endif %}</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="text-center">{% if lang == 'fa' %}اطلاعاتی یافت نشد{% else %}No entries found{% endif %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

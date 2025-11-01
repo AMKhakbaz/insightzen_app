@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{% if lang == 'fa' %}کارایی گردآوری{% else %}Collection Performance{% endif %}{% endblock %}
+
+{#
+  Enhanced collection performance dashboard
+
+  This template renders a fully interactive dashboard for monitoring
+  telephone interviewer performance.  Users can filter by date range,
+  project and interviewer; the charts update dynamically via Ajax
+  requests.  A donut chart illustrates the share of interviews per
+  interviewer within a project; a bar chart shows overall totals and
+  successes; a line chart tracks daily totals; and a table lists
+  interviewers ranked by performance with sortable columns.  An
+  export button triggers an Excel download including a raw call log.
+  All strings are localised using ``lang``.
+%}
+
+{% block content %}
+<div class="card" style="max-width:1200px;margin:2rem auto;padding:1.5rem;">
+    <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}کارایی گردآوری{% else %}Collection Performance{% endif %}</h1>
+    <div class="filters" style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
+        <div>
+            <label for="project-select">{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</label><br>
+            <select id="project-select" class="form-select" style="min-width:180px;">
+                <option value="">{% if lang == 'fa' %}همه{% else %}All{% endif %}</option>
+                {% for p in projects %}
+                    <option value="{{ p.pk }}">{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="start-date">{% if lang == 'fa' %}از{% else %}From{% endif %}</label><br>
+            <input type="datetime-local" id="start-date" class="form-control">
+        </div>
+        <div>
+            <label for="end-date">{% if lang == 'fa' %}تا{% else %}To{% endif %}</label><br>
+            <input type="datetime-local" id="end-date" class="form-control">
+        </div>
+        <div>
+            <label for="user-select">{% if lang == 'fa' %}پرسشگران{% else %}Interviewers{% endif %}</label><br>
+            <select id="user-select" class="form-select" multiple style="min-width:200px;max-height:130px;">
+                {% for u in users %}
+                    <option value="{{ u.pk }}">{{ u.first_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+            <button id="export-btn" class="btn btn-secondary" type="button" style="height:38px;">
+                {% if lang == 'fa' %}خروجی اکسل{% else %}Export Excel{% endif %}
+            </button>
+        </div>
+    </div>
+    <div class="chart-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;margin-bottom:1.5rem;">
+        <div class="chart-container" style="height:320px;">
+            <canvas id="bar-chart" data-url="{% url 'collection_performance_data' %}" data-total-label="{% if lang == 'fa' %}کل{% else %}Total{% endif %}" data-success-label="{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}"></canvas>
+        </div>
+        <div class="chart-container" style="height:320px;">
+            <canvas id="donut-chart" data-url="{% url 'collection_performance_data' %}"></canvas>
+        </div>
+        <div class="chart-container" style="height:320px;grid-column:1/-1;">
+            <canvas id="line-chart" data-url="{% url 'collection_performance_data' %}" data-total-label="{% if lang == 'fa' %}کل{% else %}Total{% endif %}" data-success-label="{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}"></canvas>
+        </div>
+    </div>
+    <div class="top-table" style="overflow-x:auto;">
+        <h2 style="margin-bottom:0.5rem;">{% if lang == 'fa' %}۵ پرسشگر برتر{% else %}Top Interviewers{% endif %}</h2>
+        <table id="top5-table" class="table" style="min-width:500px;">
+            <thead>
+                <tr>
+                    <th data-sort-key="user">{% if lang == 'fa' %}کاربر{% else %}User{% endif %}</th>
+                    <th data-sort-key="total">{% if lang == 'fa' %}کل تماس‌ها{% else %}Total Calls{% endif %}</th>
+                    <th data-sort-key="success">{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}</th>
+                    <th data-sort-key="rate">{% if lang == 'fa' %}نرخ موفقیت{% else %}Success Rate{% endif %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Rows populated by charts.js -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+// Handle Excel export.  Build the export URL using a separate
+// variable to avoid nested quotes in template tags.  When the user
+// clicks the export button, construct a query string from the
+// selected filters and open the download in a new tab.
+document.addEventListener('DOMContentLoaded', function () {
+    const exportBtn = document.getElementById('export-btn');
+    if (!exportBtn) return;
+    const exportUrl = "{% url 'collection_performance_export' %}";
+    exportBtn.addEventListener('click', function () {
+        const params = new URLSearchParams();
+        const project = document.getElementById('project-select').value;
+        const start = document.getElementById('start-date').value;
+        const end = document.getElementById('end-date').value;
+        const userSelect = document.getElementById('user-select');
+        const selectedUsers = Array.from(userSelect.selectedOptions).map(function (o) { return o.value; }).join(',');
+        if (project) params.append('project', project);
+        if (start) params.append('start_date', start);
+        if (end) params.append('end_date', end);
+        if (selectedUsers) params.append('users', selectedUsers);
+        const url = params.toString() ? (exportUrl + '?' + params.toString()) : exportUrl;
+        window.open(url, '_blank');
+    });
+});
+</script>
+
+{% endblock %}
+
+{% block extra_scripts %}
+    {{ block.super }}
+    <script src="{% static 'core/js/charts.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:900px;margin:2rem auto;">
+    <h1>{% if lang == 'fa' %}
+        {% if title == 'Add User to Project' %}افزودن کاربر به پروژه{% elif title == 'Edit Membership' %}ویرایش دسترسی کاربر{% else %}دسترسی{% endif %}
+    {% else %}
+        {{ title }}
+    {% endif %}</h1>
+    <form method="post" id="membership-form">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        {# Email field #}
+        <div>
+            {{ form.email.label_tag }}
+            {{ form.email }}
+            {{ form.email.errors }}
+        </div>
+        {# Project field #}
+        <div>
+            {{ form.project.label_tag }}
+            {{ form.project }}
+            {{ form.project.errors }}
+        </div>
+        {# Membership title field #}
+        <div>
+            {{ form.title.label_tag }}
+            {{ form.title }}
+            {{ form.title.errors }}
+        </div>
+        {# Panel permissions grouped by category.  Each group has a
+           master checkbox that toggles all child checkboxes. #}
+        <fieldset style="margin-top:1rem;">
+            <legend style="color:var(--primary);">{% if lang == 'fa' %}دسترسی‌ها{% else %}Panel Access{% endif %}</legend>
+            <div style="display:flex;flex-wrap:wrap;gap:1.5rem;">
+                <div>
+                    <label style="font-weight:600;display:flex;align-items:center;gap:0.5rem;">
+                        <input type="checkbox" class="group-toggle" data-group="database_quota">
+                        <span>{% if lang == 'fa' %}پایگاه داده و سهمیه{% else %}DB & Quota{% endif %}</span>
+                    </label>
+                    <div style="margin-top:0.5rem;">
+                        <label><input type="checkbox" name="database_management" id="id_database_management" {% if form.database_management.value %}checked{% endif %}> {% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}</label><br>
+                        <label><input type="checkbox" name="quota_management" id="id_quota_management" {% if form.quota_management.value %}checked{% endif %}> {% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}</label>
+                    </div>
+                </div>
+                <div>
+                    <label style="font-weight:600;display:flex;align-items:center;gap:0.5rem;">
+                        <input type="checkbox" class="group-toggle" data-group="collection">
+                        <span>{% if lang == 'fa' %}گردآوری{% else %}Collection{% endif %}</span>
+                    </label>
+                    <div style="margin-top:0.5rem;">
+                        <label><input type="checkbox" name="collection_management" id="id_collection_management" {% if form.collection_management.value %}checked{% endif %}> {% if lang == 'fa' %}مدیریت گردآوری{% else %}Collection Management{% endif %}</label><br>
+                        <label><input type="checkbox" name="collection_performance" id="id_collection_performance" {% if form.collection_performance.value %}checked{% endif %}> {% if lang == 'fa' %}کارایی گردآوری{% else %}Collection Performance{% endif %}</label><br>
+                        <label><input type="checkbox" name="telephone_interviewer" id="id_telephone_interviewer" {% if form.telephone_interviewer.value %}checked{% endif %}> {% if lang == 'fa' %}مصاحبه تلفنی{% else %}Telephone Interviewer{% endif %}</label><br>
+                        <label><input type="checkbox" name="fieldwork_interviewer" id="id_fieldwork_interviewer" {% if form.fieldwork_interviewer.value %}checked{% endif %}> {% if lang == 'fa' %}مصاحبه میدانی{% else %}Fieldwork Interviewer{% endif %}</label><br>
+                        <label><input type="checkbox" name="focus_group_panel" id="id_focus_group_panel" {% if form.focus_group_panel.value %}checked{% endif %}> {% if lang == 'fa' %}پنل گروه کانونی{% else %}Focus Group Panel{% endif %}</label>
+                    </div>
+                </div>
+                <div>
+                    <label style="font-weight:600;display:flex;align-items:center;gap:0.5rem;">
+                        <input type="checkbox" class="group-toggle" data-group="quality">
+                        <span>{% if lang == 'fa' %}کنترل کیفیت{% else %}Quality Control{% endif %}</span>
+                    </label>
+                    <div style="margin-top:0.5rem;">
+                        <label><input type="checkbox" name="qc_management" id="id_qc_management" {% if form.qc_management.value %}checked{% endif %}> {% if lang == 'fa' %}مدیریت QC{% else %}QC Management{% endif %}</label><br>
+                        <label><input type="checkbox" name="qc_performance" id="id_qc_performance" {% if form.qc_performance.value %}checked{% endif %}> {% if lang == 'fa' %}کارایی QC{% else %}QC Performance{% endif %}</label><br>
+                        <label><input type="checkbox" name="voice_review" id="id_voice_review" {% if form.voice_review.value %}checked{% endif %}> {% if lang == 'fa' %}بازبینی صدا{% else %}Voice Review{% endif %}</label><br>
+                        <label><input type="checkbox" name="callback_qc" id="id_callback_qc" {% if form.callback_qc.value %}checked{% endif %}> {% if lang == 'fa' %}QC تماس برگشتی{% else %}Callback QC{% endif %}</label>
+                    </div>
+                </div>
+                <div>
+                    <label style="font-weight:600;display:flex;align-items:center;gap:0.5rem;">
+                        <input type="checkbox" class="group-toggle" data-group="analysis">
+                        <span>{% if lang == 'fa' %}تحلیل{% else %}Analysis{% endif %}</span>
+                    </label>
+                    <div style="margin-top:0.5rem;">
+                        <label><input type="checkbox" name="coding" id="id_coding" {% if form.coding.value %}checked{% endif %}> {% if lang == 'fa' %}کدگذاری{% else %}Coding{% endif %}</label><br>
+                        <label><input type="checkbox" name="statistical_health_check" id="id_statistical_health_check" {% if form.statistical_health_check.value %}checked{% endif %}> {% if lang == 'fa' %}بررسی سلامت آماری{% else %}Statistical Health Check{% endif %}</label><br>
+                        <label><input type="checkbox" name="tabulation" id="id_tabulation" {% if form.tabulation.value %}checked{% endif %}> {% if lang == 'fa' %}جدول‌بندی{% else %}Tabulation{% endif %}</label><br>
+                        <label><input type="checkbox" name="statistics" id="id_statistics" {% if form.statistics.value %}checked{% endif %}> {% if lang == 'fa' %}آمار{% else %}Statistics{% endif %}</label><br>
+                        <label><input type="checkbox" name="funnel_analysis" id="id_funnel_analysis" {% if form.funnel_analysis.value %}checked{% endif %}> {% if lang == 'fa' %}تحلیل قیف{% else %}Funnel Analysis{% endif %}</label><br>
+                        <label><input type="checkbox" name="conjoint_analysis" id="id_conjoint_analysis" {% if form.conjoint_analysis.value %}checked{% endif %}> {% if lang == 'fa' %}تحلیل همگرایی{% else %}Conjoint Analysis{% endif %}</label><br>
+                        <label><input type="checkbox" name="segmentation_analysis" id="id_segmentation_analysis" {% if form.segmentation_analysis.value %}checked{% endif %}> {% if lang == 'fa' %}تحلیل تقسیم‌بندی{% else %}Segmentation Analysis{% endif %}</label>
+                    </div>
+                </div>
+            </div>
+        </fieldset>
+        <button type="submit" class="btn" style="margin-top:1rem;">
+            {% if lang == 'fa' %}
+                {% if title == 'Add User' %}افزودن{% else %}ذخیره{% endif %}
+            {% else %}
+                {% if title == 'Add User' %}Add{% else %}Save{% endif %}
+            {% endif %}
+        </button>
+    </form>
+
+    <script>
+    // Group toggle behaviour: when a group master checkbox is clicked,
+    // toggle all child checkboxes within that group.  Each group is
+    // identified via a data-group attribute on the master.  Child
+    // checkboxes have names that correspond to group prefixes defined
+    // in the template.  The mapping is hard coded here to avoid
+    // querying the DOM repeatedly.
+    document.addEventListener('DOMContentLoaded', function() {
+        const groupMap = {
+            'database_quota': ['database_management','quota_management'],
+            'collection': ['collection_management','collection_performance','telephone_interviewer','fieldwork_interviewer','focus_group_panel'],
+            'quality': ['qc_management','qc_performance','voice_review','callback_qc'],
+            'analysis': ['coding','statistical_health_check','tabulation','statistics','funnel_analysis','conjoint_analysis','segmentation_analysis'],
+        };
+        document.querySelectorAll('.group-toggle').forEach(function(master) {
+            master.addEventListener('change', function() {
+                const group = master.getAttribute('data-group');
+                const fields = groupMap[group] || [];
+                fields.forEach(function(name) {
+                    const cb = document.getElementById('id_' + name);
+                    if (cb) cb.checked = master.checked;
+                });
+            });
+        });
+    });
+    </script>
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{% if lang == 'fa' %}ورود{% else %}Login{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:480px;margin:2rem auto;">
+    <h1>{% if lang == 'fa' %}ورود{% else %}Login{% endif %}</h1>
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        {{ form.email.label_tag }}
+        {{ form.email }}
+        {{ form.email.errors }}
+        {{ form.password.label_tag }}
+        {{ form.password }}
+        {{ form.password.errors }}
+        <button type="submit" class="btn">{% if lang == 'fa' %}ورود{% else %}Login{% endif %}</button>
+    </form>
+    <p style="margin-top:1rem;">
+        {% if lang == 'fa' %}
+            حساب کاربری ندارید؟ <a href="{% url 'register' %}">ثبت‌نام کنید</a>
+        {% else %}
+            Don't have an account? <a href="{% url 'register' %}">Register here</a>
+        {% endif %}
+    </p>
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}نمایش داده پایگاه{% else %}View Database{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:1200px;margin:2rem auto;padding:1.5rem;">
+    <h1 style="margin-bottom:1rem;">
+        {% if lang == 'fa' %}
+            مشاهده داده‌ها برای {{ entry.db_name }}
+        {% else %}
+            View Data for {{ entry.db_name }}
+        {% endif %}
+    </h1>
+    <div class="table-wrap">
+        <table class="table" style="min-width:800px;">
+            <thead>
+                <tr>
+                    {% for col in columns %}
+                        <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        {% for cell in row %}
+                            <td>{{ cell }}</td>
+                        {% endfor %}
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="{{ columns|length }}" class="text-center">
+                            {% if lang == 'fa' %}هیچ داده‌ای برای نمایش وجود ندارد.{% else %}No data available.{% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div style="margin-top:1rem;">
+        <a href="{% url 'database_list' %}" class="btn btn-outline">
+            {% if lang == 'fa' %}بازگشت{% else %}Back{% endif %}
+        </a>
+    </div>
+</div>
+{% endblock %}

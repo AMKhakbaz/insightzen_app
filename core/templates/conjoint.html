@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}تحلیل کونجوینت{% else %}Conjoint Analysis{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>{% if lang == 'fa' %}تحلیل کونجوینت{% else %}Conjoint Analysis{% endif %}</h1>
+    <p>
+        {% if lang == 'fa' %}
+            یک فایل داده (CSV یا Excel) بارگذاری کرده و نوع تحلیل مورد نظر را انتخاب کنید. خروجی به صورت جدول و نمودار بدون رفرش صفحه نمایش داده خواهد شد.
+        {% else %}
+            Upload a dataset (CSV or Excel) and choose your analysis type. Results will appear below without reloading the page.
+        {% endif %}
+    </p>
+    <form id="conjoint-form">
+        <div style="margin-bottom:1rem;">
+            <label for="conjoint-file" class="form-label">{% if lang == 'fa' %}انتخاب فایل{% else %}Choose File{% endif %}</label>
+            <input type="file" id="conjoint-file" name="file" accept=".csv,.xlsx,.xls" class="form-control">
+        </div>
+        <div style="margin-bottom:1rem;">
+            <label for="analysis-type" class="form-label">{% if lang == 'fa' %}نوع تحلیل{% else %}Analysis Type{% endif %}</label>
+            <select id="analysis-type" name="analysis_type" class="form-select">
+                <option value="cbc">Choice‑Based Conjoint (CBC)</option>
+                <option value="maxdiff">MaxDiff Analysis</option>
+                <option value="full_profile">Full Profile Conjoint</option>
+            </select>
+        </div>
+        <button type="submit" id="analysis-btn" class="btn">
+            {% if lang == 'fa' %}انجام تحلیل{% else %}Perform Analysis{% endif %}
+        </button>
+    </form>
+    <div id="conjoint-results" style="margin-top:2rem;"></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+{% endblock %}

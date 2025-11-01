@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}مصاحبه تلفنی{% else %}Telephone Interviewer{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:800px;margin:2rem auto;">
+    <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}مصاحبه تلفنی{% else %}Telephone Interviewer{% endif %}</h1>
+    <!-- Project selection -->
+    <div style="margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+        <label for="project-select">{% if lang == 'fa' %}پروژه:{% else %}Project:{% endif %}</label>
+        <select id="project-select" class="form-select" style="min-width:280px;">
+            <option value="" disabled {% if not selected_project %}selected{% endif %}>{% if lang == 'fa' %}انتخاب پروژه{% else %}Select Project{% endif %}</option>
+            {% for p in projects %}
+                <option value="{{ p.pk }}" {% if selected_project and p.pk == selected_project.pk %}selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const projSel = document.getElementById('project-select');
+        if (projSel) {
+            projSel.addEventListener('change', function() {
+                const val = this.value;
+                if (val) {
+                    window.location.href = '?project=' + val;
+                }
+            });
+        }
+    });
+    </script>
+    {% if selected_project %}
+        {% if person and mobile %}
+        <form method="post">
+            {% csrf_token %}
+            {% if call_sample %}
+                <input type="hidden" name="call_sample_id" value="{{ call_sample.id }}">
+            {% endif %}
+                {% if start_form %}
+                    <input type="hidden" name="start_form" value="{{ start_form }}">
+                {% endif %}
+            <div style="margin-bottom:1rem;">
+                <div style="margin-bottom:0.5rem;"><strong>{% if lang == 'fa' %}نام:{% else %}Name:{% endif %}</strong> {{ person.full_name }}</div>
+                <div style="margin-bottom:0.5rem;"><strong>{% if lang == 'fa' %}شماره تلفن:{% else %}Phone:{% endif %}</strong> {{ mobile }}</div>
+            </div>
+            <div style="margin-bottom:0.5rem;">
+                <label>{% if lang == 'fa' %}کد وضعیت{% else %}Status Code{% endif %}</label>
+                <select name="code" class="form-select" required style="min-width:220px;">
+                    <option value="" disabled selected>{% if lang == 'fa' %}انتخاب کد{% else %}Select Code{% endif %}</option>
+                    {% for i,status in status_codes.items %}
+                        <option value="{{ i }}">{{ i }} - {{ status }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="margin-bottom:0.5rem;">
+                <label>{% if lang == 'fa' %}جنسیت{% else %}Gender{% endif %}</label>
+                <select name="gender" class="form-select" style="min-width:220px;">
+                    <option value="" selected>{% if lang == 'fa' %}انتخاب{% else %}Select{% endif %}</option>
+                    <option value="male">{% if lang == 'fa' %}آقا{% else %}Male{% endif %}</option>
+                    <option value="female">{% if lang == 'fa' %}خانم{% else %}Female{% endif %}</option>
+                </select>
+            </div>
+            <div style="margin-bottom:0.5rem;display:flex;flex-wrap:wrap;gap:1rem;">
+                <div>
+                    <label>{% if lang == 'fa' %}سن{% else %}Age{% endif %}</label>
+                    <input type="number" name="age" class="form-control" style="width:120px;" min="0" max="120">
+                </div>
+                <div>
+                    <label>{% if lang == 'fa' %}سال تولد{% else %}Birth Year{% endif %}</label>
+                    <input type="number" name="birth_year" class="form-control" style="width:120px;" min="1900" max="2100">
+                </div>
+                <div>
+                    <label>{% if lang == 'fa' %}شهر{% else %}City{% endif %}</label>
+                    <input type="text" name="city" class="form-control" style="width:160px;">
+                </div>
+            </div>
+            <button type="submit" class="btn" style="margin-top:0.5rem;">{% if lang == 'fa' %}ثبت{% else %}Submit{% endif %}</button>
+        </form>
+        {% else %}
+            <p>{% if lang == 'fa' %}موردی برای تماس یافت نشد.{% else %}No available respondent found for the selected project.{% endif %}</p>
+        {% endif %}
+    {% else %}
+        <p>{% if lang == 'fa' %}پروژه‌ای انتخاب نشده است.{% else %}Please select a project to start interviewing.{% endif %}</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{% if lang == 'fa' %}ثبت‌نام{% else %}Register{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:600px;margin:2rem auto;">
+    <h1>{% if lang == 'fa' %}ثبت‌نام{% else %}Register{% endif %}</h1>
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        {{ form.email.label_tag }}
+        {{ form.email }}
+        {{ form.email.errors }}
+        {{ form.full_name.label_tag }}
+        {{ form.full_name }}
+        {{ form.full_name.errors }}
+        {{ form.phone.label_tag }}
+        {{ form.phone }}
+        {{ form.phone.errors }}
+        <div style="margin-bottom:0.75rem;">
+            {{ form.organization }} {{ form.organization.label_tag }}
+        </div>
+        {{ form.password.label_tag }}
+        {{ form.password }}
+        {{ form.password.errors }}
+        {{ form.confirm_password.label_tag }}
+        {{ form.confirm_password }}
+        {{ form.confirm_password.errors }}
+        <button type="submit" class="btn">{% if lang == 'fa' %}ثبت‌نام{% else %}Register{% endif %}</button>
+    </form>
+    <p style="margin-top:1rem;">
+        {% if lang == 'fa' %}
+            قبلاً ثبت‌نام کرده‌اید؟ <a href="{% url 'login' %}">ورود</a>
+        {% else %}
+            Already have an account? <a href="{% url 'login' %}">Login</a>
+        {% endif %}
+    </p>
+</div>
+{% endblock %}

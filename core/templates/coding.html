@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}کدگذاری{% else %}Coding & Category{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>{% if lang == 'fa' %}کدگذاری و دسته‌بندی{% else %}Coding & Category{% endif %}</h1>
+    <p>
+        {% if lang == 'fa' %}
+            یک فایل داده (CSV یا Excel) بارگذاری کنید و گزینهٔ مورد نظر را انتخاب کنید. خروجی بدون بارگذاری مجدد صفحه نمایش داده می‌شود.
+        {% else %}
+            Upload a dataset (CSV or Excel) and choose your option. Results will appear below without reloading the page.
+        {% endif %}
+    </p>
+    <form id="coding-form">
+        <div style="margin-bottom:1rem;">
+            <label for="coding-file" class="form-label">{% if lang == 'fa' %}انتخاب فایل{% else %}Choose File{% endif %}</label>
+            <input type="file" id="coding-file" name="file" accept=".csv,.xlsx,.xls" class="form-control">
+        </div>
+        <div style="margin-bottom:1rem;">
+            <label for="coding-type" class="form-label">{% if lang == 'fa' %}نوع تحلیل{% else %}Option{% endif %}</label>
+            <select id="coding-type" name="analysis_type" class="form-select">
+                <option value="coding">{% if lang == 'fa' %}کدگذاری{% else %}Coding{% endif %}</option>
+                <option value="category">{% if lang == 'fa' %}دسته‌بندی{% else %}Category{% endif %}</option>
+            </select>
+        </div>
+        <button type="submit" class="btn" id="coding-btn">
+            {% if lang == 'fa' %}انجام عملیات{% else %}Run Analysis{% endif %}
+        </button>
+    </form>
+    <div id="coding-results" style="margin-top:2rem;"></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+{% endblock %}

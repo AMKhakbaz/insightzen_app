@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% load custom_tags %}
+{% block title %}{% if lang == 'fa' %}اعضای پروژه‌ها{% else %}Project Members{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>{% if lang == 'fa' %}فهرست اعضا{% else %}Members List{% endif %}</h1>
+    <p>
+        {% if lang == 'fa' %}
+            در اینجا می‌توانید اعضای پروژه‌های خود را مشاهده و مدیریت کنید.
+        {% else %}
+            Here you can view and manage members across your projects.
+        {% endif %}
+    </p>
+    <a href="{% url 'membership_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}افزودن کاربر به پروژه{% else %}Add User to Project{% endif %}</a>
+    <div class="table-wrap">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}</th>
+                <th>{% if lang == 'fa' %}نام کامل{% else %}Full Name{% endif %}</th>
+                <th>{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}</th>
+                <th>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</th>
+                <th>{% if lang == 'fa' %}تاریخ شروع{% else %}Start Work{% endif %}</th>
+                <th>{% if lang == 'fa' %}پنل‌ها{% else %}Panels{% endif %}</th>
+                <th>{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+            </tr>
+        </thead>
+        <tbody>
+                {% for m in memberships %}
+            <tr>
+                <td>{{ m.user.username }}</td>
+                <td>{{ m.user.first_name }}</td>
+                <td>{{ m.user.profile.phone }}</td>
+                <td>{{ m.project.name }}</td>
+                <td>{{ m.start_work }}</td>
+                <td>
+                    {# display enabled panel names for this membership using custom tag #}
+                    {% panel_names m panel_labels as enabled_panels %}
+                    {{ enabled_panels|default:'-' }}
+                </td>
+                <td style="white-space:nowrap;">
+                    <a href="{% url 'membership_edit' m.pk %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">
+                        {% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}
+                    </a>
+                    <form method="post" action="{% url 'membership_delete' m.pk %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button class="btn btn-danger btn-sm" onclick="return confirm('{% if lang == 'fa' %}آیا از حذف این کاربر مطمئن هستید؟{% else %}Are you sure you want to delete this membership?{% endif %}')">
+                            {% if lang == 'fa' %}حذف{% else %}Delete{% endif %}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="40">{% if lang == 'fa' %}عضوی وجود ندارد{% else %}No members yet{% endif %}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endblock %}

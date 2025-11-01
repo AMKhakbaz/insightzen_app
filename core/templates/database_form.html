@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}پایگاه داده{% else %}Database{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:600px;margin:2rem auto;padding:1.5rem;">
+    <h1>{% if lang == 'fa' %}
+        {% if title == 'Add Database' %}افزودن پایگاه داده{% elif title == 'Edit Database' %}ویرایش پایگاه داده{% else %}پایگاه داده{% endif %}
+    {% else %}
+        {{ title }}
+    {% endif %}</h1>
+    {# Use multipart encoding to support XLSForm file upload #}
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        {# Project select #}
+        <div>
+            {{ form.project.label_tag }}
+            {{ form.project }}
+            {{ form.project.errors }}
+        </div>
+        {# DB Name #}
+        <div>
+            {{ form.db_name.label_tag }}
+            {{ form.db_name }}
+            {{ form.db_name.errors }}
+        </div>
+        {# Token #}
+        <div>
+            {{ form.token.label_tag }}
+            {{ form.token }}
+            {{ form.token.errors }}
+        </div>
+        {# Asset ID #}
+        <div>
+            {{ form.asset_id.label_tag }}
+            {{ form.asset_id }}
+            {{ form.asset_id.errors }}
+        </div>
+        {# XLSForm #}
+        <div>
+            {{ form.xlsform.label_tag }}
+            {{ form.xlsform }}
+            {{ form.xlsform.errors }}
+        </div>
+        <button type="submit" class="btn" style="margin-top:1rem;">
+            {% if lang == 'fa' %}
+                {% if title == 'Add Database' %}افزودن{% else %}ذخیره{% endif %}
+            {% else %}
+                {% if title == 'Add Database' %}Add{% else %}Save{% endif %}
+            {% endif %}
+        </button>
+    </form>
+</div>
+{% endblock %}
