@@ -7,8 +7,8 @@
         {% if lang == 'fa' %}گزارش فعالیت‌ها{% else %}Activity Logs{% endif %}
     </h1>
     {% if logs %}
-    <div style="overflow-x:auto;">
-        <table class="table" style="min-width:600px;">
+    <div class="table-responsive">
+        <table class="table">
             <thead>
                 <tr>
                     <th>{% if lang == 'fa' %}زمان{% else %}Timestamp{% endif %}</th>

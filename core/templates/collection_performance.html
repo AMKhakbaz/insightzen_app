@@ -62,21 +62,23 @@
             <canvas id="line-chart" data-url="{% url 'collection_performance_data' %}" data-total-label="{% if lang == 'fa' %}کل{% else %}Total{% endif %}" data-success-label="{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}"></canvas>
         </div>
     </div>
-    <div class="top-table" style="overflow-x:auto;">
+    <div class="top-table">
         <h2 style="margin-bottom:0.5rem;">{% if lang == 'fa' %}۵ پرسشگر برتر{% else %}Top Interviewers{% endif %}</h2>
-        <table id="top5-table" class="table" style="min-width:500px;">
-            <thead>
-                <tr>
-                    <th data-sort-key="user">{% if lang == 'fa' %}کاربر{% else %}User{% endif %}</th>
-                    <th data-sort-key="total">{% if lang == 'fa' %}کل تماس‌ها{% else %}Total Calls{% endif %}</th>
-                    <th data-sort-key="success">{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}</th>
-                    <th data-sort-key="rate">{% if lang == 'fa' %}نرخ موفقیت{% else %}Success Rate{% endif %}</th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Rows populated by charts.js -->
-            </tbody>
-        </table>
+        <div class="table-responsive">
+            <table id="top5-table" class="table">
+                <thead>
+                    <tr>
+                        <th data-sort-key="user">{% if lang == 'fa' %}کاربر{% else %}User{% endif %}</th>
+                        <th data-sort-key="total">{% if lang == 'fa' %}کل تماس‌ها{% else %}Total Calls{% endif %}</th>
+                        <th data-sort-key="success">{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}</th>
+                        <th data-sort-key="rate">{% if lang == 'fa' %}نرخ موفقیت{% else %}Success Rate{% endif %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Rows populated by charts.js -->
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 

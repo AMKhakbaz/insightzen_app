@@ -2,14 +2,6 @@
 // Handles sidebar toggle and Conjoint Analysis AJAX interactions.
 
 document.addEventListener('DOMContentLoaded', function () {
-  // Sidebar toggle button
-  const menuToggle = document.getElementById('menu-toggle');
-  if (menuToggle) {
-    menuToggle.addEventListener('click', function () {
-      document.body.classList.toggle('sidebar-collapsed');
-    });
-  }
-
   // Conjoint analysis form submission
   const form = document.getElementById('conjoint-form');
   if (form) {
@@ -66,7 +58,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const pwCard = document.createElement('div');
             pwCard.className = 'dashboard-card';
             let pwHtml = '<h3>Part‑Worth Table</h3>';
-            pwHtml += '<div class="table-wrap"><table class="table"><thead><tr><th>Level</th><th>Value</th></tr></thead><tbody>';
+            pwHtml += '<div class="table-responsive"><table class="table"><thead><tr><th>Level</th><th>Value</th></tr></thead><tbody>';
             data.partworth_table.forEach((row) => {
               pwHtml += `<tr><td>${row.level}</td><td>${row.value}</td></tr>`;
             });
@@ -79,7 +71,7 @@ document.addEventListener('DOMContentLoaded', function () {
             topCard.className = 'dashboard-card';
             let topHtml = '<h3>Top Profiles</h3>';
             if (data.top_profiles && data.top_profiles.length > 0) {
-              topHtml += '<div class="table-wrap"><table class="table"><thead><tr>';
+              topHtml += '<div class="table-responsive"><table class="table"><thead><tr>';
               Object.keys(data.top_profiles[0]).forEach((key) => {
                 topHtml += `<th>${key}</th>`;
               });
@@ -261,7 +253,7 @@ document.addEventListener('DOMContentLoaded', function () {
               // Span across two columns on larger screens
               tableCard.style.gridColumn = 'span 2';
               let tblHtml = '<h3>MaxDiff Results</h3>';
-              tblHtml += '<div class="table-wrap"><table class="table"><thead><tr>';
+              tblHtml += '<div class="table-responsive"><table class="table"><thead><tr>';
               Object.keys(data.results[0]).forEach((key) => {
                 tblHtml += `<th>${key}</th>`;
               });

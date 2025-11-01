@@ -12,14 +12,16 @@
         {% endif %}
     </p>
     {% if profile %}
-    <table class="table" style="max-width:600px;">
-        <tr><th>{% if lang == 'fa' %}نام کامل{% else %}Full Name{% endif %}</th><td>{{ user.first_name }}</td></tr>
-        <tr><th>{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}</th><td>{{ user.username }}</td></tr>
-        <tr><th>{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}</th><td>{{ profile.phone }}</td></tr>
-        <tr><th>{% if lang == 'fa' %}نوع حساب{% else %}Account Type{% endif %}</th>
-            <td>{% if profile.organization %}{% if lang == 'fa' %}سازمانی{% else %}Organization{% endif %}{% else %}{% if lang == 'fa' %}عادی{% else %}Individual{% endif %}{% endif %}</td></tr>
-        <tr><th>{% if lang == 'fa' %}تاریخ ثبت‌نام{% else %}Register Date{% endif %}</th><td>{{ profile.register_date }}</td></tr>
-    </table>
+    <div class="table-responsive" style="max-width:600px;">
+        <table class="table">
+            <tr><th>{% if lang == 'fa' %}نام کامل{% else %}Full Name{% endif %}</th><td>{{ user.first_name }}</td></tr>
+            <tr><th>{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}</th><td>{{ user.username }}</td></tr>
+            <tr><th>{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}</th><td>{{ profile.phone }}</td></tr>
+            <tr><th>{% if lang == 'fa' %}نوع حساب{% else %}Account Type{% endif %}</th>
+                <td>{% if profile.organization %}{% if lang == 'fa' %}سازمانی{% else %}Organization{% endif %}{% else %}{% if lang == 'fa' %}عادی{% else %}Individual{% endif %}{% endif %}</td></tr>
+            <tr><th>{% if lang == 'fa' %}تاریخ ثبت‌نام{% else %}Register Date{% endif %}</th><td>{{ profile.register_date }}</td></tr>
+        </table>
+    </div>
     {% endif %}
     {% if profile and profile.organization %}
         <div style="margin-top:2rem;">
