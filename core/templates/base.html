@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>InsightZen - {% block title %}Dashboard{% endblock %}</title>
-    {% load static %}
+    {% load static custom_tags %}
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Vazirmatn:wght@400;500;600&display=swap">
     <link rel="stylesheet" href="{% static 'core/css/styles.css' %}">
     {# Custom dark theme overrides #}
@@ -13,98 +13,7 @@
 <body class="{% if lang == 'fa' %}rtl{% else %}ltr{% endif %}">
     <div class="wrapper">
         <aside class="sidebar" id="sidebar">
-            <nav>
-                <!-- User Management link -->
-                <ul>
-                    <li>
-                        <a href="{% url 'membership_list' %}" class="{% if not user.is_authenticated or not user.profile.organization %}disabled{% endif %}">
-                            <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"></circle><circle cx="15" cy="7" r="4"></circle><path d="M3 21c0-3.3 2.7-6 6-6h6c3.3 0 6 2.7 6 6"></path></svg><span class="label">{% if lang == 'fa' %}مدیریت کاربران{% else %}User Management{% endif %}</span>
-                        </a>
-                    </li>
-                </ul>
-                <!-- Projects group -->
-                <details open>
-                    <summary><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h5l2 3h11v11H3z"></path></svg><span class="label">{% if lang == 'fa' %}پروژه‌ها{% else %}Projects{% endif %}</span></summary>
-                    <ul>
-                        <li>
-                            <a href="{% url 'database_list' %}" class="{% if not panels_enabled.database_management %}disabled{% endif %}">
-                                <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path></svg><span class="label">{% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="{% url 'project_list' %}" class="{% if not user.is_authenticated or not user.profile.organization %}disabled{% endif %}">
-                                <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg><span class="label">{% if lang == 'fa' %}مدیریت پروژه{% else %}Project Management{% endif %}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="{% url 'quota_management' %}" class="{% if not panels_enabled.quota_management %}disabled{% endif %}">
-                                <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg><span class="label">{% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}</span>
-                            </a>
-                        </li>
-                    </ul>
-                </details>
-                <!-- Collection group -->
-                <details>
-                    <summary><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg><span class="label">{% if lang == 'fa' %}گردآوری{% else %}Collection{% endif %}</span></summary>
-                    <ul>
-                        <li><a href="#" class="{% if not panels_enabled.collection_management %}disabled{% endif %}"><i data-feather="archive"></i><span class="label">{% if lang == 'fa' %}مدیریت گردآوری{% else %}Collection Management{% endif %}</span></a></li>
-                        <li><a href="{% url 'collection_performance' %}" class="{% if not panels_enabled.collection_performance %}disabled{% endif %}"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="8"></rect><rect x="10" y="8" width="4" height="12"></rect><rect x="17" y="4" width="4" height="16"></rect></svg><span class="label">{% if lang == 'fa' %}کارایی گردآوری{% else %}Collection Performance{% endif %}</span></a></li>
-                        <li><a href="{% url 'telephone_interviewer' %}" class="{% if not panels_enabled.telephone_interviewer %}disabled{% endif %}"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15.05 5A5 5 0 0 1 19 8.95"/><path d="M15.05 1A9 9 0 0 1 23 8.94"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.19.98.44 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg><span class="label">{% if lang == 'fa' %}مصاحبه تلفنی{% else %}Telephone Interviewer{% endif %}</span></a></li>
-                        <li><a href="#" class="{% if not panels_enabled.fieldwork_interviewer %}disabled{% endif %}"><i data-feather="map-pin"></i><span class="label">{% if lang == 'fa' %}مصاحبه میدانی{% else %}Fieldwork Interviewer{% endif %}</span></a></li>
-                        <li><a href="#" class="{% if not panels_enabled.focus_group_panel %}disabled{% endif %}"><i data-feather="users"></i><span class="label">{% if lang == 'fa' %}گروه کانونی{% else %}Focus Group Panel{% endif %}</span></a></li>
-                    </ul>
-                </details>
-                <!-- Quality Control group -->
-                <details>
-                    <summary><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3l8-8"/><circle cx="12" cy="12" r="10"/></svg><span class="label">{% if lang == 'fa' %}کنترل کیفیت{% else %}Quality Control{% endif %}</span></summary>
-                    <ul>
-                        <li><a href="#" class="{% if not panels_enabled.qc_management %}disabled{% endif %}"><i data-feather="settings"></i><span class="label">{% if lang == 'fa' %}مدیریت QC{% else %}QC Management{% endif %}</span></a></li>
-                        <li><a href="{# the QC performance page is not yet implemented #}" class="{% if not panels_enabled.qc_performance %}disabled{% endif %}"><i data-feather="activity"></i><span class="label">{% if lang == 'fa' %}کارایی QC{% else %}QC Performance{% endif %}</span></a></li>
-                        <!-- QC Edit panel: allows editing of imported survey data -->
-                        <li>
-                            <a href="{% url 'qc_edit' %}" class="{% if not panels_enabled.qc_management and not panels_enabled.qc_performance %}disabled{% endif %}">
-                                <i data-feather="edit"></i><span class="label">{% if lang == 'fa' %}ویرایش QC{% else %}QC Edit{% endif %}</span>
-                            </a>
-                        </li>
-                        <li><a href="#" class="{% if not panels_enabled.voice_review %}disabled{% endif %}"><i data-feather="volume-2"></i><span class="label">{% if lang == 'fa' %}بازبینی صدا{% else %}Voice Review{% endif %}</span></a></li>
-                        <li><a href="#" class="{% if not panels_enabled.callback_qc %}disabled{% endif %}"><i data-feather="rotate-ccw"></i><span class="label">{% if lang == 'fa' %}QC تماس برگشتی{% else %}Callback QC{% endif %}</span></a></li>
-                        <li>
-                            <a href="{% url 'coding' %}" class="{% if not panels_enabled.coding %}disabled{% endif %}">
-                                <i data-feather="code"></i><span class="label">{% if lang == 'fa' %}کدگذاری{% else %}Coding{% endif %}</span>
-                            </a>
-                        </li>
-                        <li><a href="#" class="{% if not panels_enabled.statistical_health_check %}disabled{% endif %}"><i data-feather="thermometer"></i><span class="label">{% if lang == 'fa' %}بررسی سلامت آماری{% else %}Statistical Health Check{% endif %}</span></a></li>
-                    </ul>
-                </details>
-                <!-- MRAnalysis group -->
-                <details>
-                    <summary><i data-feather="pie-chart"></i><span class="label">{% if lang == 'fa' %}تحلیل تحقیقات بازار{% else %}MRAnalysis{% endif %}</span></summary>
-                    <ul>
-                        <li><a href="#" class="{% if not panels_enabled.tabulation %}disabled{% endif %}"><i data-feather="table"></i><span class="label">{% if lang == 'fa' %}جدول‌بندی{% else %}Tabulation{% endif %}</span></a></li>
-                        <li><a href="#" class="{% if not panels_enabled.statistics %}disabled{% endif %}"><i data-feather="trending-up"></i><span class="label">{% if lang == 'fa' %}آمار{% else %}Statistics{% endif %}</span></a></li>
-                        <li><a href="#" class="{% if not panels_enabled.funnel_analysis %}disabled{% endif %}"><i data-feather="filter"></i><span class="label">{% if lang == 'fa' %}تحلیل قیف{% else %}Funnel Analysis{% endif %}</span></a></li>
-                        <li>
-                            <a href="{% url 'conjoint' %}" class="{% if not panels_enabled.conjoint_analysis %}disabled{% endif %}">
-                                <i data-feather="grid"></i><span class="label">{% if lang == 'fa' %}تحلیل همگرایی{% else %}Conjoint Analysis{% endif %}</span>
-                            </a>
-                        </li>
-                        <li><a href="#" class="{% if not panels_enabled.segmentation_analysis %}disabled{% endif %}"><i data-feather="divide-square"></i><span class="label">{% if lang == 'fa' %}تحلیل تقسیم‌بندی{% else %}Segmentation Analysis{% endif %}</span></a></li>
-                    </ul>
-                </details>
-                {% if user.is_superuser %}
-                <!-- Logs group (visible only to superusers) -->
-                <details>
-                    <summary><i data-feather="file-text"></i><span class="label">{% if lang == 'fa' %}گزارش‌ها{% else %}Logs{% endif %}</span></summary>
-                    <ul>
-                        <li>
-                            <a href="{% url 'activity_logs' %}" class="{% if not user.is_authenticated or not user.profile.organization %}disabled{% endif %}">
-                                <i data-feather="list"></i><span class="label">{% if lang == 'fa' %}لاگ فعالیت‌ها{% else %}Activity Logs{% endif %}</span>
-                            </a>
-                        </li>
-                    </ul>
-                </details>
-                {% endif %}
-            </nav>
+            {% render_sidebar %}
         </aside>
         <div class="main">
             <header class="header">
