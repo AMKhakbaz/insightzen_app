@@ -1,0 +1,60 @@
+{% if filter_config %}
+{% with is_fa=lang == 'fa' %}
+<div class="table-filters">
+    <form method="get" class="filters-form" data-filter-form data-filter-instant="{{ filter_config.instant|default:True|yesno:'true,false' }}"{% if filter_config.delay %} data-filter-delay="{{ filter_config.delay }}"{% endif %}>
+        {% if filter_config.hidden_params %}
+            {% for key, value in filter_config.hidden_params.items %}
+                <input type="hidden" name="{{ key }}" value="{{ value }}">
+            {% endfor %}
+        {% endif %}
+        <div class="filters-grid">
+            {% if filter_config.search %}
+                {% with search=filter_config.search %}
+                    {% with field_id=search.id|default:search.param|default:'search' %}
+                        <label class="filter-field" for="filter-{{ field_id }}">
+                            <span class="filter-label">
+                                {% if is_fa %}{{ search.label_fa|default:search.label_en }}{% else %}{{ search.label_en|default:search.label_fa }}{% endif %}
+                            </span>
+                            <input type="search"
+                                   id="filter-{{ field_id }}"
+                                   name="{{ search.param|default:'search' }}"
+                                   value="{{ search.value }}"
+                                   placeholder="{% if is_fa %}{{ search.placeholder_fa|default:search.placeholder_en }}{% else %}{{ search.placeholder_en|default:search.placeholder_fa }}{% endif %}"
+                                   data-filter-search>
+                        </label>
+                    {% endwith %}
+                {% endwith %}
+            {% endif %}
+            {% if filter_config.selects %}
+                {% for select in filter_config.selects %}
+                    {% with field_id=select.id|default:select.param %}
+                        <label class="filter-field" for="filter-{{ field_id }}">
+                            <span class="filter-label">
+                                {% if is_fa %}{{ select.label_fa|default:select.label_en }}{% else %}{{ select.label_en|default:select.label_fa }}{% endif %}
+                            </span>
+                            <select id="filter-{{ field_id }}" name="{{ select.param }}" data-filter-select>
+                                {% for option in select.options %}
+                                    <option value="{{ option.value }}"{% if option.value == select.value %} selected{% endif %}>
+                                        {% if is_fa %}{{ option.label_fa|default:option.label_en }}{% else %}{{ option.label_en|default:option.label_fa }}{% endif %}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    {% endwith %}
+                {% endfor %}
+            {% endif %}
+            <div class="filters-actions">
+                <button type="submit" class="btn btn-sm">
+                    {% if is_fa %}{{ filter_config.apply_label_fa|default:'اعمال' }}{% else %}{{ filter_config.apply_label_en|default:'Apply' }}{% endif %}
+                </button>
+                {% if filter_config.show_reset|default:True %}
+                    <a href="{{ filter_config.reset_url|default:request.path }}" class="btn btn-outline btn-sm">
+                        {% if is_fa %}{{ filter_config.reset_label_fa|default:'بازنشانی' }}{% else %}{{ filter_config.reset_label_en|default:'Reset' }}{% endif %}
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+</div>
+{% endwith %}
+{% endif %}

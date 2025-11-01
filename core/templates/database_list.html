@@ -2,15 +2,29 @@
 {% block title %}{% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width:1000px;margin:2rem auto;padding:1.5rem;">
-    <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}</h1>
-    <div style="display:flex;justify-content:flex-start;align-items:center;margin-bottom:1rem;">
-        <a href="{% url 'database_add' %}" class="btn btn-secondary">
-            {% if lang == 'fa' %}افزودن پایگاه داده{% else %}Add Database{% endif %}
-        </a>
+<div class="card">
+    <div class="table-toolbar">
+        <div class="table-toolbar-heading">
+            <h1>{% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}</h1>
+            <p class="table-toolbar-subtext">
+                {% if lang == 'fa' %}
+                    اتصال‌های ثبت‌شده به پایگاه‌های داده خارجی را مرور و مدیریت کنید.
+                {% else %}
+                    Review and manage the registered connections to external databases.
+                {% endif %}
+            </p>
+        </div>
+        <div class="table-toolbar-actions">
+            <a href="{% url 'database_add' %}" class="btn">
+                {% if lang == 'fa' %}افزودن پایگاه داده{% else %}Add Database{% endif %}
+            </a>
+        </div>
     </div>
+
+    {% include 'components/table_filters.html' with filter_config=filter_config %}
+
     <div class="table-wrap">
-        <table class="table" style="min-width:900px;">
+        <table class="table">
             <thead>
                 <tr>
                     <th>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</th>

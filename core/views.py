@@ -350,8 +350,90 @@ def project_list(request: HttpRequest) -> HttpResponse:
     if not _user_is_organisation(user):
         messages.warning(request, 'Access denied: only organisation accounts can manage projects.')
         return redirect('home')
-    projects = _get_accessible_projects(user)
-    return render(request, 'projects_list.html', {'projects': projects})
+    base_projects = Project.objects.filter(memberships__user=user).distinct()
+    projects_qs = base_projects
+
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        projects_qs = projects_qs.filter(
+            Q(name__icontains=search_query)
+            | Q(memberships__user__username__icontains=search_query)
+            | Q(memberships__user__first_name__icontains=search_query)
+        )
+
+    status_filter = request.GET.get('status', '').strip().lower()
+    if status_filter == 'active':
+        projects_qs = projects_qs.filter(status=True)
+    elif status_filter == 'inactive':
+        projects_qs = projects_qs.filter(status=False)
+
+    type_filter = request.GET.get('type', '').strip()
+    if type_filter:
+        projects_qs = projects_qs.filter(types__contains=[type_filter])
+
+    projects = projects_qs.order_by('name').distinct()
+
+    type_values: set[str] = set()
+    for type_list in base_projects.values_list('types', flat=True):
+        if not type_list:
+            continue
+        for entry in type_list:
+            if entry:
+                type_values.add(str(entry))
+
+    status_options = [
+        {'value': '', 'label_en': 'All statuses', 'label_fa': 'همه وضعیت‌ها'},
+        {'value': 'active', 'label_en': 'Active', 'label_fa': 'فعال'},
+        {'value': 'inactive', 'label_en': 'Inactive', 'label_fa': 'غیرفعال'},
+    ]
+
+    selects = [
+        {
+            'param': 'status',
+            'label_en': 'Status',
+            'label_fa': 'وضعیت',
+            'options': status_options,
+            'value': status_filter,
+        }
+    ]
+
+    if type_values:
+        type_options = [{'value': '', 'label_en': 'All types', 'label_fa': 'همه انواع'}]
+        type_options.extend(
+            {'value': value, 'label_en': value, 'label_fa': value}
+            for value in sorted(type_values, key=lambda item: item.lower())
+        )
+        selects.append(
+            {
+                'param': 'type',
+                'label_en': 'Project Type',
+                'label_fa': 'نوع پروژه',
+                'options': type_options,
+                'value': type_filter,
+            }
+        )
+
+    filter_config = {
+        'search': {
+            'param': 'search',
+            'label_en': 'Search',
+            'label_fa': 'جستجو',
+            'placeholder_en': 'Search projects…',
+            'placeholder_fa': 'جستجوی پروژه‌ها…',
+            'value': search_query,
+        },
+        'selects': selects,
+        'reset_url': request.path,
+    }
+
+    return render(
+        request,
+        'projects_list.html',
+        {
+            'projects': projects,
+            'filter_config': filter_config,
+        },
+    )
 
 
 @login_required
@@ -452,7 +534,33 @@ def membership_list(request: HttpRequest) -> HttpResponse:
         messages.warning(request, 'Access denied: only organisation accounts can manage memberships.')
         return redirect('home')
     # list all memberships for projects of this organisation
-    memberships = Membership.objects.filter(project__memberships__user=user).distinct()
+    base_memberships = (
+        Membership.objects.filter(project__memberships__user=user)
+        .select_related('user', 'user__profile', 'project')
+        .distinct()
+    )
+    memberships = base_memberships
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        memberships = memberships.filter(
+            Q(user__username__icontains=search_query)
+            | Q(user__first_name__icontains=search_query)
+            | Q(user__last_name__icontains=search_query)
+            | Q(user__profile__phone__icontains=search_query)
+            | Q(project__name__icontains=search_query)
+        )
+
+    accessible_projects = Project.objects.filter(memberships__user=user).distinct()
+    project_filter = request.GET.get('project', '').strip()
+    if project_filter:
+        try:
+            project_id = int(project_filter)
+        except (TypeError, ValueError):
+            project_id = None
+        if project_id:
+            memberships = memberships.filter(project_id=project_id)
+
+    panel_filter = request.GET.get('panel', '').strip()
     # map field names to human readable labels for display
     panel_labels = {
         'database_management': 'Database Management',
@@ -474,7 +582,91 @@ def membership_list(request: HttpRequest) -> HttpResponse:
         'conjoint_analysis': 'Conjoint Analysis',
         'segmentation_analysis': 'Segmentation Analysis',
     }
-    return render(request, 'membership_list.html', {'memberships': memberships, 'panel_labels': panel_labels})
+    panel_labels_fa = {
+        'database_management': 'مدیریت پایگاه داده',
+        'quota_management': 'مدیریت سهمیه',
+        'collection_management': 'مدیریت گردآوری',
+        'collection_performance': 'کارایی گردآوری',
+        'telephone_interviewer': 'مصاحبه تلفنی',
+        'fieldwork_interviewer': 'مصاحبه میدانی',
+        'focus_group_panel': 'گروه کانونی',
+        'qc_management': 'مدیریت QC',
+        'qc_performance': 'کارایی QC',
+        'voice_review': 'بازبینی صدا',
+        'callback_qc': 'QC تماس برگشتی',
+        'coding': 'کدگذاری',
+        'statistical_health_check': 'بررسی سلامت آماری',
+        'tabulation': 'جدول‌بندی',
+        'statistics': 'آمار',
+        'funnel_analysis': 'تحلیل قیف',
+        'conjoint_analysis': 'تحلیل همگرایی',
+        'segmentation_analysis': 'تحلیل تقسیم‌بندی',
+    }
+
+    if panel_filter and panel_filter in panel_labels:
+        memberships = memberships.filter(**{panel_filter: True})
+
+    project_options = [
+        {'value': '', 'label_en': 'All projects', 'label_fa': 'همه پروژه‌ها'}
+    ]
+    project_options.extend(
+        {
+            'value': str(project.pk),
+            'label_en': project.name,
+            'label_fa': project.name,
+        }
+        for project in accessible_projects.order_by('name')
+    )
+
+    panel_options = [
+        {'value': '', 'label_en': 'All panels', 'label_fa': 'همه پنل‌ها'}
+    ]
+    panel_options.extend(
+        {
+            'value': key,
+            'label_en': value,
+            'label_fa': panel_labels_fa.get(key, value),
+        }
+        for key, value in panel_labels.items()
+    )
+
+    filter_config = {
+        'search': {
+            'param': 'search',
+            'label_en': 'Search',
+            'label_fa': 'جستجو',
+            'placeholder_en': 'Search members…',
+            'placeholder_fa': 'جستجوی اعضا…',
+            'value': search_query,
+        },
+        'selects': [
+            {
+                'param': 'project',
+                'label_en': 'Project',
+                'label_fa': 'پروژه',
+                'options': project_options,
+                'value': project_filter,
+            },
+            {
+                'param': 'panel',
+                'label_en': 'Panel',
+                'label_fa': 'پنل',
+                'options': panel_options,
+                'value': panel_filter,
+            },
+        ],
+        'reset_url': request.path,
+    }
+
+    return render(
+        request,
+        'membership_list.html',
+        {
+            'memberships': memberships.order_by('project__name', 'user__username'),
+            'panel_labels': panel_labels,
+            'filter_config': filter_config,
+        },
+    )
 
 
 @login_required
@@ -1170,8 +1362,74 @@ def activity_logs(request: HttpRequest) -> HttpResponse:
     if not _user_is_organisation(user):
         messages.error(request, 'Access denied: only organisation accounts can view logs.')
         return redirect('home')
-    logs = ActivityLog.objects.select_related('user').all()[:500]
-    return render(request, 'activity_logs.html', {'logs': logs})
+    logs_qs = ActivityLog.objects.select_related('user').all()
+
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        logs_qs = logs_qs.filter(
+            Q(action__icontains=search_query)
+            | Q(details__icontains=search_query)
+            | Q(user__username__icontains=search_query)
+            | Q(user__first_name__icontains=search_query)
+        )
+
+    user_filter = request.GET.get('user', '').strip()
+    if user_filter == 'system':
+        logs_qs = logs_qs.filter(user__isnull=True)
+    elif user_filter:
+        logs_qs = logs_qs.filter(user__username=user_filter)
+
+    logs = logs_qs.order_by('-timestamp')[:500]
+
+    user_options = [
+        {'value': '', 'label_en': 'All users', 'label_fa': 'همه کاربران'},
+        {'value': 'system', 'label_en': 'System events', 'label_fa': 'رویدادهای سیستم'},
+    ]
+    log_users = (
+        ActivityLog.objects.filter(user__isnull=False)
+        .values_list('user__username', 'user__first_name')
+        .distinct()
+        .order_by('user__username')
+    )
+    for username, first_name in log_users:
+        display_name = first_name or username
+        user_options.append(
+            {
+                'value': username,
+                'label_en': display_name,
+                'label_fa': display_name,
+            }
+        )
+
+    filter_config = {
+        'search': {
+            'param': 'search',
+            'label_en': 'Search',
+            'label_fa': 'جستجو',
+            'placeholder_en': 'Search logs…',
+            'placeholder_fa': 'جستجوی گزارش‌ها…',
+            'value': search_query,
+        },
+        'selects': [
+            {
+                'param': 'user',
+                'label_en': 'User',
+                'label_fa': 'کاربر',
+                'options': user_options,
+                'value': user_filter,
+            }
+        ],
+        'reset_url': request.path,
+    }
+
+    return render(
+        request,
+        'activity_logs.html',
+        {
+            'logs': logs,
+            'filter_config': filter_config,
+        },
+    )
 
 
 ################################################################################
@@ -1191,9 +1449,90 @@ def database_list(request: HttpRequest) -> HttpResponse:
         messages.error(request, 'Access denied: you do not have database management permissions.')
         return redirect('home')
     # Determine which projects the user can manage
-    projects = _get_accessible_projects(user, panel='database_management')
-    entries = DatabaseEntry.objects.filter(project__in=projects).select_related('project')
-    return render(request, 'database_list.html', {'entries': entries})
+    accessible_projects = _get_accessible_projects(user, panel='database_management')
+    project_ids = [project.pk for project in accessible_projects]
+    entries = (
+        DatabaseEntry.objects.filter(project__in=accessible_projects)
+        .select_related('project')
+        .order_by('project__name', 'db_name')
+    )
+
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        entries = entries.filter(
+            Q(project__name__icontains=search_query)
+            | Q(db_name__icontains=search_query)
+            | Q(asset_id__icontains=search_query)
+            | Q(token__icontains=search_query)
+        )
+
+    status_filter = request.GET.get('status', '').strip().lower()
+    if status_filter == 'active':
+        entries = entries.filter(status=True)
+    elif status_filter == 'inactive':
+        entries = entries.filter(status=False)
+
+    project_filter = request.GET.get('project', '').strip()
+    if project_filter:
+        try:
+            project_id = int(project_filter)
+        except (TypeError, ValueError):
+            project_id = None
+        if project_id and project_id in project_ids:
+            entries = entries.filter(project_id=project_id)
+
+    project_options = [
+        {'value': '', 'label_en': 'All projects', 'label_fa': 'همه پروژه‌ها'}
+    ]
+    project_options.extend(
+        {
+            'value': str(project.pk),
+            'label_en': project.name,
+            'label_fa': project.name,
+        }
+        for project in sorted(accessible_projects, key=lambda item: item.name.lower())
+    )
+
+    filter_config = {
+        'search': {
+            'param': 'search',
+            'label_en': 'Search',
+            'label_fa': 'جستجو',
+            'placeholder_en': 'Search databases…',
+            'placeholder_fa': 'جستجوی پایگاه‌ها…',
+            'value': search_query,
+        },
+        'selects': [
+            {
+                'param': 'project',
+                'label_en': 'Project',
+                'label_fa': 'پروژه',
+                'options': project_options,
+                'value': project_filter,
+            },
+            {
+                'param': 'status',
+                'label_en': 'Status',
+                'label_fa': 'وضعیت',
+                'options': [
+                    {'value': '', 'label_en': 'All statuses', 'label_fa': 'همه وضعیت‌ها'},
+                    {'value': 'active', 'label_en': 'Active', 'label_fa': 'فعال'},
+                    {'value': 'inactive', 'label_en': 'Inactive', 'label_fa': 'غیرفعال'},
+                ],
+                'value': status_filter,
+            },
+        ],
+        'reset_url': request.path,
+    }
+
+    return render(
+        request,
+        'database_list.html',
+        {
+            'entries': entries,
+            'filter_config': filter_config,
+        },
+    )
 
 
 @login_required

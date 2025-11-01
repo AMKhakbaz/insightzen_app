@@ -4,15 +4,24 @@
 
 {% block content %}
 <div class="card">
-    <h1>{% if lang == 'fa' %}فهرست اعضا{% else %}Members List{% endif %}</h1>
-    <p>
-        {% if lang == 'fa' %}
-            در اینجا می‌توانید اعضای پروژه‌های خود را مشاهده و مدیریت کنید.
-        {% else %}
-            Here you can view and manage members across your projects.
-        {% endif %}
-    </p>
-    <a href="{% url 'membership_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}افزودن کاربر به پروژه{% else %}Add User to Project{% endif %}</a>
+    <div class="table-toolbar">
+        <div class="table-toolbar-heading">
+            <h1>{% if lang == 'fa' %}فهرست اعضا{% else %}Members List{% endif %}</h1>
+            <p class="table-toolbar-subtext">
+                {% if lang == 'fa' %}
+                    در اینجا می‌توانید اعضای پروژه‌های خود را مشاهده و مدیریت کنید.
+                {% else %}
+                    Monitor who has access to each project and adjust panel permissions as needed.
+                {% endif %}
+            </p>
+        </div>
+        <div class="table-toolbar-actions">
+            <a href="{% url 'membership_add' %}" class="btn">{% if lang == 'fa' %}افزودن کاربر به پروژه{% else %}Add User to Project{% endif %}</a>
+        </div>
+    </div>
+
+    {% include 'components/table_filters.html' with filter_config=filter_config %}
+
     <div class="table-wrap">
     <table class="table">
         <thead>

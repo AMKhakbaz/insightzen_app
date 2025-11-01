@@ -3,15 +3,24 @@
 
 {% block content %}
 <div class="card">
-    <h1>{% if lang == 'fa' %}فهرست پروژه‌ها{% else %}Project List{% endif %}</h1>
-    <p>
-        {% if lang == 'fa' %}
-            اینجا می‌توانید پروژه‌های خود را ببینید و پروژه جدید ایجاد کنید.
-        {% else %}
-            Here you can view your projects and create new ones.
-        {% endif %}
-    </p>
-    <a href="{% url 'project_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}پروژه جدید{% else %}Add Project{% endif %}</a>
+    <div class="table-toolbar">
+        <div class="table-toolbar-heading">
+            <h1>{% if lang == 'fa' %}فهرست پروژه‌ها{% else %}Project List{% endif %}</h1>
+            <p class="table-toolbar-subtext">
+                {% if lang == 'fa' %}
+                    اینجا می‌توانید پروژه‌های خود را ببینید و پروژه جدید ایجاد کنید.
+                {% else %}
+                    Review the projects associated with your organisation and create new ones.
+                {% endif %}
+            </p>
+        </div>
+        <div class="table-toolbar-actions">
+            <a href="{% url 'project_add' %}" class="btn">{% if lang == 'fa' %}پروژه جدید{% else %}Add Project{% endif %}</a>
+        </div>
+    </div>
+
+    {% include 'components/table_filters.html' with filter_config=filter_config %}
+
     <div class="table-wrap">
     <table class="table">
         <thead>
