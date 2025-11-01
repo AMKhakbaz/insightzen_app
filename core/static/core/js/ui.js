@@ -1,39 +1,85 @@
 /*
  * UI interaction scripts for InsightZen.
  *
- * This module enhances the user interface with the following features:
- *   - Persistent sidebar collapse: the collapsed state is saved in
- *     ``localStorage`` so that user preferences are remembered across
- *     sessions.
- *   - Collection performance chart: renders a stacked bar chart using
- *     Chart.js, fetching data from a data endpoint defined in the
- *     ``data-url`` attribute of the canvas element.  The chart updates
- *     periodically and whenever filter inputs change.
- *
- * Note: this script requires Chart.js to be loaded on pages that
- * include a ``canvas#performance-chart`` element.  Chart.js is
- * delivered via a CDN in the base template.
+ * Enhancements provided:
+ *   - Responsive sidebar toggle with desktop collapse persistence and
+ *     mobile overlay behaviour.  The collapsed state (desktop) is saved in
+ *     ``localStorage`` so user preferences survive reloads.
+ *   - Accordion-style sidebar navigation where only one group can be open
+ *     at any time, mirroring KoboToolbox's navigation.
  */
 
-document.addEventListener('DOMContentLoaded', function () {
-  // Sidebar collapse persistence
+document.addEventListener('DOMContentLoaded', () => {
   const body = document.body;
   const menuToggle = document.getElementById('menu-toggle');
-  if (menuToggle) {
-    const collapsed = localStorage.getItem('sidebarCollapsed');
-    if (collapsed === 'true') {
-      body.classList.add('sidebar-collapsed');
+  const sidebar = document.getElementById('sidebar');
+  const collapsePreferenceKey = 'sidebarCollapsed';
+  const desktopMediaQuery = window.matchMedia('(min-width: 961px)');
+
+  const updateMenuToggleAria = () => {
+    if (!menuToggle) {
+      return;
     }
-    menuToggle.addEventListener('click', function () {
-      body.classList.toggle('sidebar-collapsed');
-      const isCollapsed = body.classList.contains('sidebar-collapsed');
-      localStorage.setItem('sidebarCollapsed', isCollapsed ? 'true' : 'false');
+    const isDesktop = desktopMediaQuery.matches;
+    if (isDesktop) {
+      const expanded = !body.classList.contains('sidebar-collapsed');
+      menuToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    } else {
+      const expanded = body.classList.contains('sidebar-open');
+      menuToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+  };
+
+  const applyCollapsedPreference = () => {
+    const shouldCollapse = localStorage.getItem(collapsePreferenceKey) === 'true';
+    if (desktopMediaQuery.matches) {
+      body.classList.toggle('sidebar-collapsed', shouldCollapse);
+      body.classList.remove('sidebar-open');
+    } else {
+      body.classList.remove('sidebar-collapsed');
+      body.classList.remove('sidebar-open');
+    }
+    updateMenuToggleAria();
+  };
+
+  applyCollapsedPreference();
+  desktopMediaQuery.addEventListener('change', applyCollapsedPreference);
+
+  if (menuToggle) {
+    menuToggle.setAttribute('aria-controls', 'sidebar');
+    menuToggle.addEventListener('click', () => {
+      if (desktopMediaQuery.matches) {
+        const nowCollapsed = body.classList.toggle('sidebar-collapsed');
+        localStorage.setItem(collapsePreferenceKey, nowCollapsed ? 'true' : 'false');
+      } else {
+        body.classList.toggle('sidebar-open');
+      }
+      updateMenuToggleAria();
     });
   }
-  // Only allow one sidebar group (details element) open at a time
+
+  if (sidebar) {
+    const navLinks = sidebar.querySelectorAll('nav a');
+    navLinks.forEach((link) => {
+      link.addEventListener('click', () => {
+        if (!desktopMediaQuery.matches && body.classList.contains('sidebar-open')) {
+          body.classList.remove('sidebar-open');
+          updateMenuToggleAria();
+        }
+      });
+    });
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && body.classList.contains('sidebar-open')) {
+      body.classList.remove('sidebar-open');
+      updateMenuToggleAria();
+    }
+  });
+
   const detailEls = document.querySelectorAll('.sidebar nav details');
   detailEls.forEach((det) => {
-    det.addEventListener('toggle', function () {
+    det.addEventListener('toggle', () => {
       if (det.open) {
         detailEls.forEach((other) => {
           if (other !== det) {
