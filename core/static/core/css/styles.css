@@ -196,14 +196,23 @@ body.rtl {
 .language-toggle a {
     color: var(--color-accent);
     margin: 0 0.5rem;
+    padding: 0.25rem 0.5rem;
     text-decoration: none;
     font-weight: 600;
-    transition: color 0.2s ease;
+    border-radius: 0.5rem;
+    transition: color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.language-toggle a:hover {
+.language-toggle a:hover,
+.language-toggle a:focus-visible {
     color: var(--color-accent-strong);
-    text-decoration: underline;
+    background: var(--color-accent-soft);
+    text-decoration: none;
+}
+
+.language-toggle a:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-accent-soft);
 }
 
 .user-info {
@@ -457,14 +466,22 @@ body.rtl {
     border-radius: 0.5rem;
     font-weight: 600;
     opacity: 0.85;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
     color: var(--color-accent);
     text-decoration: none;
 }
 
-.lang-btn:hover {
+.lang-btn:hover,
+.lang-btn:focus-visible {
     opacity: 1;
-    text-decoration: underline;
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+    text-decoration: none;
+}
+
+.lang-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-accent-soft);
 }
 
 .btn-outline {
