@@ -20,15 +20,55 @@ document.addEventListener('DOMContentLoaded', function () {
   const body = document.body;
   const menuToggle = document.getElementById('menu-toggle');
   if (menuToggle) {
-    const collapsed = localStorage.getItem('sidebarCollapsed');
-    if (collapsed === 'true') {
-      body.classList.add('sidebar-collapsed');
-    }
+    const STORAGE_KEY = 'sidebarCollapsed';
+    const mobileQuery = window.matchMedia('(max-width: 992px)');
+
+    const updateAriaExpanded = () => {
+      const expanded = !body.classList.contains('sidebar-collapsed');
+      menuToggle.setAttribute('aria-expanded', expanded.toString());
+      menuToggle.setAttribute('aria-controls', 'sidebar');
+    };
+
+    const applyInitialSidebarState = () => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored === 'true') {
+        body.classList.add('sidebar-collapsed');
+      } else if (stored === 'false') {
+        body.classList.remove('sidebar-collapsed');
+      } else if (mobileQuery.matches) {
+        body.classList.add('sidebar-collapsed');
+      } else {
+        body.classList.remove('sidebar-collapsed');
+      }
+      updateAriaExpanded();
+    };
+
+    applyInitialSidebarState();
+
     menuToggle.addEventListener('click', function () {
       body.classList.toggle('sidebar-collapsed');
       const isCollapsed = body.classList.contains('sidebar-collapsed');
-      localStorage.setItem('sidebarCollapsed', isCollapsed ? 'true' : 'false');
+      localStorage.setItem(STORAGE_KEY, isCollapsed ? 'true' : 'false');
+      updateAriaExpanded();
     });
+
+    const handleViewportChange = (event) => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored === null) {
+        if (event.matches) {
+          body.classList.add('sidebar-collapsed');
+        } else {
+          body.classList.remove('sidebar-collapsed');
+        }
+      }
+      updateAriaExpanded();
+    };
+
+    if (typeof mobileQuery.addEventListener === 'function') {
+      mobileQuery.addEventListener('change', handleViewportChange);
+    } else if (typeof mobileQuery.addListener === 'function') {
+      mobileQuery.addListener(handleViewportChange);
+    }
   }
   // Only allow one sidebar group (details element) open at a time
   const detailEls = document.querySelectorAll('.sidebar nav details');

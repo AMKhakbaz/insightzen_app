@@ -80,16 +80,26 @@ body.rtl {
 }
 
 .sidebar {
-    width: 240px;
+    width: 260px;
     background: var(--color-surface);
     border-right: 1px solid var(--color-border);
-    padding: calc(100vh / 6) 1rem 1.5rem;
+    padding: clamp(1.5rem, 5vh, 3rem) 1.25rem 2rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
     justify-content: flex-start;
     box-shadow: inset -1px 0 0 var(--color-border-soft);
-    transition: transform 0.3s ease, background-color 0.3s ease, width 0.3s ease;
+    transition: transform 0.3s ease, background-color 0.3s ease, width 0.3s ease, box-shadow 0.3s ease;
+}
+
+.sidebar nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
 }
 
 .sidebar .logo {
@@ -99,12 +109,6 @@ body.rtl {
 
 .sidebar .logo img {
     max-width: 140px;
-}
-
-.sidebar nav {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
 }
 
 .sidebar nav .menu-group {
@@ -198,6 +202,8 @@ body.rtl {
     display: flex;
     flex-direction: column;
     background: var(--color-bg-subtle);
+    min-width: 0;
+    width: 100%;
 }
 
 .header {
@@ -439,10 +445,6 @@ body.rtl {
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
-    .sidebar {
-        width: 200px;
-        padding: 1.5rem 1rem;
-    }
     .table th,
     .table td {
         padding: 0.4rem;
@@ -580,32 +582,108 @@ body.rtl {
     min-width: 100%;
 }
 
+/* Sidebar behaviour */
+@media (max-width: 992px) {
+    .wrapper {
+        position: relative;
+        min-height: 100dvh;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        height: 100dvh;
+        width: min(78vw, 280px);
+        max-width: 320px;
+        transform: translateX(-100%);
+        padding: clamp(3.75rem, 12vh, 5rem) 1.25rem 2rem;
+        box-shadow: 0 24px 48px rgba(5, 7, 10, 0.45);
+        z-index: 1000;
+        border-right: none;
+    }
+
+    .sidebar .logo {
+        margin-bottom: 1.5rem;
+    }
+
+    body:not(.sidebar-collapsed) .sidebar {
+        transform: translateX(0);
+    }
+
+    body.sidebar-collapsed .sidebar {
+        box-shadow: none;
+    }
+
+    body:not(.sidebar-collapsed) {
+        overflow: hidden;
+    }
+
+    body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background: rgba(5, 7, 10, 0.55);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+        pointer-events: none;
+        z-index: 900;
+    }
+
+    body:not(.sidebar-collapsed)::before {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    .main {
+        width: 100%;
+        min-height: 100dvh;
+        margin-left: 0;
+    }
+
+    .header {
+        position: sticky;
+        top: 0;
+        z-index: 1200;
+        background: var(--color-bg-subtle);
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .page-content {
+        padding-bottom: 2.5rem;
+    }
+}
+
 /* Sidebar collapsed state */
-body.sidebar-collapsed .sidebar {
-    width: 70px;
-    transform: none;
-    padding: 1.5rem 0.75rem;
-}
+@media (min-width: 993px) {
+    body.sidebar-collapsed .sidebar {
+        width: 72px;
+        transform: none;
+        padding: 1.5rem 0.75rem;
+    }
 
-body.sidebar-collapsed .sidebar nav .menu-label {
-    display: none;
-}
+    body.sidebar-collapsed .sidebar nav .menu-label {
+        display: none;
+    }
 
-body.sidebar-collapsed .sidebar nav .menu-summary,
-body.sidebar-collapsed .sidebar nav .menu-link {
-    justify-content: center;
-    gap: 0.5rem;
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-}
+    body.sidebar-collapsed .sidebar nav .menu-summary,
+    body.sidebar-collapsed .sidebar nav .menu-link {
+        justify-content: center;
+        gap: 0.5rem;
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
 
-body.sidebar-collapsed .sidebar nav .menu-summary {
-    padding-top: 0.75rem;
-    padding-bottom: 0.75rem;
-}
+    body.sidebar-collapsed .sidebar nav .menu-summary {
+        padding-top: 0.75rem;
+        padding-bottom: 0.75rem;
+    }
 
-body.sidebar-collapsed .sidebar nav .menu-caret {
-    display: none;
+    body.sidebar-collapsed .sidebar nav .menu-caret {
+        display: none;
+    }
 }
 
 /* Menu toggle button */
