@@ -123,7 +123,7 @@ def _resolve_url(name: str | None) -> str:
         return '#'
 
 
-@register.inclusion_tag('core/partials/sidebar_menu.html', takes_context=True)
+@register.inclusion_tag('partials/sidebar_menu.html', takes_context=True)
 def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
     """Render the sidebar navigation using a consistent menu schema."""
 
