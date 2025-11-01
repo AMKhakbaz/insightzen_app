@@ -1,273 +1,178 @@
 /*
- * Custom theme overrides for InsightZen.
+ * KoboToolbox-inspired theming tokens and component refinements.
  *
- * This file defines a set of CSS variables and overrides some of the
- * existing styles in ``styles.css`` to modernise the look and feel of
- * the application.  The palette takes inspiration from contemporary dark
- * interfaces such as chatgpt.com and openai.com.  Colours are defined
- * via CSS custom properties so that they can be reused across rules.
- * The sidebar collapse behaviour is implemented via a ``sidebar-collapsed``
- * class on the body.  When collapsed the sidebar shrinks and text
- * labels are hidden while icons remain visible.
+ * ``styles.css`` defines the structural rules for the dashboard shell.  This
+ * file supplies the concrete colour palette, shadows, and button styles that
+ * echo KoboToolbox's bright brand blues and deep slate sidebar.  Overriding the
+ * ``--theme-*`` variables keeps the base stylesheet reusable while allowing the
+ * look-and-feel to stay on brand.
  */
 
 :root {
-  /* Surface colours for a true dark scheme.  The background is almost pure
-     black to provide strong contrast with content.  Cards and the sidebar
-     use slightly lighter shades to create subtle layering. */
-  --bg-color: #000000;
-  /* Remove gradients: use a solid black background throughout.  A tiny
-     variance is retained for subtle depth but avoids visible banding. */
-  --bg-gradient-start: #000000;
-  --bg-gradient-end: #000000;
-  --card-bg: #0e1525;
-  --sidebar-bg: rgba(10, 15, 30, 0.85);
-  /* Accent colours are drawn from modern UI palettes: a cool cyan and a
-     soft violet.  Gradients are avoided except on the brand name. */
-  --primary: #58a6ff;
-  --primary-light: #79b7ff;
-  --secondary: #8b5cf6;
-  --secondary-light: #a07ef9;
-  /* Text colours */
-  --text-color: #d1d5da;
-  --muted-text: #6e7681;
-  --border-color: #30363d;
-  /* Additional colours for button backgrounds.  These are dark surfaces
-     that lighten slightly on hover. */
-  --btn-bg: #111827;
-  --btn-bg-hover: #1e293b;
-  --btn-outline-hover: #1e293b;
-  --btn-secondary-color: var(--secondary);
-  --btn-secondary-hover: var(--secondary-light);
+  --theme-color-bg: #f5f7fa;
+  --theme-color-surface: #ffffff;
+  --theme-color-surface-subtle: #eef3fb;
+  --theme-color-border: #d6e0ec;
+  --theme-color-border-strong: #c0ccda;
+  --theme-color-text: #1a2433;
+  --theme-color-text-muted: #5c6b7c;
+  --theme-color-text-inverse: #ffffff;
+
+  --theme-color-primary: #0096d7;
+  --theme-color-primary-strong: #006aa4;
+  --theme-color-primary-soft: rgba(0, 150, 215, 0.18);
+
+  --theme-color-sidebar-surface: #1a2b3a;
+  --theme-color-sidebar-border: #13202b;
+  --theme-color-sidebar-text: #f1f5f8;
+  --theme-color-sidebar-muted: rgba(241, 245, 248, 0.72);
+  --theme-color-sidebar-hover-bg: rgba(0, 150, 215, 0.18);
+  --theme-color-sidebar-hover-text: #ffffff;
+  --theme-color-sidebar-active-bg: rgba(0, 150, 215, 0.26);
+  --theme-color-sidebar-active-border: #55c0f0;
+
+  --theme-color-button-bg: #0096d7;
+  --theme-color-button-hover: #006aa4;
+  --theme-color-button-text: #ffffff;
+  --theme-color-button-outline: #0096d7;
+
+  --theme-color-header-surface: rgba(255, 255, 255, 0.92);
+
+  --theme-shadow-soft: 0 24px 48px -32px rgba(12, 49, 82, 0.35);
+  --theme-shadow-sidebar: 0 20px 44px -24px rgba(9, 26, 39, 0.65);
 }
 
-/* Global body background override */
 body {
-  /* Use a uniform black background without gradients for a clean dark look */
-  background: var(--bg-gradient-start) !important;
-  color: var(--text-color) !important;
+  background: var(--theme-color-bg);
+  color: var(--theme-color-text);
 }
 
-/* Header styling: transparent background and no bottom border.  The
-   gradient background of the page flows behind the header; actions and
-   logo are laid out within the header container. */
-.header {
-  background: transparent !important;
-  border-bottom: none !important;
-}
-
-/* Sidebar styling */
 .sidebar {
-  background: var(--sidebar-bg) !important;
-  border-right: 1px solid var(--border-color);
-  transition: width 0.3s ease;
-  display: flex;
-  flex-direction: column;
-  /* Position the navigation groups toward the top of the sidebar.  Padding-top
-     uses one sixth of the viewport height to align the menu approximately
-     1/6 down from the top, as requested.  The menu no longer vertically
-     centres its content. */
-  padding-top: calc(100vh / 6);
-  justify-content: flex-start;
+  background: var(--theme-color-sidebar-surface);
 }
 
-/* Sidebar collapsed state */
-body.sidebar-collapsed .sidebar {
-  width: 70px !important;
+.sidebar nav summary:hover {
+  background: var(--theme-color-sidebar-hover-bg);
+  color: var(--theme-color-sidebar-hover-text);
 }
 
-/* Hide text labels when sidebar is collapsed */
-body.sidebar-collapsed .sidebar nav span.label {
-  display: none;
+.sidebar nav a:hover,
+.sidebar nav a:focus-visible {
+  background: var(--theme-color-sidebar-hover-bg);
+  color: var(--theme-color-sidebar-hover-text);
+  border-inline-start: 2px solid var(--theme-color-sidebar-active-border);
 }
 
-/* Centre icons when collapsed */
-body.sidebar-collapsed .sidebar nav a {
-  justify-content: center;
-}
-
-/* Navigation links with icons */
-.sidebar nav a {
-  display: flex;
-  align-items: center;
-    gap: 0.75rem;
-  color: var(--text-color);
-  padding: 0.45rem 1rem;
-  border-left: 2px solid transparent;
-  text-decoration: none;
-}
-
-/* Ensure consistent spacing between icons and labels.  Some anchors
-   include inline <svg> elements while others use <i data-feather>.  A
-   small margin on these elements guarantees separation regardless of
-   flex ``gap`` behaviour in older browsers. */
-.sidebar nav a svg.icon,
-.sidebar nav a i {
-  margin-right: 0.5rem;
-}
-
-.sidebar nav a i {
-  min-width: 20px;
-  text-align: center;
-}
-
-/* Ensure summary elements (group headers) align icons and labels horizontally
-   with consistent spacing.  Without this, icons and text can overlap or
-   appear misaligned when using inline <svg> or <i> elements. */
-.sidebar nav summary {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  /* Remove extra left padding specified in the core styles; the custom
-     indicator before the summary will provide separation. */
-  padding-left: 1.5rem !important;
-}
-
-/* Navigation hover and active states */
-.sidebar nav a:hover {
-  border-left-color: var(--primary);
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.sidebar nav a.disabled {
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-/* Highlight open summaries */
 .sidebar nav details[open] summary {
-  color: var(--primary) !important;
-  background: rgba(16, 163, 127, 0.18) !important;
+  background: var(--theme-color-sidebar-active-bg);
+  color: var(--theme-color-sidebar-hover-text);
 }
 
-/* Summary indicator colours */
-.sidebar nav summary::before {
-  color: var(--primary);
+.header {
+  background: var(--theme-color-header-surface);
 }
 
-/* Card override */
-.card {
-  background: var(--card-bg) !important;
-  border: 1px solid var(--border-color) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8) !important;
-  border-radius: 12px !important;
+.brand-name {
+  color: var(--theme-color-text);
 }
 
-/* Card headings */
-.card h1, .card h2, .card h3 {
-  color: var(--primary) !important;
+.top-actions .lang-btn {
+  color: var(--theme-color-primary);
 }
 
-/* Buttons override: flat colours with subtle hover effects.  Buttons have
-   modest padding and rounded corners.  Primary buttons use the primary
-   colour; secondary buttons use the secondary colour.  Outline buttons
-   invert their background on hover. */
+.top-actions .lang-btn:hover,
+.top-actions .lang-btn:focus-visible {
+  background: var(--theme-color-primary-soft);
+  color: var(--theme-color-primary-strong);
+}
+
 .btn {
-  background: var(--btn-bg) !important;
-  color: var(--text-color) !important;
-  border: 1px solid var(--border-color) !important;
-  padding: 0.45rem 0.9rem !important;
-  border-radius: 6px !important;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  background: var(--theme-color-button-bg);
+  color: var(--theme-color-button-text);
+  border-color: var(--theme-color-button-bg);
 }
-.btn:hover {
-  background: var(--btn-bg-hover) !important;
-  border-color: var(--primary) !important;
+
+.btn:hover,
+.btn:focus-visible {
+  background: var(--theme-color-button-hover);
+  border-color: var(--theme-color-button-hover);
+  color: var(--theme-color-button-text);
+  box-shadow: 0 0 0 3px rgba(0, 150, 215, 0.2);
 }
+
 .btn-outline {
-  background: transparent !important;
-  border: 1px solid var(--border-color) !important;
-  color: var(--text-color) !important;
-  padding: 0.45rem 0.9rem !important;
-  border-radius: 6px !important;
-  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
-}
-.btn-outline:hover {
-  background: var(--btn-outline-hover) !important;
-  border-color: var(--primary) !important;
-  color: var(--text-color) !important;
-}
-.btn-secondary {
-  background: var(--btn-bg) !important;
-  color: var(--btn-secondary-color) !important;
-  border: 1px solid var(--btn-secondary-color) !important;
-  padding: 0.45rem 0.9rem !important;
-  border-radius: 6px !important;
-  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
-}
-.btn-secondary:hover {
-  background: var(--btn-bg-hover) !important;
-  border-color: var(--btn-secondary-hover) !important;
-  color: var(--btn-secondary-hover) !important;
+  background: transparent;
+  color: var(--theme-color-text);
+  border-color: var(--theme-color-button-outline);
 }
 
-/* Table header colours */
-.table th {
-  background: var(--card-bg) !important;
-  color: var(--primary) !important;
-  border-bottom: 1px solid var(--border-color) !important;
+.btn-outline:hover,
+.btn-outline:focus-visible {
+  background: var(--theme-color-button-outline);
+  color: var(--theme-color-button-text);
+  border-color: var(--theme-color-button-outline);
 }
 
-.table tr:nth-child(even) {
-  background: rgba(21, 29, 44, 0.6) !important;
+.page-content {
+  background: transparent;
 }
 
-.table tr:hover {
-  background: rgba(21, 29, 44, 0.9) !important;
+.card {
+  border-color: var(--theme-color-border);
 }
 
-/* Wrap tables to allow horizontal scrolling when there are many columns.
-   Only the table element scrolls horizontally, leaving the rest of the
-   page fixed.  The parent container should have class ``table-wrap`` in
-   templates. */
-.table-wrap {
-  overflow-x: auto;
-  width: 100%;
+.alert {
+  border-color: var(--theme-color-border);
 }
 
-/* Unify the appearance of form controls across the application.  Inputs
-   and selects share the same dark background and border colours and
-   provide a clear focus state. */
-.form-control,
-.form-select {
-  background: var(--btn-bg) !important;
-  color: var(--text-color) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: 6px !important;
-  padding: 0.4rem 0.6rem !important;
-}
-.form-control:focus,
-.form-select:focus {
-  outline: none !important;
-  border-color: var(--primary) !important;
-}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --theme-color-bg: #0f1823;
+    --theme-color-surface: #13212f;
+    --theme-color-surface-subtle: #101b28;
+    --theme-color-border: #233548;
+    --theme-color-border-strong: #2c465f;
+    --theme-color-text: #e9eff6;
+    --theme-color-text-muted: #a3b3c5;
+    --theme-color-text-inverse: #0f1823;
 
-/* Alerts override */
-.alert-success {
-  background: #064e3b !important;
-  color: #a7f3d0 !important;
-}
-.alert-warning {
-  background: #92400e !important;
-  color: #fde68a !important;
-}
-.alert-error, .alert-danger {
-  background: #7f1d1d !important;
-  color: #fecaca !important;
-}
+    --theme-color-primary: #4fb9ff;
+    --theme-color-primary-strong: #1990d4;
+    --theme-color-primary-soft: rgba(79, 185, 255, 0.22);
 
-/* Collapse icon rotation (using transition) */
-html:not([dir='rtl']) .sidebar nav summary::before {
-  transition: transform 0.2s ease;
-}
-html:not([dir='rtl']) .sidebar nav details[open] > summary::before {
-  transform: rotate(45deg);
-}
+    --theme-color-sidebar-surface: #0f1823;
+    --theme-color-sidebar-border: #0a1119;
+    --theme-color-sidebar-text: #e9eff6;
+    --theme-color-sidebar-muted: rgba(233, 239, 246, 0.64);
+    --theme-color-sidebar-hover-bg: rgba(79, 185, 255, 0.18);
+    --theme-color-sidebar-hover-text: #ffffff;
+    --theme-color-sidebar-active-bg: rgba(79, 185, 255, 0.24);
+    --theme-color-sidebar-active-border: #4fb9ff;
 
-/* Reduce motion preference */
-@media (prefers-reduced-motion: reduce) {
-  * {
-    transition: none !important;
-    animation-duration: 0.001ms !important;
+    --theme-color-button-bg: #4fb9ff;
+    --theme-color-button-hover: #1990d4;
+    --theme-color-button-text: #0f1823;
+    --theme-color-button-outline: #4fb9ff;
+
+    --theme-color-header-surface: rgba(19, 33, 47, 0.92);
+
+    --theme-shadow-soft: 0 24px 48px -28px rgba(2, 11, 20, 0.65);
+    --theme-shadow-sidebar: 0 22px 48px -28px rgba(2, 9, 18, 0.8);
+  }
+
+  body {
+    background: var(--theme-color-bg);
+    color: var(--theme-color-text);
+  }
+
+  .header {
+    background: var(--theme-color-header-surface);
+    border-bottom-color: var(--theme-color-border);
+  }
+
+  .menu-toggle {
+    border-color: var(--theme-color-border);
+    background: var(--theme-color-surface);
+    color: var(--theme-color-text);
   }
 }
