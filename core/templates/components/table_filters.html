@@ -1,5 +1,5 @@
 {% if filter_config %}
-{% with lang_code=lang|default:LANGUAGE_CODE|default:'en' %}
+{% with lang_code=lang|default:request.LANGUAGE_CODE|default:'en' %}
 {% with lang_prefix=lang_code|lower|slice:":2" %}
 <div class="table-filters">
     <form method="get" class="filters-form" data-filter-form data-filter-instant="{{ filter_config.instant|default:True|yesno:'true,false' }}"{% if filter_config.delay %} data-filter-delay="{{ filter_config.delay }}"{% endif %}>
