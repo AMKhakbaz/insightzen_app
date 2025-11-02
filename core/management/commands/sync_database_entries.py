@@ -1,47 +1,34 @@
-"""
-Synchronise external database entries into the InsightZen PostgreSQL database.
+"""Refresh the JSON cache for external database entries.
 
 This management command iterates over ``DatabaseEntry`` records and
-invokes the generic KoboToolbox ETL routine to import new submissions
-into PostgreSQL tables.  It uses the credentials stored on each
-``DatabaseEntry`` to construct a ``FormSpec`` and executes a single
-synchronisation run via ``surveyzen_etl_generic.run_once``.
+downloads their Kobo submissions into the JSON cache maintained by
+``core.services.database_cache``.  After each refresh the ``status``,
+``last_sync`` and ``last_error`` fields are updated so the management
+UI reflects the outcome of the synchronisation.
 
-Environment variables PG_HOST, PG_PORT, PG_DBNAME, PG_USER and
-PG_PASSWORD are temporarily set based on the Django database
-configuration to ensure the ETL writes into the InsightZen database.
-After each entry is processed its ``status``, ``last_sync`` and
-``last_error`` fields are updated accordingly.
+Usage::
 
-Usage:
     python manage.py sync_database_entries
 
-You may schedule this command via cron or Celery beat to run at your
-desired interval (e.g. every 10 minutes) to keep external data tables
-up to date.  If you wish to synchronise only a specific entry, pass
-the ``--entry`` option with the entry's primary key.
+You may schedule this command via cron or a task runner to execute
+periodically.  The ``--entry`` option limits the run to a single
+``DatabaseEntry`` primary key, while ``--loop`` keeps the command
+running, sleeping ten minutes between iterations.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
-from django.conf import settings
 
 from core.models import DatabaseEntry
-
-try:
-    # Import the ETL helper module which exposes run_once and FormSpec
-    from surveyzen_etl_generic import run_once, FormSpec, sanitize_identifier
-except Exception as e:  # pragma: no cover
-    raise ImportError(f"Failed to import ETL module: {e}")
+from core.services.database_cache import DatabaseCacheError, refresh_entry_cache
 
 
 class Command(BaseCommand):
-    help = "Synchronise external database entries into the InsightZen database."
+    help = "Refresh cached Kobo payloads for DatabaseEntry records."
 
     def add_arguments(self, parser) -> None:
         parser.add_argument(
@@ -67,31 +54,24 @@ class Command(BaseCommand):
             else:
                 entries = DatabaseEntry.objects.all()
 
-            # Read DB config from Django settings and set PG_* environment variables
-            db_conf = settings.DATABASES.get('default', {})
-            os.environ['PG_HOST'] = db_conf.get('HOST', '') or '127.0.0.1'
-            os.environ['PG_PORT'] = str(db_conf.get('PORT', 5432))
-            os.environ['PG_DBNAME'] = db_conf.get('NAME', '')
-            os.environ['PG_USER'] = db_conf.get('USER', '')
-            os.environ['PG_PASSWORD'] = db_conf.get('PASSWORD', '') or db_conf.get('PGPASSWORD', '') or ''
-
             for entry in entries:
-                self.stdout.write(f"Synchronising entry {entry.pk}: {entry.db_name} (project {entry.project_id})...")
-                # Build table name from asset_id (sanitise)
-                table_name = sanitize_identifier(entry.asset_id)
-                form = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, main_table=table_name)
+                self.stdout.write(
+                    f"Refreshing cache for entry {entry.pk}: {entry.db_name} (project {entry.project_id})..."
+                )
                 try:
-                    inserted_main, inserted_rep = run_once(form)
+                    result = refresh_entry_cache(entry)
                     entry.status = True
                     entry.last_error = ''
-                    self.stdout.write(f"Inserted main={inserted_main}, repeats={inserted_rep} for entry {entry.pk}")
-                except Exception as e:  # pragma: no cover
+                    self.stdout.write(
+                        f"Cached {result.total} submissions (added {result.added}, updated {result.updated})."
+                    )
+                except DatabaseCacheError as exc:
                     entry.status = False
-                    entry.last_error = str(e)
-                    self.stderr.write(f"Error synchronising entry {entry.pk}: {e}")
+                    entry.last_error = str(exc)
+                    self.stderr.write(f"Error synchronising entry {entry.pk}: {exc}")
                 entry.last_sync = timezone.now()
-                entry.save()
-            self.stdout.write(self.style.SUCCESS('Database synchronisation complete.'))
+                entry.save(update_fields=['status', 'last_error', 'last_sync'])
+            self.stdout.write(self.style.SUCCESS('Database cache refresh complete.'))
 
         if loop:
             import time

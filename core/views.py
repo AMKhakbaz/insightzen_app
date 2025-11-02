@@ -32,18 +32,13 @@ import psycopg2
 from psycopg2 import sql  # type: ignore
 from django.conf import settings
 
-# Import ETL helpers.  These are used to perform an immediate data sync
-# after a new database entry is created or updated.  The module is
-# optional; if it cannot be imported (e.g. missing), the sync step
-# will simply be skipped.  See ``sync_database_entries`` management
-# command for scheduled synchronisation.
-import os  # needed for setting PG_* environment variables
-try:
-    from surveyzen_etl_generic import run_once, FormSpec, sanitize_identifier  # type: ignore
-except Exception:
-    run_once = None  # type: ignore
-    FormSpec = None  # type: ignore
-    sanitize_identifier = None  # type: ignore
+from core.services.database_cache import (
+    DatabaseCacheError,
+    delete_entry_cache,
+    infer_columns,
+    load_entry_snapshot,
+    refresh_entry_cache,
+)
 try:
     # Optional import for Excel export; if the library is missing the export view
     # will inform the user appropriately.
@@ -1216,35 +1211,26 @@ def database_add(request: HttpRequest) -> HttpResponse:
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
         if form.is_valid():
             entry: DatabaseEntry = form.save(commit=False)
-            # Default status to False; will be updated by background ETL.
-            # Also clear last_sync and last_error so they reflect the state of a new entry.
             entry.status = False
             entry.last_sync = None
             entry.last_error = ''
             entry.save()
-            # Immediately attempt a single ETL sync using the supplied credentials.
-            # This gives feedback to the user without waiting for the scheduled sync.
-            if run_once and FormSpec and sanitize_identifier:
-                try:
-                    # Set PG_* env vars from Django settings so the ETL writes into our DB
-                    db_conf = settings.DATABASES.get('default', {})
-                    os.environ['PG_HOST'] = db_conf.get('HOST', '') or '127.0.0.1'
-                    os.environ['PG_PORT'] = str(db_conf.get('PORT', 5432))
-                    os.environ['PG_DBNAME'] = db_conf.get('NAME', '')
-                    os.environ['PG_USER'] = db_conf.get('USER', '')
-                    os.environ['PG_PASSWORD'] = db_conf.get('PASSWORD', '') or db_conf.get('PGPASSWORD', '') or ''
-                    # Build a safe table name and run one sync
-                    table_name = sanitize_identifier(entry.asset_id)
-                    form_spec = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, main_table=table_name)
-                    inserted_main, inserted_rep = run_once(form_spec)
-                    entry.status = True
-                    entry.last_error = ''
-                except Exception as e:
-                    entry.status = False
-                    entry.last_error = str(e)
-                entry.last_sync = timezone.now()
-                entry.save()
-            messages.success(request, 'Database entry created successfully.')
+            sync_message = ''
+            try:
+                result = refresh_entry_cache(entry)
+                entry.status = True
+                entry.last_error = ''
+                sync_message = f" Cached {result.total} records."
+            except DatabaseCacheError as exc:
+                entry.status = False
+                entry.last_error = str(exc)
+                messages.warning(request, f'Initial sync failed: {exc}')
+            entry.last_sync = timezone.now()
+            entry.save(update_fields=['status', 'last_error', 'last_sync'])
+            success_message = 'Database entry created successfully.'
+            if sync_message:
+                success_message += sync_message
+            messages.success(request, success_message)
             # Trigger background sync here if desired (e.g. Celery, management command)
             log_activity(user, 'Added database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
             return redirect('database_list')
@@ -1277,26 +1263,22 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
         if form.is_valid():
             entry = form.save()
-            # Immediately attempt to re-synchronise this entry after edit.
-            if run_once and FormSpec and sanitize_identifier:
-                try:
-                    db_conf = settings.DATABASES.get('default', {})
-                    os.environ['PG_HOST'] = db_conf.get('HOST', '') or '127.0.0.1'
-                    os.environ['PG_PORT'] = str(db_conf.get('PORT', 5432))
-                    os.environ['PG_DBNAME'] = db_conf.get('NAME', '')
-                    os.environ['PG_USER'] = db_conf.get('USER', '')
-                    os.environ['PG_PASSWORD'] = db_conf.get('PASSWORD', '') or db_conf.get('PGPASSWORD', '') or ''
-                    table_name = sanitize_identifier(entry.asset_id)
-                    form_spec = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, main_table=table_name)
-                    inserted_main, inserted_rep = run_once(form_spec)
-                    entry.status = True
-                    entry.last_error = ''
-                except Exception as e:
-                    entry.status = False
-                    entry.last_error = str(e)
-                entry.last_sync = timezone.now()
-                entry.save()
-            messages.success(request, 'Database entry updated successfully.')
+            sync_message = ''
+            try:
+                result = refresh_entry_cache(entry)
+                entry.status = True
+                entry.last_error = ''
+                sync_message = f" Cached {result.total} records."
+            except DatabaseCacheError as exc:
+                entry.status = False
+                entry.last_error = str(exc)
+                messages.warning(request, f'Sync failed after update: {exc}')
+            entry.last_sync = timezone.now()
+            entry.save(update_fields=['status', 'last_error', 'last_sync'])
+            success_message = 'Database entry updated successfully.'
+            if sync_message:
+                success_message += sync_message
+            messages.success(request, success_message)
             log_activity(user, 'Edited database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
             return redirect('database_list')
     else:
@@ -1343,6 +1325,7 @@ def database_delete(request: HttpRequest, pk: int) -> HttpResponse:
     except Exception:
         # Fail silently; deletion of the Django record should still proceed
         pass
+    delete_entry_cache(entry)
     entry.delete()
     messages.success(request, 'Database entry deleted successfully.')
     log_activity(user, 'Deleted database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
@@ -1351,13 +1334,12 @@ def database_delete(request: HttpRequest, pk: int) -> HttpResponse:
 
 @login_required
 def database_view(request: HttpRequest, pk: int) -> HttpResponse:
-    """View data from the table synchronised for a database entry.
+    """Display cached Kobo submissions for a database entry.
 
-    This view queries the first 100 rows of the table corresponding to
-    the given ``DatabaseEntry`` (named after its asset_id) and
-    displays them in a simple table.  Only users with the
-    ``database_management`` permission for the associated project may
-    view the data.
+    This view reads the JSON snapshot produced during synchronisation for
+    the given ``DatabaseEntry`` and renders the first 100 submissions.
+    Only users with the ``database_management`` permission for the
+    associated project may view the cached data.
     """
     user = request.user
     if not _user_has_panel(user, 'database_management'):
@@ -1368,47 +1350,26 @@ def database_view(request: HttpRequest, pk: int) -> HttpResponse:
     if entry.project not in projects:
         messages.error(request, 'You do not have permission to view this database.')
         return redirect('database_list')
-    columns: List[str] = []
-    rows: List[Tuple[Any, ...]] = []
-    # Use the ETL sanitiser if available to match the table name created
-    # during import. Fallback to the local sanitiser otherwise.
-    if sanitize_identifier:
-        table_name = sanitize_identifier(entry.asset_id)  # type: ignore
-    else:
-        table_name = _sanitize_identifier(entry.asset_id)
-    try:
-        db_conf = settings.DATABASES.get('default', {})
-        conn = psycopg2.connect(
-            host=db_conf.get('HOST', '127.0.0.1'),
-            port=db_conf.get('PORT', 5432),
-            dbname=db_conf.get('NAME'),
-            user=db_conf.get('USER'),
-            password=db_conf.get('PASSWORD'),
-        )
-        with conn.cursor() as cur:
-            # Fetch column names
-            cur.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = %s
-                ORDER BY ordinal_position
-                """,
-                (table_name,),
-            )
-            columns = [r[0] for r in cur.fetchall()]
-            # Fetch first 100 rows
-            if columns:
-                cur.execute(sql.SQL("SELECT * FROM {} LIMIT 100;").format(sql.Identifier(table_name)))
-                rows = cur.fetchall()
-        conn.close()
-    except Exception:
-        # leave columns/rows empty on failure
-        columns = []
-        rows = []
+    snapshot = load_entry_snapshot(entry)
+    records = snapshot.records[:100]
+    columns = infer_columns(records)
+    rows: List[List[Any]] = []
+    for record in records:
+        row: List[Any] = []
+        for column in columns:
+            value = record.get(column)
+            if isinstance(value, (dict, list)):
+                row.append(json.dumps(value, ensure_ascii=False))
+            elif value is None:
+                row.append('')
+            else:
+                row.append(value)
+        rows.append(row)
     return render(request, 'database_view.html', {
         'entry': entry,
         'columns': columns,
         'rows': rows,
+        'snapshot': snapshot,
     })
 
 
@@ -1461,11 +1422,7 @@ def qc_edit(request: HttpRequest) -> HttpResponse:
         except DatabaseEntry.DoesNotExist:
             messages.error(request, 'Database entry not found.')
             return redirect('qc_edit')
-        # Use ETL sanitiser if available for consistent table naming
-        if sanitize_identifier:
-            table_name = sanitize_identifier(selected_entry.asset_id)  # type: ignore
-        else:
-            table_name = _sanitize_identifier(selected_entry.asset_id)
+        table_name = _sanitize_identifier(selected_entry.asset_id)
         updates: Dict[str, Any] = {}
         for key, val in request.POST.items():
             if key.startswith('col__'):
@@ -1517,11 +1474,7 @@ def qc_edit(request: HttpRequest) -> HttpResponse:
             selected_entry = None
     # Fetch data
     if selected_project and selected_entry:
-        # Compute table name using ETL sanitiser if available
-        if sanitize_identifier:
-            table_name = sanitize_identifier(selected_entry.asset_id)  # type: ignore
-        else:
-            table_name = _sanitize_identifier(selected_entry.asset_id)
+        table_name = _sanitize_identifier(selected_entry.asset_id)
         try:
             db_conf = settings.DATABASES.get('default', {})
             conn = psycopg2.connect(

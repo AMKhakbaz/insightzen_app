@@ -134,3 +134,27 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Where Django should redirect after successful login
 LOGIN_REDIRECT_URL = 'home'
 LOGIN_URL = 'login'
+
+
+# ---------------------------------------------------------------------------
+# External data synchronisation settings
+# ---------------------------------------------------------------------------
+
+# Base URL for KoboToolbox / SurveyZen API requests.  The environment variable
+# ``KOBO_BASE_URL`` takes precedence, falling back to the legacy ``HOST_BASE``
+# flag used by the standalone ETL script so existing deployments continue to
+# work without change.
+KOBO_BASE_URL = os.getenv('KOBO_BASE_URL', os.getenv('HOST_BASE', 'https://panel.surveyzen.ir'))
+KOBO_API_BASE = KOBO_BASE_URL.rstrip('/') + '/api/v2'
+
+# Request timeout (seconds) and TLS configuration when contacting the Kobo
+# API.  These mirror the ETL module defaults so that environments configured
+# via environment variables retain the same behaviour.
+KOBO_HTTP_TIMEOUT = int(os.getenv('KOBO_HTTP_TIMEOUT', os.getenv('HTTP_TIMEOUT_SEC', '60')))
+KOBO_VERIFY_TLS = os.getenv('KOBO_VERIFY_TLS', os.getenv('VERIFY_TLS', 'True')).lower() not in ('false', '0', 'no')
+KOBO_TLS_CERT = os.getenv('KOBO_TLS_CERT', os.getenv('CUSTOM_CA') or None)
+
+# Location on disk where raw Kobo payloads for ``DatabaseEntry`` objects are
+# cached.  Defaults to ``media/database_cache`` relative to the project base
+# directory but can be overridden via ``DATABASE_CACHE_ROOT``.
+DATABASE_CACHE_ROOT = Path(os.getenv('DATABASE_CACHE_ROOT', os.path.join(BASE_DIR, 'media', 'database_cache')))

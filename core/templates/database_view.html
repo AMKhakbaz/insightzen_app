@@ -10,6 +10,15 @@
             View Data for {{ entry.db_name }}
         {% endif %}
     </h1>
+    {% if snapshot.synced_at %}
+        <p style="color:var(--color-text-muted);font-size:0.875rem;margin-bottom:1.5rem;">
+            {% if lang == 'fa' %}
+                آخرین همگام‌سازی: {{ snapshot.synced_at }} · {{ snapshot.stats.total }} رکورد
+            {% else %}
+                Last synced: {{ snapshot.synced_at }} · {{ snapshot.stats.total }} records
+            {% endif %}
+        </p>
+    {% endif %}
     <div class="table-responsive">
         <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}داده‌ای با این فیلتر یافت نشد.{% else %}No records match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
