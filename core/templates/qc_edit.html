@@ -36,11 +36,26 @@
     <!-- Editable data table -->
     {% if selected_entry and table_columns %}
         <div class="table-responsive" style="max-height:600px;overflow:auto;">
-            <table class="table">
+            <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}سطر مطابق فیلتر یافت نشد.{% else %}No rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
                 <thead>
                     <tr>
-                        {% for col in table_columns %}<th>{{ col }}</th>{% endfor %}
-                        <th>{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+                        {% for col in table_columns %}
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="{{ forloop.counter0 }}" data-sort-type="text">
+                                    <span>{{ col }}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                        {% endfor %}
+                        <th scope="col">{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+                    </tr>
+                    <tr class="table-filter-row">
+                        {% for col in table_columns %}
+                            <th>
+                                <input type="text" data-filter-column="{{ forloop.counter0 }}" placeholder="{% if lang == 'fa' %}فیلتر {{ col }}{% else %}Filter {{ col }}{% endif %}" autocomplete="off">
+                            </th>
+                        {% endfor %}
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>

@@ -26,8 +26,16 @@ document.addEventListener('DOMContentLoaded', function () {
   let donutChart = null;
   let lineChart = null;
   let topData = [];
-  let sortKey = 'total';
-  let sortAsc = false;
+  let topTableInstance = null;
+  let needsTableRefresh = false;
+
+  topTable.addEventListener('interactive-table:init', (event) => {
+    topTableInstance = event.detail.instance;
+    if (needsTableRefresh) {
+      topTableInstance.refresh();
+      needsTableRefresh = false;
+    }
+  });
 
   // Generate a palette of colours for donut segments
   function getPalette(n) {
@@ -256,47 +264,40 @@ document.addEventListener('DOMContentLoaded', function () {
   function renderTopTable() {
     const tbody = topTable.querySelector('tbody');
     tbody.innerHTML = '';
-    // Sort by current sortKey and sortAsc
-    const sorted = topData.slice().sort((a, b) => {
-      if (sortKey === 'rate') {
-        const diff = a.rate - b.rate;
-        return sortAsc ? diff : -diff;
+    if (!topData.length) {
+      if (topTableInstance) {
+        topTableInstance.refresh();
+      } else {
+        needsTableRefresh = true;
       }
-      if (sortKey === 'user') {
-        const cmp = a.user.localeCompare(b.user);
-        return sortAsc ? cmp : -cmp;
-      }
-      // numeric sorts for total and success
-      const diff = a[sortKey] - b[sortKey];
-      return sortAsc ? diff : -diff;
-    });
-    const topN = sorted.slice(0, 5);
-    topN.forEach((row) => {
+      return;
+    }
+    const sorted = topData.slice().sort((a, b) => b.total - a.total);
+    sorted.forEach((row) => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${row.user}</td>
-        <td>${row.total}</td>
-        <td>${row.success}</td>
-        <td>${row.rate}%</td>
-      `;
+      const userCell = document.createElement('td');
+      userCell.textContent = row.user;
+      const totalCell = document.createElement('td');
+      totalCell.textContent = row.total;
+      totalCell.dataset.sortValue = row.total;
+      const successCell = document.createElement('td');
+      successCell.textContent = row.success;
+      successCell.dataset.sortValue = row.success;
+      const rateCell = document.createElement('td');
+      rateCell.textContent = `${row.rate}%`;
+      rateCell.dataset.sortValue = row.rate;
+      tr.appendChild(userCell);
+      tr.appendChild(totalCell);
+      tr.appendChild(successCell);
+      tr.appendChild(rateCell);
       tbody.appendChild(tr);
     });
+    if (topTableInstance) {
+      topTableInstance.refresh();
+    } else {
+      needsTableRefresh = true;
+    }
   }
-
-  // Attach sort handlers to table headers
-  topTable.querySelectorAll('th[data-sort-key]').forEach((th) => {
-    th.style.cursor = 'pointer';
-    th.addEventListener('click', function () {
-      const key = th.getAttribute('data-sort-key');
-      if (sortKey === key) {
-        sortAsc = !sortAsc;
-      } else {
-        sortKey = key;
-        sortAsc = false;
-      }
-      renderTopTable();
-    });
-  });
 
   // Fetch data initially and whenever filters change
   fetchAndRender();

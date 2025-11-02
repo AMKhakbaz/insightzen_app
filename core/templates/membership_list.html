@@ -14,16 +14,55 @@
     </p>
     <a href="{% url 'membership_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}افزودن کاربر به پروژه{% else %}Add User to Project{% endif %}</a>
     <div class="table-responsive">
-        <table class="table">
+        <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}هیچ عضوی مطابق فیلتر نیست.{% else %}No members match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
-                    <th>{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}</th>
-                    <th>{% if lang == 'fa' %}نام کامل{% else %}Full Name{% endif %}</th>
-                    <th>{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}</th>
-                    <th>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</th>
-                    <th>{% if lang == 'fa' %}تاریخ شروع{% else %}Start Work{% endif %}</th>
-                    <th>{% if lang == 'fa' %}پنل‌ها{% else %}Panels{% endif %}</th>
-                    <th>{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="1" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}نام کامل{% else %}Full Name{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="2" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="3" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="4" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}تاریخ شروع{% else %}Start Work{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="5" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}پنل‌ها{% else %}Panels{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+                </tr>
+                <tr class="table-filter-row">
+                    <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}نام{% else %}Name{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="2" placeholder="{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="3" placeholder="{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="4" placeholder="{% if lang == 'fa' %}تاریخ{% else %}Start{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="5" placeholder="{% if lang == 'fa' %}پنل{% else %}Panels{% endif %}" autocomplete="off"></th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -52,7 +91,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="40">{% if lang == 'fa' %}عضوی وجود ندارد{% else %}No members yet{% endif %}</td></tr>
+                <tr data-empty-row><td colspan="40">{% if lang == 'fa' %}عضوی وجود ندارد{% else %}No members yet{% endif %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>

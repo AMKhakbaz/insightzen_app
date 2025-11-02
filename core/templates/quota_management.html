@@ -45,11 +45,29 @@
 <div class="card" style="max-width:1100px;margin:2rem auto;">
     <h2 style="margin-bottom:1rem;">{% if lang == 'fa' %}جدول سهمیه برای{% else %}Quota Table for{% endif %} {{ selected_project.name }}</h2>
     <div class="table-responsive">
-        <table class="table">
+        <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}سهمیه‌ای مطابق فیلتر نیست.{% else %}No quota rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
-                    <th>{% if lang == 'fa' %}رنج سنی / شهر{% else %}Age Range / City{% endif %}</th>
-                    {% for city in city_headers %}<th>{{ city }}</th>{% endfor %}
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}رنج سنی / شهر{% else %}Age Range / City{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    {% for city in city_headers %}
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="{{ forloop.counter }}" data-sort-type="number">
+                                <span>{{ city }}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                    {% endfor %}
+                </tr>
+                <tr class="table-filter-row">
+                    <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}فیلتر رنج سنی{% else %}Filter age range{% endif %}" autocomplete="off"></th>
+                    {% for city in city_headers %}
+                        <th><input type="text" data-filter-column="{{ forloop.counter }}" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا >۵{% else %}Number or >5{% endif %}" autocomplete="off"></th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody>
@@ -57,7 +75,7 @@
                     <tr>
                         <th>{{ row.age_label }}</th>
                         {% for count in row.counts %}
-                            <td{% if count.over %} class="table-danger"{% endif %}>{{ count.assigned }} / {{ count.target }}</td>
+                            <td{% if count.over %} class="table-danger"{% endif %} data-sort-value="{{ count.assigned }}">{{ count.assigned }} / {{ count.target }}</td>
                         {% endfor %}
                     </tr>
                 {% endfor %}

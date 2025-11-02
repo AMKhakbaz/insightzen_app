@@ -13,11 +13,13 @@
     --color-bg-subtle: #161b21;
     --color-surface: #1d232b;
     --color-surface-elevated: #252c36;
+    --color-surface-muted: #1a2027;
     --color-border: #2f3742;
     --color-border-soft: rgba(47, 55, 66, 0.6);
     --color-shadow-soft: 0 10px 30px rgba(5, 7, 10, 0.3);
     --color-text: #e3e6eb;
     --color-text-muted: #8a9099;
+    --color-text-subtle: #5a606b;
     --color-accent: #4cb5c3;
     --color-accent-strong: #5ccbd8;
     --color-accent-soft: rgba(76, 181, 195, 0.16);
@@ -357,10 +359,16 @@ body.rtl {
     font-weight: var(--font-weight-medium);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    position: sticky;
-    top: 0;
-    z-index: 1;
     white-space: nowrap;
+}
+
+.table thead .table-filter-row th {
+    background: var(--color-surface-muted);
+    font-weight: var(--font-weight-regular);
+    text-transform: none;
+    letter-spacing: normal;
+    padding-top: 0.4rem;
+    padding-bottom: 0.6rem;
 }
 
 .table td {
@@ -381,6 +389,111 @@ body.rtl {
     background: var(--color-accent-soft);
 }
 
+
+.table-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.table-sort:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+.table-sort .sort-icon {
+    width: 0.65rem;
+    height: 0.95rem;
+    position: relative;
+    display: inline-flex;
+}
+
+.table-sort .sort-icon::before,
+.table-sort .sort-icon::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    margin: auto;
+    border-left: 0.32rem solid transparent;
+    border-right: 0.32rem solid transparent;
+    opacity: 0.45;
+    transition: opacity 0.2s ease, border-color 0.2s ease;
+}
+
+.table-sort .sort-icon::before {
+    top: 0;
+    border-bottom: 0.35rem solid var(--color-muted);
+}
+
+.table-sort .sort-icon::after {
+    bottom: 0;
+    border-top: 0.35rem solid var(--color-muted);
+}
+
+.table-sort:hover .sort-icon::before,
+.table-sort:hover .sort-icon::after {
+    opacity: 0.65;
+}
+
+.table-sort.is-sorted-asc,
+.table-sort.is-sorted-desc {
+    color: var(--color-accent-strong);
+}
+
+.table-sort.is-sorted-asc .sort-icon::before {
+    border-bottom-color: var(--color-accent-strong);
+    opacity: 1;
+}
+
+.table-sort.is-sorted-asc .sort-icon::after {
+    opacity: 0.25;
+}
+
+.table-sort.is-sorted-desc .sort-icon::after {
+    border-top-color: var(--color-accent-strong);
+    opacity: 1;
+}
+
+.table-sort.is-sorted-desc .sort-icon::before {
+    opacity: 0.25;
+}
+
+.table-filter-row input,
+.table-filter-row select {
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-soft);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.table-filter-row input::placeholder,
+.table-filter-row select::placeholder {
+    color: var(--color-text-subtle);
+}
+
+.table-filter-row input:focus,
+.table-filter-row select:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+}
+
 .table-responsive {
     width: 100%;
     overflow-x: auto;
@@ -389,6 +502,7 @@ body.rtl {
     background: var(--color-surface);
     box-shadow: inset 0 0 0 1px var(--color-border-soft);
     -webkit-overflow-scrolling: touch;
+    position: relative;
 }
 
 .table-responsive > table {
@@ -406,6 +520,31 @@ body.rtl {
 
 .table-responsive::-webkit-scrollbar-track {
     background: transparent;
+}
+
+.table-status {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    text-align: center;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-subtle);
+    background: linear-gradient(180deg, rgba(12, 20, 35, 0.72), rgba(12, 20, 35, 0.72));
+    border-radius: inherit;
+    backdrop-filter: blur(2px);
+    z-index: 2;
+}
+
+.table-status.is-searching {
+    display: flex;
+    color: var(--color-accent-soft);
+}
+
+.table-status.is-empty {
+    display: flex;
 }
 
 @media (max-width: 768px) {

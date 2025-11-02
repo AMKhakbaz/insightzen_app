@@ -11,11 +11,23 @@
         {% endif %}
     </h1>
     <div class="table-responsive">
-        <table class="table">
+        <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}داده‌ای با این فیلتر یافت نشد.{% else %}No records match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
                     {% for col in columns %}
-                        <th>{{ col }}</th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="{{ forloop.counter0 }}" data-sort-type="text">
+                                <span>{{ col }}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                    {% endfor %}
+                </tr>
+                <tr class="table-filter-row">
+                    {% for col in columns %}
+                        <th>
+                            <input type="text" data-filter-column="{{ forloop.counter0 }}" placeholder="{% if lang == 'fa' %}فیلتر {{ col }}{% else %}Filter {{ col }}{% endif %}" autocomplete="off">
+                        </th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -27,7 +39,7 @@
                         {% endfor %}
                     </tr>
                 {% empty %}
-                    <tr>
+                    <tr data-empty-row>
                         <td colspan="{{ columns|length }}" class="text-center">
                             {% if lang == 'fa' %}هیچ داده‌ای برای نمایش وجود ندارد.{% else %}No data available.{% endif %}
                         </td>
