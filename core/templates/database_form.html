@@ -8,8 +8,7 @@
     {% else %}
         {{ title }}
     {% endif %}</h1>
-    {# Use multipart encoding to support XLSForm file upload #}
-    <form method="post" enctype="multipart/form-data">
+    <form method="post">
         {% csrf_token %}
         {{ form.non_field_errors }}
         {# Project select #}
@@ -35,12 +34,6 @@
             {{ form.asset_id.label_tag }}
             {{ form.asset_id }}
             {{ form.asset_id.errors }}
-        </div>
-        {# XLSForm #}
-        <div>
-            {{ form.xlsform.label_tag }}
-            {{ form.xlsform }}
-            {{ form.xlsform.errors }}
         </div>
         <button type="submit" class="btn" style="margin-top:1rem;">
             {% if lang == 'fa' %}

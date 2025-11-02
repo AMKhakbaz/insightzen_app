@@ -39,12 +39,6 @@
                     </th>
                     <th scope="col">
                         <button type="button" class="table-sort" data-sort-column="4" data-sort-type="text">
-                            <span>{% if lang == 'fa' %}XLSForm{% else %}XLSForm{% endif %}</span>
-                            <span class="sort-icon" aria-hidden="true"></span>
-                        </button>
-                    </th>
-                    <th scope="col">
-                        <button type="button" class="table-sort" data-sort-column="5" data-sort-type="text">
                             <span>{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}</span>
                             <span class="sort-icon" aria-hidden="true"></span>
                         </button>
@@ -56,8 +50,7 @@
                     <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}نام پایگاه{% else %}Database{% endif %}" autocomplete="off"></th>
                     <th><input type="text" data-filter-column="2" placeholder="{% if lang == 'fa' %}توکن{% else %}Token{% endif %}" autocomplete="off"></th>
                     <th><input type="text" data-filter-column="3" placeholder="{% if lang == 'fa' %}شناسه{% else %}Asset ID{% endif %}" autocomplete="off"></th>
-                    <th><input type="text" data-filter-column="4" placeholder="XLSForm" autocomplete="off"></th>
-                    <th><input type="text" data-filter-column="5" placeholder="{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="4" placeholder="{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}" autocomplete="off"></th>
                     <th></th>
                 </tr>
             </thead>
@@ -68,7 +61,6 @@
                     <td>{{ entry.db_name }}</td>
                     <td>{{ entry.token|truncatechars:15 }}</td>
                     <td>{{ entry.asset_id }}</td>
-                    <td>{{ entry.xlsform }}</td>
                     <td>{% if entry.status %}<span class="text-success">✓</span>{% else %}<span class="text-danger">×</span>{% endif %}</td>
                     <td>
                         <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary">{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</a>
@@ -80,7 +72,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr data-empty-row><td colspan="7" class="text-center">{% if lang == 'fa' %}اطلاعاتی یافت نشد{% else %}No entries found{% endif %}</td></tr>
+                <tr data-empty-row><td colspan="6" class="text-center">{% if lang == 'fa' %}اطلاعاتی یافت نشد{% else %}No entries found{% endif %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>

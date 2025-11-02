@@ -1212,8 +1212,7 @@ def database_add(request: HttpRequest) -> HttpResponse:
         return redirect('home')
     projects = _get_accessible_projects(user, panel='database_management')
     if request.method == 'POST':
-        # Pass uploaded files to the form for handling the XLSForm upload
-        form = DatabaseEntryForm(request.POST, request.FILES)
+        form = DatabaseEntryForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
         if form.is_valid():
             entry: DatabaseEntry = form.save(commit=False)
@@ -1223,7 +1222,7 @@ def database_add(request: HttpRequest) -> HttpResponse:
             entry.last_sync = None
             entry.last_error = ''
             entry.save()
-            # Immediately attempt a single ETL sync using the uploaded XLSForm.
+            # Immediately attempt a single ETL sync using the supplied credentials.
             # This gives feedback to the user without waiting for the scheduled sync.
             if run_once and FormSpec and sanitize_identifier:
                 try:
@@ -1236,7 +1235,7 @@ def database_add(request: HttpRequest) -> HttpResponse:
                     os.environ['PG_PASSWORD'] = db_conf.get('PASSWORD', '') or db_conf.get('PGPASSWORD', '') or ''
                     # Build a safe table name and run one sync
                     table_name = sanitize_identifier(entry.asset_id)
-                    form_spec = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, xls_path=entry.xlsform.path, main_table=table_name)
+                    form_spec = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, main_table=table_name)
                     inserted_main, inserted_rep = run_once(form_spec)
                     entry.status = True
                     entry.last_error = ''
@@ -1274,9 +1273,7 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
         messages.error(request, 'You do not have permission to edit this database.')
         return redirect('database_list')
     if request.method == 'POST':
-        # Accept uploaded XLSForm files when editing.  ``request.FILES``
-        # must be passed to the form constructor to handle file inputs.
-        form = DatabaseEntryForm(request.POST, request.FILES, instance=entry)
+        form = DatabaseEntryForm(request.POST, instance=entry)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
         if form.is_valid():
             entry = form.save()
@@ -1290,7 +1287,7 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
                     os.environ['PG_USER'] = db_conf.get('USER', '')
                     os.environ['PG_PASSWORD'] = db_conf.get('PASSWORD', '') or db_conf.get('PGPASSWORD', '') or ''
                     table_name = sanitize_identifier(entry.asset_id)
-                    form_spec = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, xls_path=entry.xlsform.path, main_table=table_name)
+                    form_spec = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, main_table=table_name)
                     inserted_main, inserted_rep = run_once(form_spec)
                     entry.status = True
                     entry.last_error = ''

@@ -3,9 +3,9 @@ Synchronise external database entries into the InsightZen PostgreSQL database.
 
 This management command iterates over ``DatabaseEntry`` records and
 invokes the generic KoboToolbox ETL routine to import new submissions
-into PostgreSQL tables.  It uses the credentials and XLSForm stored
-on each ``DatabaseEntry`` to construct a ``FormSpec`` and executes a
-single synchronisation run via ``surveyzen_etl_generic.run_once``.
+into PostgreSQL tables.  It uses the credentials stored on each
+``DatabaseEntry`` to construct a ``FormSpec`` and executes a single
+synchronisation run via ``surveyzen_etl_generic.run_once``.
 
 Environment variables PG_HOST, PG_PORT, PG_DBNAME, PG_USER and
 PG_PASSWORD are temporarily set based on the Django database
@@ -77,18 +77,9 @@ class Command(BaseCommand):
 
             for entry in entries:
                 self.stdout.write(f"Synchronising entry {entry.pk}: {entry.db_name} (project {entry.project_id})...")
-                # Ensure the xlsform file exists
-                if not entry.xlsform:
-                    entry.status = False
-                    entry.last_sync = timezone.now()
-                    entry.last_error = 'No XLSForm file uploaded.'
-                    entry.save()
-                    self.stderr.write(f"Entry {entry.pk} has no XLSForm file; skipping.")
-                    continue
-                xls_path = entry.xlsform.path
                 # Build table name from asset_id (sanitise)
                 table_name = sanitize_identifier(entry.asset_id)
-                form = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, xls_path=xls_path, main_table=table_name)
+                form = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, main_table=table_name)
                 try:
                     inserted_main, inserted_rep = run_once(form)
                     entry.status = True

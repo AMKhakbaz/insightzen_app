@@ -159,14 +159,10 @@ class UserToProjectForm(forms.Form):
 class DatabaseEntryForm(forms.ModelForm):
     class Meta:
         model = DatabaseEntry
-        fields = ['project', 'db_name', 'token', 'asset_id', 'xlsform']
+        fields = ['project', 'db_name', 'token', 'asset_id']
         widgets = {
             'project': forms.Select(attrs={'class': 'form-select'}),
             'db_name': forms.TextInput(attrs={'class': 'form-control'}),
             'token': forms.TextInput(attrs={'class': 'form-control'}),
             'asset_id': forms.TextInput(attrs={'class': 'form-control'}),
-            # Use FileInput for XLSForm uploads.  This will render an
-            # <input type="file"> element styled consistently with
-            # other form controls.
-            'xlsform': forms.FileInput(attrs={'class': 'form-control'}),
         }

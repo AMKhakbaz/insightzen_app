@@ -273,11 +273,6 @@ class DatabaseEntry(models.Model):
     db_name = models.CharField(max_length=255)
     token = models.CharField(max_length=255)
     asset_id = models.CharField(max_length=255)
-    # Accept XLSForm as an uploaded file.  Files are stored under the
-    # ``xlsforms/`` directory within the project's media root.  Using a
-    # FileField here allows users to upload a .xlsx file instead of
-    # entering a path manually.
-    xlsform = models.FileField(upload_to='xlsforms/', max_length=255)
     status = models.BooleanField(default=False)
     # Timestamp of the last attempted synchronisation.  Updated by the
     # sync_database_entries management command each time it runs.
