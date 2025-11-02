@@ -78,8 +78,8 @@ DATABASES = {
         'NAME': os.getenv('PGDATABASE', 'insightzen'),
         # Database user defaults to 'postgres' but can be overridden via environment variable
         'USER': os.getenv('PGUSER', 'postgres'),
-        # Password for the database user; empty by default for local setups
-        'PASSWORD': os.getenv('PGPASSWORD', ''),
+        # Password for the database user defaults to a local development value but can be overridden
+        'PASSWORD': os.getenv('PGPASSWORD', '123456789'),
         # Host and port for PostgreSQL connection
         'HOST': os.getenv('PGHOST', '127.0.0.1'),
         'PORT': os.getenv('PGPORT', '5432'),
