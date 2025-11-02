@@ -194,9 +194,11 @@ def request_enketo_edit_url(entry: DatabaseEntry, submission_id: str, return_url
     if not submission_segment:
         raise EnketoLinkError('A valid submission identifier is required to request an edit link.')
     endpoint = f"{api_base.rstrip('/')}/assets/{entry.asset_id}/data/{submission_segment}/enketo/edit/"
-    json_payload: Optional[Dict[str, Any]] = {'return_url': return_url} if return_url else None
+    params: Dict[str, Any] = {}
+    if return_url is not None:
+        params['return_url'] = return_url
     try:
-        response = session.post(endpoint, json=json_payload, timeout=timeout, verify=verify_param)
+        response = session.get(endpoint, params=params, timeout=timeout, verify=verify_param)
         response.raise_for_status()
     except requests.RequestException as exc:  # pragma: no cover - depends on network
         raise EnketoLinkError(f'Failed to request Enketo edit link: {exc}')
