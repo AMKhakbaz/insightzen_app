@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from math import ceil
 from typing import Any, Dict, List, Tuple, Optional
 
 from django.contrib import messages
@@ -1417,9 +1418,10 @@ def database_view(request: HttpRequest, pk: int) -> HttpResponse:
     """Display cached Kobo submissions for a database entry.
 
     This view reads the JSON snapshot produced during synchronisation for
-    the given ``DatabaseEntry`` and renders the first 100 submissions.
-    Only users with the ``database_management`` permission for the
-    associated project may view the cached data.
+    the given ``DatabaseEntry`` and paginates the cached submissions so
+    operators can browse the payload in manageable slices. Only users with
+    the ``database_management`` permission for the associated project may
+    view the cached data.
     """
     user = request.user
     if not _user_has_panel(user, 'database_management'):
@@ -1431,8 +1433,27 @@ def database_view(request: HttpRequest, pk: int) -> HttpResponse:
         messages.error(request, 'You do not have permission to view this database.')
         return redirect('database_list')
     snapshot = load_entry_snapshot(entry)
-    records = snapshot.records[:100]
-    columns = infer_columns(records)
+    all_records = snapshot.records
+    # NOTE: For very large payloads we may need to stream or cache slices client-side
+    # to avoid loading the full JSON into memory during rendering.
+    total_records = len(all_records)
+    page_sizes = [30, 50, 200]
+    default_page_size = page_sizes[1]
+    try:
+        requested_size = int(request.GET.get('page_size', default_page_size))
+    except (TypeError, ValueError):
+        requested_size = default_page_size
+    page_size = requested_size if requested_size in page_sizes else default_page_size
+    total_pages = max(1, ceil(total_records / page_size))
+    try:
+        requested_page = int(request.GET.get('page', 1))
+    except (TypeError, ValueError):
+        requested_page = 1
+    page = min(max(1, requested_page), total_pages)
+    start = (page - 1) * page_size
+    end = start + page_size
+    records = all_records[start:end]
+    columns = infer_columns(all_records)
     rows: List[List[Any]] = []
     for record in records:
         row: List[Any] = []
@@ -1450,6 +1471,15 @@ def database_view(request: HttpRequest, pk: int) -> HttpResponse:
         'columns': columns,
         'rows': rows,
         'snapshot': snapshot,
+        'page': page,
+        'page_size': page_size,
+        'page_sizes': page_sizes,
+        'total_pages': total_pages,
+        'total_records': total_records,
+        'start_index': start + 1 if total_records else 0,
+        'end_index': min(end, total_records),
+        'has_previous': page > 1,
+        'has_next': page < total_pages,
     })
 
 

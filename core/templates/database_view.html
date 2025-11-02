@@ -10,15 +10,64 @@
             View Data for {{ entry.db_name }}
         {% endif %}
     </h1>
-    {% if snapshot.synced_at %}
-        <p style="color:var(--color-text-muted);font-size:0.875rem;margin-bottom:1.5rem;">
-            {% if lang == 'fa' %}
-                آخرین همگام‌سازی: {{ snapshot.synced_at }} · {{ snapshot.stats.total }} رکورد
-            {% else %}
-                Last synced: {{ snapshot.synced_at }} · {{ snapshot.stats.total }} records
-            {% endif %}
-        </p>
-    {% endif %}
+    <div class="database-view-meta">
+        {% if snapshot.synced_at %}
+            <p>
+                {% if lang == 'fa' %}
+                    آخرین همگام‌سازی: {{ snapshot.synced_at }} · {{ snapshot.stats.total }} رکورد
+                {% else %}
+                    Last synced: {{ snapshot.synced_at }} · {{ snapshot.stats.total }} records
+                {% endif %}
+            </p>
+        {% endif %}
+        <form method="get" class="table-pagination" data-pagination>
+            <div class="page-size-control">
+                <label for="page-size-select">
+                    {% if lang == 'fa' %}تعداد ردیف در هر صفحه{% else %}Rows per page{% endif %}
+                </label>
+                <select id="page-size-select" name="page_size" onchange="this.form.page.value = 1; this.form.submit();">
+                    {% for size in page_sizes %}
+                        <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="page-controls">
+                <span class="page-summary">
+                    {% if total_records %}
+                        {% if lang == 'fa' %}
+                            نمایش {{ start_index }} تا {{ end_index }} از {{ total_records }}
+                        {% else %}
+                            Showing {{ start_index }} – {{ end_index }} of {{ total_records }}
+                        {% endif %}
+                    {% else %}
+                        {% if lang == 'fa' %}داده‌ای برای نمایش وجود ندارد{% else %}No records to display{% endif %}
+                    {% endif %}
+                </span>
+                <div class="page-buttons">
+                    <button type="submit" name="page" value="1" {% if not has_previous %}disabled{% endif %} aria-label="{% if lang == 'fa' %}اولین صفحه{% else %}First page{% endif %}">
+                        «
+                    </button>
+                    <button type="submit" name="page" value="{{ page|add:-1 }}" {% if not has_previous %}disabled{% endif %} aria-label="{% if lang == 'fa' %}صفحه قبل{% else %}Previous page{% endif %}">
+                        ‹
+                    </button>
+                    <span class="page-status">
+                        {% if lang == 'fa' %}
+                            صفحه {{ page }} از {{ total_pages }}
+                        {% else %}
+                            Page {{ page }} of {{ total_pages }}
+                        {% endif %}
+                    </span>
+                    <button type="submit" name="page" value="{{ page|add:1 }}" {% if not has_next %}disabled{% endif %} aria-label="{% if lang == 'fa' %}صفحه بعد{% else %}Next page{% endif %}">
+                        ›
+                    </button>
+                    <button type="submit" name="page" value="{{ total_pages }}" {% if not has_next %}disabled{% endif %} aria-label="{% if lang == 'fa' %}آخرین صفحه{% else %}Last page{% endif %}">
+                        »
+                    </button>
+                </div>
+            </div>
+            <input type="hidden" name="page" value="{{ page }}">
+        </form>
+    </div>
     <div class="table-responsive">
         <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}داده‌ای با این فیلتر یافت نشد.{% else %}No records match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
