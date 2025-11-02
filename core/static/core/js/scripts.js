@@ -456,6 +456,83 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
   }
+
+  const qcEditButtons = document.querySelectorAll('[data-enketo-edit]');
+  if (qcEditButtons.length) {
+    qcEditButtons.forEach((button) => {
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        if (button.disabled) {
+          return;
+        }
+        const submissionId = button.getAttribute('data-enketo-edit');
+        const entryId = button.getAttribute('data-entry-id');
+        if (!submissionId || !entryId) {
+          return;
+        }
+        const statusEl = button.parentElement ? button.parentElement.querySelector('[data-status]') : null;
+        const loadingText = button.dataset.loadingText || 'Requesting link…';
+        const successText = button.dataset.successText || 'Edit form opened.';
+        const errorText = button.dataset.errorText || 'Unable to fetch edit link.';
+        if (statusEl) {
+          statusEl.textContent = loadingText;
+          statusEl.dataset.state = 'loading';
+        }
+        button.disabled = true;
+        const pendingWindow = window.open('', '_blank');
+        const csrftoken = getCookie('csrftoken');
+        fetch(`/qc/edit/${entryId}/link/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrftoken,
+          },
+          body: JSON.stringify({ submission_id: submissionId }),
+        })
+          .then((response) =>
+            response
+              .json()
+              .catch(() => ({}))
+              .then((data) => ({ status: response.status, data })),
+          )
+          .then(({ status, data }) => {
+            if (status >= 200 && status < 300 && data.url) {
+              if (pendingWindow) {
+                pendingWindow.location.href = data.url;
+                pendingWindow.focus();
+              } else {
+                window.open(data.url, '_blank', 'noopener');
+              }
+              if (statusEl) {
+                statusEl.textContent = successText;
+                statusEl.dataset.state = 'success';
+              }
+            } else {
+              if (pendingWindow) {
+                pendingWindow.close();
+              }
+              const message = data.error || errorText;
+              if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.dataset.state = 'error';
+              }
+            }
+          })
+          .catch(() => {
+            if (pendingWindow) {
+              pendingWindow.close();
+            }
+            if (statusEl) {
+              statusEl.textContent = errorText;
+              statusEl.dataset.state = 'error';
+            }
+          })
+          .finally(() => {
+            button.disabled = false;
+          });
+      });
+    });
+  }
 });
 
 // Helper to get CSRF token from cookies

@@ -296,3 +296,29 @@ class DatabaseEntry(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover
         return f"DB {self.db_name} for {self.project.name}"
+
+
+class DatabaseEntryEditRequest(models.Model):
+    """Tracks submissions whose Enketo edit URLs were generated recently."""
+
+    entry = models.ForeignKey(DatabaseEntry, on_delete=models.CASCADE, related_name='edit_requests')
+    submission_id = models.CharField(max_length=64)
+    requested_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('entry', 'submission_id')
+        indexes = [
+            models.Index(fields=['entry', 'requested_at']),
+        ]
+        ordering = ['-requested_at']
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"Edit request for {_shorten(self.submission_id)} on {self.entry}"
+
+
+def _shorten(value: str, length: int = 8) -> str:
+    """Utility to abbreviate identifiers for string representations."""
+
+    if len(value) <= length:
+        return value
+    return value[:length] + '…'

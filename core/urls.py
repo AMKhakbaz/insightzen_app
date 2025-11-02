@@ -65,6 +65,7 @@ urlpatterns = [
 
     # Quality control editing
     path('qc/edit/', views.qc_edit, name='qc_edit'),
+    path('qc/edit/<int:entry_id>/link/', views.qc_edit_link, name='qc_edit_link'),
 
     # Activity logs (organisation only)
     path('logs/', views.activity_logs, name='activity_logs'),

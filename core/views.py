@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 from math import ceil
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, Iterable, List, Tuple, Optional
 
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
@@ -35,10 +35,12 @@ from django.conf import settings
 
 from core.services.database_cache import (
     DatabaseCacheError,
+    EnketoLinkError,
     delete_entry_cache,
     infer_columns,
     load_entry_snapshot,
     refresh_entry_cache,
+    request_enketo_edit_url,
 )
 try:
     # Optional import for Excel export; if the library is missing the export view
@@ -67,6 +69,7 @@ from .models import (
     ActivityLog,
     CallSample,
     DatabaseEntry,
+    DatabaseEntryEditRequest,
 )
 
 
@@ -217,6 +220,91 @@ def _sanitize_identifier(name: str) -> str:
     if cleaned and cleaned[0].isdigit():
         cleaned = f"c_{cleaned}"
     return cleaned[:63]
+
+
+def _normalise_record_value(value: Any) -> str:
+    """Render record values as strings for filtering and display."""
+
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    if value is None:
+        return ''
+    return str(value)
+
+
+def _coerce_numeric(value: str) -> Optional[float]:
+    """Attempt to coerce a string value to a float, handling localised digits."""
+
+    normalised = value.strip()
+    if not normalised:
+        return None
+    translate_table = str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')
+    normalised = normalised.translate(translate_table)
+    normalised = normalised.replace('٬', '').replace(',', '').replace('٫', '.').replace('%', '')
+    try:
+        return float(normalised)
+    except ValueError:
+        return None
+
+
+def _matches_filter_value(cell_text: str, filter_text: str) -> bool:
+    """Evaluate whether a table cell matches the provided filter string."""
+
+    if not filter_text:
+        return True
+    candidate = filter_text.strip()
+    if not candidate:
+        return True
+    range_match = re.match(r'^\s*(-?\d+(?:[.,]\d+)?)\s*[-–]\s*(-?\d+(?:[.,]\d+)?)\s*$', candidate)
+    cell_number = _coerce_numeric(cell_text)
+    if range_match and cell_number is not None:
+        min_val = _coerce_numeric(range_match.group(1))
+        max_val = _coerce_numeric(range_match.group(2))
+        if min_val is None or max_val is None:
+            return False
+        low, high = sorted((min_val, max_val))
+        return low <= cell_number <= high
+    comparator_match = re.match(r'^\s*(<=|>=|<|>|=)\s*(-?\d+(?:[.,]\d+)?)\s*$', candidate)
+    if comparator_match and cell_number is not None:
+        comparator = comparator_match.group(1)
+        compare_value = _coerce_numeric(comparator_match.group(2))
+        if compare_value is None:
+            return False
+        if comparator == '<':
+            return cell_number < compare_value
+        if comparator == '<=':
+            return cell_number <= compare_value
+        if comparator == '>':
+            return cell_number > compare_value
+        if comparator == '>=':
+            return cell_number >= compare_value
+        return cell_number == compare_value
+    direct_number = _coerce_numeric(candidate)
+    if direct_number is not None and cell_number is not None:
+        return cell_number == direct_number
+    return candidate.lower() in cell_text.lower()
+
+
+def _extract_submission_id(record: Dict[str, Any]) -> str:
+    """Return the best identifier for a record."""
+
+    for key in ('_id', '_uuid', 'uuid'):
+        value = record.get(key)
+        if value is not None:
+            return str(value)
+    return ''
+
+
+def _detect_sort_type(records: Iterable[Dict[str, Any]], column: str) -> str:
+    """Guess the sort type for a given column."""
+
+    for record in records:
+        value = record.get(column)
+        if isinstance(value, (int, float)):
+            return 'numeric'
+        if isinstance(value, str) and _coerce_numeric(value) is not None:
+            return 'numeric'
+    return 'text'
 
 
 def generate_call_samples(project: Project, replenish: bool = False) -> None:
@@ -1387,8 +1475,12 @@ def database_update(request: HttpRequest, pk: int) -> HttpResponse:
     entry.last_update_requested = now
     entry.save(update_fields=['update_window_start', 'update_attempt_count', 'last_update_requested'])
 
+    tracked_window_start = timezone.now() - timedelta(days=30)
+    tracked_qs = list(DatabaseEntryEditRequest.objects.filter(entry=entry, requested_at__gte=tracked_window_start))
+    tracked_ids = [req.submission_id for req in tracked_qs]
+
     try:
-        result = refresh_entry_cache(entry)
+        result = refresh_entry_cache(entry, refresh_ids=tracked_ids)
         entry.status = True
         entry.last_error = ''
         entry.last_manual_update = now
@@ -1401,6 +1493,9 @@ def database_update(request: HttpRequest, pk: int) -> HttpResponse:
                 f"Added {result.added} and updated {result.updated} submissions (total {result.total})."
             ),
         )
+        # Remove any tracked edit requests outside the rolling window to keep the
+        # cache tidy once their refreshed versions have been downloaded.
+        DatabaseEntryEditRequest.objects.filter(entry=entry, requested_at__lt=tracked_window_start).delete()
         log_activity(user, 'Manually updated database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
     except DatabaseCacheError as exc:
         entry.status = False
@@ -1485,152 +1580,183 @@ def database_view(request: HttpRequest, pk: int) -> HttpResponse:
 
 @login_required
 def qc_edit(request: HttpRequest) -> HttpResponse:
-    """
-    Data quality control panel for editing imported survey data.
+    """Data quality control dashboard backed by cached Kobo submissions."""
 
-    Users with ``qc_management`` or ``qc_performance`` permissions can
-    select a project and then choose from the database entries defined
-    in the Database Management panel.  The data from the selected
-    external form (stored in PostgreSQL via the ETL) is displayed as
-    an editable table.  Each row can be submitted to update the
-    underlying record.  Only the first 100 rows are shown for
-    performance reasons.  Edits take effect immediately upon
-    submission of a row form.
-    """
     user = request.user
-    # Ensure the user has QC permissions on at least one project
+    lang = request.session.get('lang', 'en')
     if not (_user_has_panel(user, 'qc_management') or _user_has_panel(user, 'qc_performance')):
         messages.error(request, 'Access denied: you do not have quality control permissions.')
         return redirect('home')
-    # Determine projects accessible for QC
-    memberships = Membership.objects.filter(user=user)
-    project_ids: List[int] = []
-    for mem in memberships:
-        if mem.qc_management or mem.qc_performance or _user_is_organisation(user):
-            project_ids.append(mem.project_id)
-    accessible_projects = Project.objects.filter(pk__in=project_ids).distinct()
-    # Initialise context
+
+    project_qs = Project.objects.filter(memberships__user=user)
+    if not _user_is_organisation(user):
+        project_qs = project_qs.filter(Q(memberships__qc_management=True) | Q(memberships__qc_performance=True))
+    accessible_projects = list(project_qs.distinct().order_by('name'))
+
     selected_project: Optional[Project] = None
     selected_entry: Optional[DatabaseEntry] = None
-    table_columns: List[str] = []
-    table_rows: List[Dict[str, Any]] = []
-    row_error: Optional[str] = None
-    # Handle POST (row update)
-    if request.method == 'POST':
-        project_id = request.POST.get('project_id')
-        entry_id = request.POST.get('entry_id')
-        row_id = request.POST.get('row_id')
-        if not project_id or not entry_id or not row_id:
-            messages.error(request, 'Invalid submission.')
-            return redirect('qc_edit')
-        try:
-            selected_project = Project.objects.get(pk=project_id)
-            selected_entry = DatabaseEntry.objects.get(pk=entry_id, project=selected_project)
-        except Project.DoesNotExist:
-            messages.error(request, 'Project not found.')
-            return redirect('qc_edit')
-        except DatabaseEntry.DoesNotExist:
-            messages.error(request, 'Database entry not found.')
-            return redirect('qc_edit')
-        table_name = _sanitize_identifier(selected_entry.asset_id)
-        updates: Dict[str, Any] = {}
-        for key, val in request.POST.items():
-            if key.startswith('col__'):
-                col = key[len('col__'):]
-                updates[col] = val
-        try:
-            db_conf = settings.DATABASES.get('default', {})
-            conn = psycopg2.connect(
-                host=db_conf.get('HOST', ''),
-                port=db_conf.get('PORT', 5432),
-                dbname=db_conf.get('NAME', ''),
-                user=db_conf.get('USER', ''),
-                password=db_conf.get('PASSWORD', '')
-            )
-            with conn.cursor() as cur:
-                set_clauses = []
-                values: List[Any] = []
-                for col, val in updates.items():
-                    set_clauses.append(sql.SQL('{} = %s').format(sql.Identifier(col)))
-                    values.append(val)
-                if set_clauses:
-                    values.append(int(row_id))
-                    query = sql.SQL('UPDATE {} SET {} WHERE _id = %s').format(
-                        sql.Identifier(table_name), sql.SQL(', ').join(set_clauses)
-                    )
-                    cur.execute(query, values)
-                    conn.commit()
-                    messages.success(request, 'Row updated successfully.')
-        except Exception as e:
-            row_error = str(e)
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-        return redirect(f"{reverse('qc_edit')}?project={selected_project.pk}&entry={selected_entry.pk}")
-    # Process GET parameters
-    project_param = request.GET.get('project')
-    entry_param = request.GET.get('entry')
-    if project_param:
-        try:
-            selected_project = accessible_projects.get(pk=project_param)
-        except Project.DoesNotExist:
-            selected_project = None
-    if selected_project and entry_param:
-        try:
-            selected_entry = DatabaseEntry.objects.get(pk=entry_param, project=selected_project)
-        except DatabaseEntry.DoesNotExist:
-            selected_entry = None
-    # Fetch data
-    if selected_project and selected_entry:
-        table_name = _sanitize_identifier(selected_entry.asset_id)
-        try:
-            db_conf = settings.DATABASES.get('default', {})
-            conn = psycopg2.connect(
-                host=db_conf.get('HOST', ''),
-                port=db_conf.get('PORT', 5432),
-                dbname=db_conf.get('NAME', ''),
-                user=db_conf.get('USER', ''),
-                password=db_conf.get('PASSWORD', '')
-            )
-            with conn.cursor() as cur:
-                cur.execute(
-                    """SELECT column_name FROM information_schema.columns
-                           WHERE table_schema='public' AND table_name=%s
-                           ORDER BY ordinal_position""",
-                    (table_name,),
-                )
-                table_columns = [r[0] for r in cur.fetchall()]
-                if table_columns:
-                    cur.execute(sql.SQL('SELECT * FROM {} ORDER BY _id ASC LIMIT 100').format(sql.Identifier(table_name)))
-                    raw_rows = cur.fetchall()
-                    # Convert raw rows into list of dicts and expose row_id separately
-                    table_rows = []
-                    for row in raw_rows:
-                        row_dict = dict(zip(table_columns, row))
-                        # Expose the primary key (_id) via a non-underscore key for safe template access
-                        if '_id' in row_dict:
-                            row_dict['row_id'] = row_dict['_id']
-                        table_rows.append(row_dict)
-        except Exception as e:
-            row_error = str(e)
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    # Fetch database entries for the selected project
     entries_for_project: List[DatabaseEntry] = []
+    snapshot = None
+    columns: List[str] = []
+    column_meta: List[Dict[str, Any]] = []
+    filter_values: List[Dict[str, Any]] = []
+    table_rows: List[Dict[str, Any]] = []
+    tracked_requests: List[DatabaseEntryEditRequest] = []
+
+    project_param = request.GET.get('project')
+    if project_param:
+        for project in accessible_projects:
+            if str(project.pk) == project_param:
+                selected_project = project
+                break
+
     if selected_project:
-        entries_for_project = list(DatabaseEntry.objects.filter(project=selected_project))
+        entries_for_project = list(DatabaseEntry.objects.filter(project=selected_project).order_by('db_name'))
+        entry_param = request.GET.get('entry')
+        if entry_param:
+            for entry in entries_for_project:
+                if str(entry.pk) == entry_param:
+                    selected_entry = entry
+                    break
+
+    search_term = (request.GET.get('search') or '').strip()
+    column_filters: Dict[str, str] = {}
+    page_sizes = [30, 50, 200]
+    default_page_size = 50
+    page_size = default_page_size
+    page = 1
+    total_pages = 1
+    total_records = 0
+    start_index = 0
+    end_index = 0
+    has_previous = False
+    has_next = False
+
+    if selected_entry:
+        snapshot = load_entry_snapshot(selected_entry)
+        records = snapshot.records
+        columns = infer_columns(records)
+        for idx, column in enumerate(columns):
+            value = (request.GET.get(f'filter_{idx}') or '').strip()
+            filter_values.append({'index': idx, 'name': column, 'value': value})
+            if value:
+                column_filters[column] = value
+            column_meta.append({'index': idx, 'name': column, 'sort_type': _detect_sort_type(records, column)})
+
+        search_terms = [term for term in search_term.lower().split() if term]
+        filtered_records: List[Tuple[Dict[str, Any], Dict[str, str]]] = []
+        for record in records:
+            value_map = {col: _normalise_record_value(record.get(col)) for col in columns}
+            combined_text = ' '.join(value_map.values()).lower()
+            if search_terms and not all(term in combined_text for term in search_terms):
+                continue
+            matches = True
+            for col, filter_text in column_filters.items():
+                if not _matches_filter_value(value_map[col], filter_text):
+                    matches = False
+                    break
+            if matches:
+                filtered_records.append((record, value_map))
+
+        total_records = len(filtered_records)
+        try:
+            requested_size = int(request.GET.get('page_size', default_page_size))
+        except (TypeError, ValueError):
+            requested_size = default_page_size
+        if requested_size in page_sizes:
+            page_size = requested_size
+        total_pages = max(1, ceil(total_records / page_size))
+        try:
+            requested_page = int(request.GET.get('page', 1))
+        except (TypeError, ValueError):
+            requested_page = 1
+        page = min(max(1, requested_page), total_pages)
+        start_index = (page - 1) * page_size
+        end_index = min(start_index + page_size, total_records)
+        has_previous = page > 1
+        has_next = page < total_pages
+        page_slice = filtered_records[start_index:end_index]
+
+        tracked_since = timezone.now() - timedelta(days=30)
+        tracked_requests = list(
+            DatabaseEntryEditRequest.objects.filter(entry=selected_entry, requested_at__gte=tracked_since)
+        )
+        tracked_ids = {req.submission_id for req in tracked_requests}
+
+        for record, value_map in page_slice:
+            submission_id = _extract_submission_id(record)
+            table_rows.append({
+                'values': [value_map[col] for col in columns],
+                'submission_id': submission_id,
+                'is_tracked': submission_id in tracked_ids,
+            })
+
     context = {
         'projects': accessible_projects,
         'selected_project': selected_project,
         'entries': entries_for_project,
         'selected_entry': selected_entry,
-        'table_columns': table_columns,
+        'snapshot': snapshot,
+        'columns': columns,
+        'column_meta': column_meta,
+        'filter_values': filter_values,
         'table_rows': table_rows,
-        'row_error': row_error,
+        'search_term': search_term,
+        'page': page,
+        'page_size': page_size,
+        'page_sizes': page_sizes,
+        'total_pages': total_pages,
+        'total_records': total_records,
+        'start_index': start_index + 1 if total_records else 0,
+        'end_index': end_index,
+        'has_previous': has_previous,
+        'has_next': has_next,
+        'tracked_requests': tracked_requests,
+        'lang': lang,
     }
     return render(request, 'qc_edit.html', context)
+
+
+@login_required
+@require_POST
+def qc_edit_link(request: HttpRequest, entry_id: int) -> JsonResponse:
+    """Return an Enketo edit link for a given submission."""
+
+    user = request.user
+    entry = get_object_or_404(DatabaseEntry, pk=entry_id)
+    project = entry.project
+    lang = request.session.get('lang', 'en')
+    if not (_user_is_organisation(user) or Membership.objects.filter(
+        user=user,
+        project=project,
+    ).filter(Q(qc_management=True) | Q(qc_performance=True)).exists()):
+        message = 'Access denied.' if lang != 'fa' else 'دسترسی مجاز نیست.'
+        return JsonResponse({'error': message}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except json.JSONDecodeError:
+        payload = {}
+    submission_id = str(payload.get('submission_id') or request.POST.get('submission_id') or '').strip()
+    if not submission_id:
+        message = 'Submission id is required.' if lang != 'fa' else 'شناسه ارسال لازم است.'
+        return JsonResponse({'error': message}, status=400)
+
+    tracked_window_start = timezone.now() - timedelta(days=30)
+    DatabaseEntryEditRequest.objects.filter(entry=entry, requested_at__lt=tracked_window_start).delete()
+
+    return_url = request.build_absolute_uri(
+        f"{reverse('qc_edit')}?project={project.pk}&entry={entry.pk}"
+    )
+    try:
+        edit_url = request_enketo_edit_url(entry, submission_id, return_url=return_url)
+    except EnketoLinkError as exc:
+        return JsonResponse({'error': str(exc)}, status=502)
+
+    DatabaseEntryEditRequest.objects.update_or_create(
+        entry=entry,
+        submission_id=submission_id,
+        defaults={'requested_at': timezone.now()},
+    )
+
+    return JsonResponse({'url': edit_url})

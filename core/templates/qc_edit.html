@@ -1,58 +1,94 @@
 {% extends 'base.html' %}
-{% load custom_tags %}
 {% block title %}{% if lang == 'fa' %}ویرایش کیفی داده{% else %}Quality Control Edit{% endif %}{% endblock %}
 
 {% block content %}
-<div class="card" style="margin:2rem auto;max-width:1200px;padding:1.5rem;">
-    <h1 style="margin-bottom:1rem;">
+<div class="card qc-card">
+    <h1>
         {% if lang == 'fa' %}کنترل کیفیت داده{% else %}Data Quality Control{% endif %}
     </h1>
-    <!-- Project selector -->
-    <div style="margin-bottom:1rem;">
-        <label for="project-select">{% if lang == 'fa' %}پروژه:{% else %}Project:{% endif %}</label>
-        <select id="project-select" class="form-select" style="max-width:300px;">
-            <option value="" disabled {% if not selected_project %}selected{% endif %}>{% if lang == 'fa' %}انتخاب پروژه{% else %}Select Project{% endif %}</option>
-            {% for p in projects %}
-                <option value="{{ p.pk }}" {% if selected_project and p.pk == selected_project.pk %}selected{% endif %}>{{ p.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <!-- Database entry selector -->
-    {% if selected_project %}
-    <div style="margin-bottom:1rem;">
-        <label for="entry-select">{% if lang == 'fa' %}پایگاه داده:{% else %}Database:{% endif %}</label>
-        <select id="entry-select" class="form-select" style="max-width:300px;">
-            <option value="" disabled {% if not selected_entry %}selected{% endif %}>{% if lang == 'fa' %}انتخاب پایگاه داده{% else %}Select Database{% endif %}</option>
-            {% for e in entries %}
-                <option value="{{ e.pk }}" {% if selected_entry and e.pk == selected_entry.pk %}selected{% endif %}>{{ e.db_name }}</option>
-            {% endfor %}
-        </select>
-    </div>
+    <form id="qc-filter-form" method="get" class="qc-toolbar" autocomplete="off">
+        <div class="qc-toolbar__row">
+            <div class="qc-toolbar__field">
+                <label for="project-select">{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</label>
+                <select id="project-select" name="project" onchange="this.form.page.value = 1; this.form.submit();">
+                    <option value="" {% if not selected_project %}selected{% endif %}>
+                        {% if lang == 'fa' %}انتخاب پروژه{% else %}Select Project{% endif %}
+                    </option>
+                    {% for p in projects %}
+                        <option value="{{ p.pk }}" {% if selected_project and p.pk == selected_project.pk %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="qc-toolbar__field">
+                <label for="entry-select">{% if lang == 'fa' %}پایگاه داده{% else %}Database{% endif %}</label>
+                <select id="entry-select" name="entry" {% if not selected_project %}disabled{% endif %} onchange="this.form.page.value = 1; this.form.submit();">
+                    <option value="" {% if not selected_entry %}selected{% endif %}>
+                        {% if lang == 'fa' %}انتخاب پایگاه داده{% else %}Select Database{% endif %}
+                    </option>
+                    {% for e in entries %}
+                        <option value="{{ e.pk }}" {% if selected_entry and e.pk == selected_entry.pk %}selected{% endif %}>{{ e.db_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="qc-toolbar__field qc-toolbar__field--grow">
+                <label for="qc-search">{% if lang == 'fa' %}جست‌وجوی متنی{% else %}Search{% endif %}</label>
+                <input id="qc-search" type="search" name="search" value="{{ search_term }}" placeholder="{% if lang == 'fa' %}عبارت مورد نظر{% else %}Search submissions{% endif %}">
+            </div>
+            <div class="qc-toolbar__field qc-toolbar__field--compact">
+                <label for="qc-page-size">{% if lang == 'fa' %}ردیف در صفحه{% else %}Rows per page{% endif %}</label>
+                <select id="qc-page-size" name="page_size" onchange="this.form.page.value = 1; this.form.submit();">
+                    {% for size in page_sizes %}
+                        <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <input type="hidden" name="page" value="{{ page }}">
+    </form>
+
+    {% if selected_entry and snapshot %}
+        <div class="qc-meta">
+            <p>
+                {% if lang == 'fa' %}
+                    آخرین همگام‌سازی: {{ snapshot.synced_at|default:'—' }} · {{ snapshot.stats.total }} رکورد ذخیره‌شده
+                {% else %}
+                    Last synced: {{ snapshot.synced_at|default:'—' }} · {{ snapshot.stats.total }} cached records
+                {% endif %}
+            </p>
+        </div>
     {% endif %}
-    <!-- Display row error if any -->
-    {% if row_error %}
-        <div class="alert alert-warning">{{ row_error }}</div>
+
+    {% if tracked_requests and selected_entry %}
+        <div class="qc-tracking-note">
+            <span>
+                {% if lang == 'fa' %}
+                    {{ tracked_requests|length }} ردیف در ۳۰ روز گذشته لینک ویرایش دریافت کرده‌اند.
+                {% else %}
+                    {{ tracked_requests|length }} submissions requested Enketo edits in the past 30 days.
+                {% endif %}
+            </span>
+        </div>
     {% endif %}
-    <!-- Editable data table -->
-    {% if selected_entry and table_columns %}
-        <div class="table-responsive" style="max-height:600px;overflow:auto;">
+
+    {% if selected_entry and columns %}
+        <div class="table-responsive qc-table-wrapper">
             <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}سطر مطابق فیلتر یافت نشد.{% else %}No rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
                 <thead>
                     <tr>
-                        {% for col in table_columns %}
+                        {% for col in column_meta %}
                             <th scope="col">
-                                <button type="button" class="table-sort" data-sort-column="{{ forloop.counter0 }}" data-sort-type="text">
-                                    <span>{{ col }}</span>
+                                <button type="button" class="table-sort" data-sort-column="{{ forloop.counter0 }}" data-sort-type="{{ col.sort_type }}">
+                                    <span>{{ col.name }}</span>
                                     <span class="sort-icon" aria-hidden="true"></span>
                                 </button>
                             </th>
                         {% endfor %}
-                        <th scope="col">{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+                        <th scope="col" class="qc-actions-header">{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
                     </tr>
                     <tr class="table-filter-row">
-                        {% for col in table_columns %}
+                        {% for field in filter_values %}
                             <th>
-                                <input type="text" data-filter-column="{{ forloop.counter0 }}" placeholder="{% if lang == 'fa' %}فیلتر {{ col }}{% else %}Filter {{ col }}{% endif %}" autocomplete="off">
+                                <input type="text" name="filter_{{ field.index }}" value="{{ field.value }}" form="qc-filter-form" data-filter-column="{{ forloop.counter0 }}" placeholder="{% if lang == 'fa' %}فیلتر {{ field.name }}{% else %}Filter {{ field.name }}{% endif %}" onchange="document.getElementById('qc-filter-form').page.value = 1; document.getElementById('qc-filter-form').submit();">
                             </th>
                         {% endfor %}
                         <th></th>
@@ -60,64 +96,75 @@
                 </thead>
                 <tbody>
                     {% for row in table_rows %}
-                        <tr>
-                            <form method="post">
-                                {% csrf_token %}
-                                <input type="hidden" name="project_id" value="{{ selected_project.pk }}" />
-                                <input type="hidden" name="entry_id" value="{{ selected_entry.pk }}" />
-                                <input type="hidden" name="row_id" value="{{ row.row_id }}" />
-                                {% for col in table_columns %}
-                                    <td>
-                                        {% if col == '_id' %}
-                                            {{ row|get:col }}
-                                        {% else %}
-                                            <input type="text" name="col__{{ col }}" value="{{ row|get:col }}" class="form-control" style="width:100%;" />
-                                        {% endif %}
-                                    </td>
-                                {% endfor %}
-                                <td style="white-space:nowrap;">
-                                    <button type="submit" class="btn btn-sm">
-                                        {% if lang == 'fa' %}ذخیره{% else %}Save{% endif %}
+                        <tr class="{% if row.is_tracked %}qc-row--tracked{% endif %}">
+                            {% for value in row.values %}
+                                <td>{{ value }}</td>
+                            {% endfor %}
+                            <td class="qc-row-actions">
+                                {% if row.submission_id %}
+                                    <button type="button" class="btn btn-icon" data-entry-id="{{ selected_entry.pk }}" data-enketo-edit="{{ row.submission_id }}" data-loading-text="{% if lang == 'fa' %}در حال دریافت لینک…{% else %}Requesting link…{% endif %}" data-success-text="{% if lang == 'fa' %}فرم در تب جدید باز شد{% else %}Edit form opened in a new tab{% endif %}" data-error-text="{% if lang == 'fa' %}دریافت لینک با خطا مواجه شد{% else %}Unable to fetch edit link{% endif %}">
+                                        <i data-feather="edit-3"></i>
+                                        <span class="visually-hidden">{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</span>
                                     </button>
-                                </td>
-                            </form>
+                                    <span class="qc-row-status" data-status></span>
+                                {% else %}
+                                    <span class="qc-row-status" data-status>{% if lang == 'fa' %}شناسه در دسترس نیست{% else %}No submission id{% endif %}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr data-empty-row>
+                            <td colspan="{{ columns|length|add:1 }}" class="qc-empty">
+                                {% if lang == 'fa' %}داده‌ای مطابق فیلتر وجود ندارد.{% else %}No records match your filters.{% endif %}
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+        <form method="get" class="table-pagination" data-pagination>
+            <div class="page-controls">
+                <span class="page-summary">
+                    {% if total_records %}
+                        {% if lang == 'fa' %}
+                            نمایش {{ start_index }} تا {{ end_index }} از {{ total_records }}
+                        {% else %}
+                            Showing {{ start_index }} – {{ end_index }} of {{ total_records }}
+                        {% endif %}
+                    {% else %}
+                        {% if lang == 'fa' %}داده‌ای برای نمایش وجود ندارد{% else %}No records to display{% endif %}
+                    {% endif %}
+                </span>
+                <div class="page-buttons">
+                    <button type="submit" name="page" value="1" {% if not has_previous %}disabled{% endif %} aria-label="{% if lang == 'fa' %}اولین صفحه{% else %}First page{% endif %}">«</button>
+                    <button type="submit" name="page" value="{{ page|add:-1 }}" {% if not has_previous %}disabled{% endif %} aria-label="{% if lang == 'fa' %}صفحه قبل{% else %}Previous page{% endif %}">‹</button>
+                    <span class="page-status">
+                        {% if lang == 'fa' %}
+                            صفحه {{ page }} از {{ total_pages }}
+                        {% else %}
+                            Page {{ page }} of {{ total_pages }}
+                        {% endif %}
+                    </span>
+                    <button type="submit" name="page" value="{{ page|add:1 }}" {% if not has_next %}disabled{% endif %} aria-label="{% if lang == 'fa' %}صفحه بعد{% else %}Next page{% endif %}">›</button>
+                    <button type="submit" name="page" value="{{ total_pages }}" {% if not has_next %}disabled{% endif %} aria-label="{% if lang == 'fa' %}آخرین صفحه{% else %}Last page{% endif %}">»</button>
+                </div>
+            </div>
+            <input type="hidden" name="project" value="{% if selected_project %}{{ selected_project.pk }}{% endif %}">
+            <input type="hidden" name="entry" value="{% if selected_entry %}{{ selected_entry.pk }}{% endif %}">
+            <input type="hidden" name="search" value="{{ search_term }}">
+            <input type="hidden" name="page_size" value="{{ page_size }}">
+            {% for field in filter_values %}
+                <input type="hidden" name="filter_{{ field.index }}" value="{{ field.value }}">
+            {% endfor %}
+        </form>
     {% elif selected_entry %}
-        <p>{% if lang == 'fa' %}هیچ داده‌ای یافت نشد.{% else %}No data found.{% endif %}</p>
+        <p class="qc-empty">
+            {% if lang == 'fa' %}هیچ رکوردی برای نمایش وجود ندارد.{% else %}No cached submissions available yet.{% endif %}
+        </p>
+    {% else %}
+        <p class="qc-empty">
+            {% if lang == 'fa' %}برای مشاهده داده ابتدا پروژه و پایگاه داده را انتخاب کنید.{% else %}Choose a project and database to inspect submissions.{% endif %}
+        </p>
     {% endif %}
 </div>
-<script>
-// Handle project and entry selection to reload the page with query parameters
-document.addEventListener('DOMContentLoaded', function() {
-    const projectSelect = document.getElementById('project-select');
-    if (projectSelect) {
-        projectSelect.addEventListener('change', function() {
-            const val = this.value;
-            if (val) {
-                const url = new URL(window.location.href);
-                url.searchParams.set('project', val);
-                url.searchParams.delete('entry');
-                window.location.href = url.toString();
-            }
-        });
-    }
-    const entrySelect = document.getElementById('entry-select');
-    if (entrySelect) {
-        entrySelect.addEventListener('change', function() {
-            const val = this.value;
-            const url = new URL(window.location.href);
-            if (val) {
-                url.searchParams.set('entry', val);
-            } else {
-                url.searchParams.delete('entry');
-            }
-            window.location.href = url.toString();
-        });
-    }
-});
-</script>
 {% endblock %}

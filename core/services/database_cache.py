@@ -26,6 +26,10 @@ class DatabaseCacheError(Exception):
     """Raised when synchronising the local cache fails."""
 
 
+class EnketoLinkError(DatabaseCacheError):
+    """Raised when requesting an Enketo edit URL fails."""
+
+
 @dataclass
 class EntrySnapshot:
     """Represents the cached payload for a ``DatabaseEntry``."""
@@ -118,10 +122,27 @@ def delete_entry_cache(entry: DatabaseEntry) -> None:
         return
 
 
-def refresh_entry_cache(entry: DatabaseEntry) -> CacheSyncResult:
-    """Fetch Kobo submissions and persist them to the local cache."""
+def refresh_entry_cache(entry: DatabaseEntry, refresh_ids: Optional[Iterable[str]] = None) -> CacheSyncResult:
+    """Fetch Kobo submissions and persist them to the local cache.
+
+    Args:
+        entry: The database entry whose payload should be refreshed.
+        refresh_ids: Optional iterable of submission identifiers that should
+            be forcefully re-synchronised alongside new records.  This is
+            useful when manual edits were triggered for historical rows.
+    """
 
     metadata, submissions = _fetch_remote_payload(entry.token, entry.asset_id)
+    if refresh_ids:
+        query_ids = _prepare_submission_query(refresh_ids)
+        if query_ids:
+            _, targeted = _fetch_remote_payload(
+                entry.token,
+                entry.asset_id,
+                query={'_id': {'$in': query_ids}},
+            )
+            if targeted:
+                submissions.extend(targeted)
     snapshot = load_entry_snapshot(entry)
     merged_records, added, updated = _merge_records(snapshot.records, submissions)
     now_iso = timezone.now().isoformat()
@@ -159,6 +180,33 @@ def refresh_entry_cache(entry: DatabaseEntry) -> CacheSyncResult:
     )
 
 
+def request_enketo_edit_url(entry: DatabaseEntry, submission_id: str, return_url: Optional[str] = None) -> str:
+    """Request an Enketo edit URL for a specific submission."""
+
+    session = requests.Session()
+    session.headers.update({'Authorization': f'Token {entry.token}', 'Accept': 'application/json'})
+    timeout = getattr(settings, 'KOBO_HTTP_TIMEOUT', 60)
+    verify_param = getattr(settings, 'KOBO_TLS_CERT', None) or getattr(settings, 'KOBO_VERIFY_TLS', True)
+    api_base = getattr(settings, 'KOBO_API_BASE', None)
+    if not api_base:
+        raise EnketoLinkError('KOBO_API_BASE setting is not configured.')
+    submission_segment = str(submission_id).strip()
+    if not submission_segment:
+        raise EnketoLinkError('A valid submission identifier is required to request an edit link.')
+    endpoint = f"{api_base.rstrip('/')}/assets/{entry.asset_id}/data/{submission_segment}/enketo/edit/"
+    json_payload: Optional[Dict[str, Any]] = {'return_url': return_url} if return_url else None
+    try:
+        response = session.post(endpoint, json=json_payload, timeout=timeout, verify=verify_param)
+        response.raise_for_status()
+    except requests.RequestException as exc:  # pragma: no cover - depends on network
+        raise EnketoLinkError(f'Failed to request Enketo edit link: {exc}')
+    payload = response.json()
+    url = payload.get('url')
+    if not url:
+        raise EnketoLinkError('Enketo edit URL was not returned by the Kobo API.')
+    return url
+
+
 def infer_columns(records: Iterable[Dict[str, Any]]) -> List[str]:
     """Derive an ordered set of columns from a sequence of records."""
 
@@ -177,7 +225,11 @@ def infer_columns(records: Iterable[Dict[str, Any]]) -> List[str]:
     return ordered
 
 
-def _fetch_remote_payload(token: str, asset_id: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+def _fetch_remote_payload(
+    token: str,
+    asset_id: str,
+    query: Optional[Dict[str, Any]] = None,
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Retrieve asset metadata and submissions from the Kobo API."""
 
     session = requests.Session()
@@ -198,6 +250,8 @@ def _fetch_remote_payload(token: str, asset_id: str) -> Tuple[Dict[str, Any], Li
     records: List[Dict[str, Any]] = []
     next_url: Optional[str] = data_url
     params: Optional[Dict[str, Any]] = {'format': 'json'}
+    if query:
+        params['query'] = json.dumps(query)
     while next_url:
         try:
             resp = session.get(next_url, params=params, timeout=timeout, verify=verify_param)
@@ -263,13 +317,32 @@ def _merge_records(
     return merged_records, added, updated
 
 
+def _prepare_submission_query(refresh_ids: Iterable[str]) -> List[Any]:
+    """Normalise submission identifiers for use in Kobo API queries."""
+
+    query_ids: List[Any] = []
+    for value in refresh_ids:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        try:
+            query_ids.append(int(text))
+        except (TypeError, ValueError):
+            query_ids.append(text)
+    return query_ids
+
+
 __all__ = [
     'CacheSyncResult',
     'DatabaseCacheError',
+    'EnketoLinkError',
     'EntrySnapshot',
     'delete_entry_cache',
     'get_entry_cache_path',
     'infer_columns',
     'load_entry_snapshot',
+    'request_enketo_edit_url',
     'refresh_entry_cache',
 ]
