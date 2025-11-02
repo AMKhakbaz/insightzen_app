@@ -283,6 +283,14 @@ class DatabaseEntry(models.Model):
     # debugging issues with external data ingestion.
     last_error = models.TextField(blank=True, default='')
 
+    # Manual update tracking
+    last_update_requested = models.DateTimeField(null=True, blank=True)
+    update_window_start = models.DateTimeField(null=True, blank=True)
+    update_attempt_count = models.PositiveIntegerField(default=0)
+
+    # Timestamp of the last successful manual update triggered via the UI.
+    last_manual_update = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         unique_together = ('project', 'db_name')
 

@@ -64,6 +64,10 @@
                     <td>{% if entry.status %}<span class="text-success">✓</span>{% else %}<span class="text-danger">×</span>{% endif %}</td>
                     <td>
                         <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary">{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</a>
+                        <form action="{% url 'database_update' entry.pk %}" method="post" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline">{% if lang == 'fa' %}به‌روزرسانی{% else %}Update{% endif %}</button>
+                        </form>
                         <form action="{% url 'database_delete' entry.pk %}" method="post" style="display:inline;" onsubmit="return confirm('{% if lang == 'fa' %}آیا مطمئن هستید؟{% else %}Are you sure?{% endif %}');">
                             {% csrf_token %}
                             <button type="submit" class="btn btn-sm btn-outline">{% if lang == 'fa' %}حذف{% else %}Delete{% endif %}</button>

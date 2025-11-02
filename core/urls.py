@@ -60,6 +60,7 @@ urlpatterns = [
     path('databases/add/', views.database_add, name='database_add'),
     path('databases/<int:pk>/edit/', views.database_edit, name='database_edit'),
     path('databases/<int:pk>/delete/', views.database_delete, name='database_delete'),
+    path('databases/<int:pk>/update/', views.database_update, name='database_update'),
     path('databases/<int:pk>/view/', views.database_view, name='database_view'),
 
     # Quality control editing

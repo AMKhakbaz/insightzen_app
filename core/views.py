@@ -13,7 +13,7 @@ separately.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple, Optional
 
 from django.contrib import messages
@@ -1215,6 +1215,8 @@ def database_add(request: HttpRequest) -> HttpResponse:
             entry.last_sync = None
             entry.last_error = ''
             entry.save()
+            entry.last_update_requested = timezone.now()
+            entry.save(update_fields=['last_update_requested'])
             sync_message = ''
             try:
                 result = refresh_entry_cache(entry)
@@ -1225,8 +1227,11 @@ def database_add(request: HttpRequest) -> HttpResponse:
                 entry.status = False
                 entry.last_error = str(exc)
                 messages.warning(request, f'Initial sync failed: {exc}')
-            entry.last_sync = timezone.now()
-            entry.save(update_fields=['status', 'last_error', 'last_sync'])
+            now = timezone.now()
+            entry.last_sync = now
+            if entry.status:
+                entry.last_manual_update = now
+            entry.save(update_fields=['status', 'last_error', 'last_sync', 'last_manual_update'])
             success_message = 'Database entry created successfully.'
             if sync_message:
                 success_message += sync_message
@@ -1263,6 +1268,8 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
         if form.is_valid():
             entry = form.save()
+            entry.last_update_requested = timezone.now()
+            entry.save(update_fields=['last_update_requested'])
             sync_message = ''
             try:
                 result = refresh_entry_cache(entry)
@@ -1273,8 +1280,11 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
                 entry.status = False
                 entry.last_error = str(exc)
                 messages.warning(request, f'Sync failed after update: {exc}')
-            entry.last_sync = timezone.now()
-            entry.save(update_fields=['status', 'last_error', 'last_sync'])
+            now = timezone.now()
+            entry.last_sync = now
+            if entry.status:
+                entry.last_manual_update = now
+            entry.save(update_fields=['status', 'last_error', 'last_sync', 'last_manual_update'])
             success_message = 'Database entry updated successfully.'
             if sync_message:
                 success_message += sync_message
@@ -1329,6 +1339,76 @@ def database_delete(request: HttpRequest, pk: int) -> HttpResponse:
     entry.delete()
     messages.success(request, 'Database entry deleted successfully.')
     log_activity(user, 'Deleted database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
+    return redirect('database_list')
+
+
+@login_required
+@require_POST
+def database_update(request: HttpRequest, pk: int) -> HttpResponse:
+    """Trigger an incremental cache refresh for a ``DatabaseEntry``.
+
+    Users may invoke this action from the database list to fetch new Kobo
+    submissions.  To prevent abuse, each entry is limited to ten manual
+    refreshes within a rolling 90 minute window.
+    """
+
+    user = request.user
+    if not _user_has_panel(user, 'database_management'):
+        messages.error(request, 'Access denied: you do not have permission to update databases.')
+        return redirect('home')
+
+    entry = get_object_or_404(DatabaseEntry, pk=pk)
+    projects = _get_accessible_projects(user, panel='database_management')
+    if entry.project not in projects:
+        messages.error(request, 'You do not have permission to update this database.')
+        return redirect('database_list')
+
+    now = timezone.now()
+    window_start = entry.update_window_start
+    if window_start is None or now - window_start >= timedelta(minutes=90):
+        entry.update_window_start = now
+        entry.update_attempt_count = 0
+    elif entry.update_attempt_count >= 10:
+        retry_at = entry.update_window_start + timedelta(minutes=90)
+        wait_seconds = max(int((retry_at - now).total_seconds()), 0)
+        wait_minutes = (wait_seconds + 59) // 60
+        if wait_minutes <= 0:
+            wait_message = 'Update limit reached. Please try again shortly.'
+        else:
+            wait_message = (
+                'Update limit reached. Please try again in about '
+                f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''}."
+            )
+        messages.warning(request, wait_message)
+        return redirect('database_list')
+
+    entry.update_attempt_count += 1
+    entry.last_update_requested = now
+    entry.save(update_fields=['update_window_start', 'update_attempt_count', 'last_update_requested'])
+
+    try:
+        result = refresh_entry_cache(entry)
+        entry.status = True
+        entry.last_error = ''
+        entry.last_manual_update = now
+        entry.last_sync = now
+        entry.save(update_fields=['status', 'last_error', 'last_manual_update', 'last_sync'])
+        messages.success(
+            request,
+            (
+                'Database updated successfully. '
+                f"Added {result.added} and updated {result.updated} submissions (total {result.total})."
+            ),
+        )
+        log_activity(user, 'Manually updated database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
+    except DatabaseCacheError as exc:
+        entry.status = False
+        entry.last_error = str(exc)
+        entry.last_sync = now
+        entry.save(update_fields=['status', 'last_error', 'last_sync'])
+        messages.error(request, f'Failed to update database: {exc}')
+        log_activity(user, 'Failed database update', f"DB {entry.db_name} for Project {entry.project.pk}")
+
     return redirect('database_list')
 
 
