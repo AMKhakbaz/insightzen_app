@@ -360,29 +360,6 @@ body.rtl {
     margin-top: 1rem;
 }
 
-.btn.btn-icon {
-    padding: 0.45rem 0.65rem;
-    border-radius: 999px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    color: var(--color-text);
-    box-shadow: none;
-}
-
-.btn.btn-icon:hover {
-    background: var(--color-surface-elevated);
-    border-color: var(--color-accent);
-    color: var(--color-accent);
-    box-shadow: 0 6px 18px rgba(76, 181, 195, 0.18);
-}
-
-.btn.btn-icon:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-}
-
 .qc-actions-header {
     width: 140px;
 }

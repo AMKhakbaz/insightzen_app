@@ -63,8 +63,8 @@
                     <td>{{ entry.asset_id }}</td>
                     <td>{% if entry.status %}<span class="text-success">✓</span>{% else %}<span class="text-danger">×</span>{% endif %}</td>
                     <td>
-                        <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary" aria-label="{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}">
-                            <i data-feather="edit-3" aria-hidden="true"></i>
+                        <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary">
+                            {% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}
                         </a>
                         <form action="{% url 'database_update' entry.pk %}" method="post" style="display:inline;">
                             {% csrf_token %}

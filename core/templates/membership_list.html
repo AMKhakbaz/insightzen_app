@@ -79,8 +79,8 @@
                         {{ enabled_panels|default:'-' }}
                     </td>
                     <td style="white-space:nowrap;">
-                        <a href="{% url 'membership_edit' m.pk %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;" aria-label="{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}">
-                            <i data-feather="edit-3" aria-hidden="true"></i>
+                        <a href="{% url 'membership_edit' m.pk %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">
+                            {% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}
                         </a>
                         <form method="post" action="{% url 'membership_delete' m.pk %}" style="display:inline;">
                             {% csrf_token %}
