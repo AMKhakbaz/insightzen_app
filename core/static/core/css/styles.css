@@ -157,6 +157,13 @@ body.rtl {
     transition: transform 0.2s ease;
 }
 
+.sidebar nav .menu-summary.is-active,
+.sidebar nav .menu-group.is-active > .menu-summary {
+    color: var(--color-accent-strong);
+    background: rgba(76, 181, 195, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(92, 203, 216, 0.25);
+}
+
 .sidebar nav details[open] > .menu-summary .menu-caret {
     transform: rotate(180deg);
 }
@@ -174,6 +181,13 @@ body.rtl {
     padding: 0.45rem 0.9rem;
     border-radius: 8px;
     transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.sidebar nav .menu-link.is-active {
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+    font-weight: var(--font-weight-medium);
+    box-shadow: inset 0 0 0 1px rgba(92, 203, 216, 0.45);
 }
 
 .sidebar nav .menu-link:hover {

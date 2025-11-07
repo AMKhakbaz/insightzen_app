@@ -130,6 +130,8 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
     user = context.get('user')
     panels_enabled: Dict[str, bool] = context.get('panels_enabled', {}) or {}
     lang = context.get('lang', 'en')
+    request = context.get('request')
+    current_path = getattr(request, 'path', '')
 
     is_authenticated = bool(getattr(user, 'is_authenticated', False))
     profile = getattr(user, 'profile', None)
@@ -139,27 +141,38 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
     def panel_active(key: str) -> bool:
         return bool(panels_enabled.get(key, False))
 
+    def url_is_active(url: str | None) -> bool:
+        if not url or url == '#':
+            return False
+        if not current_path:
+            return False
+        if url == '/':
+            return current_path == '/'
+        normalized_target = url.rstrip('/')
+        normalized_current = current_path.rstrip('/')
+        return normalized_current.startswith(normalized_target)
+
     sections: List[Dict[str, Any]] = [
         {
-            'key': 'user-management',
+            'key': 'home',
             'collapsible': False,
             'visible': True,
             'items': [
                 {
-                    'icon': 'users',
-                    'label': {'en': 'User Management', 'fa': 'مدیریت کاربران'},
-                    'url': _resolve_url('membership_list'),
-                    'disabled': not has_org,
+                    'icon': 'home',
+                    'label': {'en': 'Home', 'fa': 'خانه'},
+                    'url': _resolve_url('home'),
+                    'disabled': False,
                     'visible': True,
                 },
             ],
         },
         {
-            'key': 'projects',
-            'title': {'en': 'Projects', 'fa': 'پروژه‌ها'},
+            'key': 'management',
+            'title': {'en': 'Management', 'fa': 'مدیریت'},
             'icon': 'folder',
             'collapsible': True,
-            'open': True,
+            'default_open': True,
             'visible': True,
             'items': [
                 {
@@ -183,6 +196,13 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
                     'disabled': not panel_active('quota_management'),
                     'visible': True,
                 },
+                {
+                    'icon': 'users',
+                    'label': {'en': 'User Management', 'fa': 'مدیریت کاربران'},
+                    'url': _resolve_url('membership_list'),
+                    'disabled': not has_org,
+                    'visible': True,
+                },
             ],
         },
         {
@@ -190,7 +210,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
             'title': {'en': 'Collection', 'fa': 'گردآوری'},
             'icon': 'package',
             'collapsible': True,
-            'open': False,
+            'default_open': False,
             'visible': True,
             'items': [
                 {
@@ -235,7 +255,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
             'title': {'en': 'Quality Control', 'fa': 'کنترل کیفیت'},
             'icon': 'check-circle',
             'collapsible': True,
-            'open': False,
+            'default_open': False,
             'visible': True,
             'items': [
                 {
@@ -294,7 +314,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
             'title': {'en': 'MRAnalysis', 'fa': 'تحلیل تحقیقات بازار'},
             'icon': 'pie-chart',
             'collapsible': True,
-            'open': False,
+            'default_open': False,
             'visible': True,
             'items': [
                 {
@@ -339,7 +359,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
             'title': {'en': 'Logs', 'fa': 'گزارش‌ها'},
             'icon': 'file-text',
             'collapsible': True,
-            'open': False,
+            'default_open': False,
             'visible': is_superuser,
             'items': [
                 {
@@ -352,6 +372,18 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
             ],
         },
     ]
+
+    for section in sections:
+        items = section.get('items', [])
+        has_active = False
+        for item in items:
+            is_active = url_is_active(item.get('url'))
+            item['is_active'] = is_active
+            if is_active:
+                has_active = True
+        section['has_active'] = has_active
+        default_open = section.get('default_open', False)
+        section['is_open'] = has_active or default_open
 
     return {
         'sections': sections,

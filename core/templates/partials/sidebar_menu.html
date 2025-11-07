@@ -2,8 +2,8 @@
     {% for section in sections %}
         {% if section.visible %}
             {% if section.collapsible %}
-                <details class="menu-group"{% if section.open %} open{% endif %}>
-                    <summary class="menu-summary">
+                <details class="menu-group{% if section.has_active %} is-active{% endif %}"{% if section.is_open %} open{% endif %}>
+                    <summary class="menu-summary{% if section.has_active %} is-active{% endif %}">
                         <i class="menu-icon" data-feather="{{ section.icon }}" aria-hidden="true"></i>
                         <span class="menu-label">
                             {% if lang == 'fa' %}
@@ -18,7 +18,7 @@
                         {% for item in section.items %}
                             {% if item.visible %}
                                 <li>
-                                    <a href="{{ item.url }}" class="menu-link{% if item.disabled %} disabled{% endif %}"{% if item.disabled %} aria-disabled="true"{% endif %}>
+                                    <a href="{{ item.url }}" class="menu-link{% if item.disabled %} disabled{% endif %}{% if item.is_active %} is-active{% endif %}"{% if item.disabled %} aria-disabled="true"{% endif %}{% if item.is_active %} aria-current="page"{% endif %}>
                                         <i class="menu-icon" data-feather="{{ item.icon }}" aria-hidden="true"></i>
                                         <span class="menu-label">
                                             {% if lang == 'fa' %}
@@ -34,12 +34,12 @@
                     </ul>
                 </details>
             {% else %}
-                <div class="menu-group menu-group--single">
+                <div class="menu-group menu-group--single{% if section.has_active %} is-active{% endif %}">
                     <ul class="menu-list">
                         {% for item in section.items %}
                             {% if item.visible %}
                                 <li>
-                                    <a href="{{ item.url }}" class="menu-link{% if item.disabled %} disabled{% endif %}"{% if item.disabled %} aria-disabled="true"{% endif %}>
+                                    <a href="{{ item.url }}" class="menu-link{% if item.disabled %} disabled{% endif %}{% if item.is_active %} is-active{% endif %}"{% if item.disabled %} aria-disabled="true"{% endif %}{% if item.is_active %} aria-current="page"{% endif %}>
                                         <i class="menu-icon" data-feather="{{ item.icon }}" aria-hidden="true"></i>
                                         <span class="menu-label">
                                             {% if lang == 'fa' %}
