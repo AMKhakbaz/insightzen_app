@@ -1,5 +1,6 @@
 (function () {
-  const locale = document.documentElement.lang || undefined;
+  const documentLang = (document.documentElement.lang || 'en').toLowerCase();
+  const locale = documentLang || undefined;
   const digitMap = {
     '۰': '0',
     '۱': '1',
@@ -29,6 +30,10 @@
     }
     const stringValue = String(value).trim();
     return stringValue.replace(/[۰-۹٠-٩]/g, (char) => digitMap[char] || char);
+  }
+
+  function normaliseForSearch(value) {
+    return normaliseText(value).toLocaleLowerCase(locale || undefined);
   }
 
   function extractNumeric(value) {
@@ -109,7 +114,32 @@
       return cellNumber === numericValue;
     }
 
-    return normaliseText(cellValue).toLowerCase().includes(filter.toLowerCase());
+    return normaliseForSearch(cellValue).includes(normaliseForSearch(filter));
+  }
+
+  const toolbarMessages = {
+    fa: {
+      searchPlaceholder: 'جستجو در جدول…',
+      searchLabel: 'جستجو در جدول',
+      showFilters: 'نمایش فیلترها',
+      hideFilters: 'پنهان کردن فیلترها',
+      toggleLabel: 'تغییر وضعیت فیلترهای جدول',
+    },
+    en: {
+      searchPlaceholder: 'Search table…',
+      searchLabel: 'Search this table',
+      showFilters: 'Show filters',
+      hideFilters: 'Hide filters',
+      toggleLabel: 'Toggle table filters',
+    },
+  };
+
+  function resolveMessages() {
+    const short = documentLang.split('-')[0];
+    if (toolbarMessages[short]) {
+      return toolbarMessages[short];
+    }
+    return toolbarMessages.en;
   }
 
   class InteractiveTable {
@@ -123,8 +153,12 @@
       this.emptyText = table.dataset.emptyText || 'No results to display.';
       this.searchText = table.dataset.searchText || 'Filtering…';
       this.statusEl = this.createStatusElement();
+      this.messages = resolveMessages();
+      this.globalFilter = '';
+      this.filtersVisible = true;
       this.captureRows();
       this.cacheControls();
+      this.createToolbar();
       this.bindEvents();
       this.applyFilters({ resetSort: false });
       table.dispatchEvent(
@@ -151,6 +185,7 @@
     cacheControls() {
       this.sortButtons = Array.from(this.table.querySelectorAll('[data-sort-column]'));
       this.filterInputs = Array.from(this.table.querySelectorAll('[data-filter-column]'));
+      this.filterRow = null;
       this.columnMeta = new Map();
       this.sortButtons.forEach((btn) => {
         const column = Number(btn.dataset.sortColumn);
@@ -165,7 +200,21 @@
         } else {
           this.columnMeta.get(column).type = type;
         }
+        if (!this.filterRow) {
+          const row = input.closest('tr');
+          if (row) {
+            this.filterRow = row;
+            row.dataset.tableFilterRow = 'true';
+          }
+        }
       });
+      if (this.filterRow) {
+        this.table.classList.add('has-filter-row');
+        if (this.filterRow.hasAttribute('hidden')) {
+          this.filtersVisible = false;
+          this.table.classList.add('table-filters-hidden');
+        }
+      }
     }
 
     bindEvents() {
@@ -174,17 +223,21 @@
       });
       this.filterInputs.forEach((input) => {
         const handler = () => {
-          clearTimeout(this.filterTimer);
-          this.table.classList.add('is-searching');
-          this.setStatus('searching');
-          this.filterTimer = setTimeout(() => {
-            this.applyFilters();
-            this.table.classList.remove('is-searching');
-          }, 160);
+          this.triggerFilterUpdate();
         };
         input.addEventListener('input', handler);
         input.addEventListener('change', handler);
       });
+      if (this.globalSearchInput) {
+        this.globalSearchInput.addEventListener('input', () => {
+          this.setGlobalFilter(this.globalSearchInput.value);
+        });
+      }
+      if (this.filterToggleButton) {
+        this.filterToggleButton.addEventListener('click', () => {
+          this.toggleAdvancedFilters();
+        });
+      }
     }
 
     handleSort(button) {
@@ -221,12 +274,26 @@
           column: Number(input.dataset.filterColumn),
           type: input.dataset.filterType || 'text',
           value,
+          valueLower: normaliseForSearch(value),
         });
       });
       return filters;
     }
 
-    matchesFilters(row, filters) {
+    matchesRow(row, filters, globalTerm) {
+      if (globalTerm) {
+        const cells = Array.from(row.cells || []);
+        const hasMatch = cells.some((cell) => {
+          const cellValue = getCellContent(cell);
+          if (!cellValue) {
+            return false;
+          }
+          return normaliseForSearch(cellValue).includes(globalTerm);
+        });
+        if (!hasMatch) {
+          return false;
+        }
+      }
       if (!filters.length) {
         return true;
       }
@@ -236,7 +303,7 @@
         if (filter.type === 'number') {
           return parseNumericFilter(filter.value, cellValue);
         }
-        return normaliseText(cellValue).toLowerCase().includes(filter.value.toLowerCase());
+        return normaliseForSearch(cellValue).includes(filter.valueLower);
       });
     }
 
@@ -267,8 +334,8 @@
           }
           return numA > numB ? direction : -direction;
         }
-        const textA = normaliseText(cellA).toLowerCase();
-        const textB = normaliseText(cellB).toLowerCase();
+        const textA = normaliseForSearch(cellA);
+        const textB = normaliseForSearch(cellB);
         if (textA === textB) {
           return (a.index - b.index) * direction;
         }
@@ -282,10 +349,17 @@
         return;
       }
       const filters = this.getFilters();
-      const filtered = this.originalRows.filter(({ row }) => this.matchesFilters(row, filters));
+      const globalTerm = this.globalFilter;
+      const filtered = this.originalRows.filter(({ row }) =>
+        this.matchesRow(row, filters, globalTerm)
+      );
       const sorted = this.sortRows(filtered);
       this.renderRows(sorted);
       this.updateSortIndicators();
+      this.table.classList.toggle('has-active-filters', Boolean(filters.length) || Boolean(globalTerm));
+      if (this.filterToggleButton) {
+        this.filterToggleButton.classList.toggle('has-active-filters', Boolean(filters.length));
+      }
       if (sorted.length === 0) {
         this.setStatus('empty');
       } else {
@@ -351,6 +425,115 @@
         this.statusEl.classList.add('is-empty');
         this.statusEl.classList.remove('is-searching');
       }
+    }
+
+    triggerFilterUpdate() {
+      clearTimeout(this.filterTimer);
+      this.table.classList.add('is-searching');
+      this.setStatus('searching');
+      this.filterTimer = setTimeout(() => {
+        this.applyFilters();
+        this.table.classList.remove('is-searching');
+      }, 160);
+    }
+
+    setGlobalFilter(value, { silent } = {}) {
+      const incoming = value == null ? '' : String(value);
+      const normalised = normaliseForSearch(incoming);
+      if (this.globalSearchInput && this.globalSearchInput.value !== incoming) {
+        this.globalSearchInput.value = incoming;
+      }
+      if (normalised === this.globalFilter) {
+        if (!silent) {
+          this.triggerFilterUpdate();
+        }
+        return;
+      }
+      this.globalFilter = normalised;
+      if (!silent) {
+        this.triggerFilterUpdate();
+      }
+    }
+
+    createToolbar() {
+      if (!this.container) {
+        return;
+      }
+      const existing = this.container.previousElementSibling;
+      if (existing && existing.classList.contains('table-toolbar')) {
+        this.toolbar = existing;
+        this.globalSearchInput = existing.querySelector('[data-table-global-search]');
+        this.filterToggleButton = existing.querySelector('[data-table-filter-toggle]');
+        if (this.filterToggleButton) {
+          this.updateFilterToggleState();
+        }
+        return;
+      }
+      const toolbar = document.createElement('div');
+      toolbar.className = 'table-toolbar';
+
+      const searchGroup = document.createElement('div');
+      searchGroup.className = 'table-toolbar__search';
+
+      const searchInput = document.createElement('input');
+      searchInput.type = 'search';
+      searchInput.setAttribute('data-table-global-search', 'true');
+      searchInput.setAttribute('aria-label', this.messages.searchLabel);
+      searchInput.placeholder = this.messages.searchPlaceholder;
+      searchInput.autocomplete = 'off';
+      searchInput.spellcheck = false;
+      searchInput.dir = 'auto';
+      searchInput.className = 'table-toolbar__search-input';
+
+      searchGroup.appendChild(searchInput);
+      toolbar.appendChild(searchGroup);
+
+      if (this.filterRow) {
+        const actions = document.createElement('div');
+        actions.className = 'table-toolbar__actions';
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'btn btn-outline table-toolbar__toggle';
+        toggle.setAttribute('data-table-filter-toggle', 'true');
+        toggle.setAttribute('aria-label', this.messages.toggleLabel);
+        toggle.setAttribute('aria-expanded', 'true');
+        actions.appendChild(toggle);
+        toolbar.appendChild(actions);
+        this.filterToggleButton = toggle;
+        this.updateFilterToggleState();
+      }
+
+      if (this.container.parentElement) {
+        this.container.parentElement.insertBefore(toolbar, this.container);
+      } else {
+        this.container.insertAdjacentElement('beforebegin', toolbar);
+      }
+      this.toolbar = toolbar;
+      this.globalSearchInput = searchInput;
+    }
+
+    toggleAdvancedFilters(force) {
+      if (!this.filterRow) {
+        return;
+      }
+      if (typeof force === 'boolean') {
+        this.filtersVisible = force;
+      } else {
+        this.filtersVisible = !this.filtersVisible;
+      }
+      this.filterRow.hidden = !this.filtersVisible;
+      this.table.classList.toggle('table-filters-hidden', !this.filtersVisible);
+      this.updateFilterToggleState();
+    }
+
+    updateFilterToggleState() {
+      if (!this.filterToggleButton) {
+        return;
+      }
+      const label = this.filtersVisible ? this.messages.hideFilters : this.messages.showFilters;
+      this.filterToggleButton.textContent = label;
+      this.filterToggleButton.setAttribute('aria-expanded', this.filtersVisible ? 'true' : 'false');
+      this.filterToggleButton.classList.toggle('is-muted', !this.filtersVisible);
     }
   }
 
