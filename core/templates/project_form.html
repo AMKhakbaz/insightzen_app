@@ -23,9 +23,6 @@
             {{ form.status }}
             {{ form.status.errors }}
         </div>
-        {# Project types: allow user to add multiple types with a + button.  We display
-           one input initially and allow cloning more inputs.  The values
-           will be collected into a hidden 'types' field on submission. #}
         <div id="types-section" style="margin-bottom:1rem;">
             <label>{% if lang == 'fa' %}نوع پروژه{% else %}Project Type(s){% endif %}</label>
             <div id="types-container" style="display:flex;flex-direction:column;gap:0.5rem;">
