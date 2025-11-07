@@ -517,6 +517,26 @@ body.rtl {
     overflow-wrap: anywhere;
 }
 
+.table-cell--ellipsis {
+    max-width: 20rem;
+    min-width: 12rem;
+    width: 24%;
+}
+
+.table-ellipsis {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: top;
+}
+
+.table-ellipsis:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
 .table tr:nth-child(even) {
     background: rgba(255, 255, 255, 0.02);
 }

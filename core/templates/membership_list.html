@@ -73,10 +73,10 @@
                     <td>{{ m.user.profile.phone }}</td>
                     <td>{{ m.project.name }}</td>
                     <td>{{ m.start_work }}</td>
-                    <td>
+                    <td class="table-cell--ellipsis">
                         {# display enabled panel names for this membership using custom tag #}
                         {% panel_names m panel_labels as enabled_panels %}
-                        {{ enabled_panels|default:'-' }}
+                        <span class="table-ellipsis" title="{{ enabled_panels|default:'-' }}" tabindex="0">{{ enabled_panels|default:'-' }}</span>
                     </td>
                     <td style="white-space:nowrap;">
                         <a href="{% url 'membership_edit' m.pk %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">
