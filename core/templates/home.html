@@ -23,11 +23,5 @@
         </table>
     </div>
     {% endif %}
-    {% if profile and profile.organization %}
-        <div style="margin-top:2rem;">
-            <a class="btn" href="{% url 'project_list' %}">{% if lang == 'fa' %}مدیریت پروژه{% else %}Manage Projects{% endif %}</a>
-            <a class="btn" href="{% url 'membership_list' %}">{% if lang == 'fa' %}مدیریت کاربران{% else %}Manage Users{% endif %}</a>
-        </div>
-    {% endif %}
 </div>
 {% endblock %}
