@@ -124,6 +124,9 @@
       showFilters: 'نمایش فیلترها',
       hideFilters: 'پنهان کردن فیلترها',
       toggleLabel: 'تغییر وضعیت فیلترهای جدول',
+      showSearch: 'نمایش جستجو',
+      hideSearch: 'پنهان کردن جستجو',
+      searchToggleLabel: 'تغییر وضعیت جستجوی جدول',
       advanced: {
         button: 'فیلتر پیشرفته',
         title: 'فیلترهای پیشرفته',
@@ -174,6 +177,9 @@
       showFilters: 'Show filters',
       hideFilters: 'Hide filters',
       toggleLabel: 'Toggle table filters',
+      showSearch: 'Show search',
+      hideSearch: 'Hide search',
+      searchToggleLabel: 'Toggle table search',
       advanced: {
         button: 'Advanced filters',
         title: 'Advanced filters',
@@ -254,7 +260,11 @@
       this.searchText = table.dataset.searchText || 'Filtering…';
       this.messages = resolveMessages();
       this.globalFilter = '';
-      this.filtersVisible = true;
+      this.defaultFiltersVisible = table.dataset.filtersVisible === 'true';
+      this.filtersVisible = this.defaultFiltersVisible;
+      this.searchVisible = table.dataset.searchHidden === 'true' ? false : true;
+      this.searchGroup = null;
+      this.searchToggleButton = null;
       this.advancedFilters = [];
       this.advancedLogic = 'and';
       this.savedAdvancedFilters = null;
@@ -324,10 +334,24 @@
 
       if (this.filterRow) {
         this.table.classList.add('has-filter-row');
+        let initialVisible = this.defaultFiltersVisible;
         if (this.filterRow.hasAttribute('hidden')) {
-          this.filtersVisible = false;
-          this.table.classList.add('table-filters-hidden');
+          initialVisible = false;
         }
+        const hasPresetFilters = this.filterInputs.some((input) => normaliseText(input.value));
+        if (hasPresetFilters) {
+          initialVisible = true;
+        }
+        if (!initialVisible) {
+          this.filterRow.hidden = true;
+          this.table.classList.add('table-filters-hidden');
+        } else {
+          this.filterRow.hidden = false;
+          this.table.classList.remove('table-filters-hidden');
+        }
+        this.filtersVisible = initialVisible;
+      } else {
+        this.filtersVisible = false;
       }
 
       const headers = Array.from(this.table.querySelectorAll('thead th'));
@@ -359,6 +383,11 @@
       if (this.globalSearchInput) {
         this.globalSearchInput.addEventListener('input', () => {
           this.setGlobalFilter(this.globalSearchInput.value);
+        });
+      }
+      if (this.searchToggleButton) {
+        this.searchToggleButton.addEventListener('click', () => {
+          this.toggleGlobalSearchVisibility();
         });
       }
       if (this.filterToggleButton) {
@@ -601,12 +630,21 @@
       if (existing && existing.classList.contains('table-toolbar')) {
         this.toolbar = existing;
         this.globalSearchInput = existing.querySelector('[data-table-global-search]');
+        this.searchGroup = existing.querySelector('.table-toolbar__search');
+        this.searchToggleButton = existing.querySelector('[data-table-search-toggle]');
         this.filterToggleButton = existing.querySelector('[data-table-filter-toggle]');
         this.toolbarActions = existing.querySelector('.table-toolbar__actions');
         if (!this.toolbarActions) {
           this.toolbarActions = document.createElement('div');
           this.toolbarActions.className = 'table-toolbar__actions';
           existing.appendChild(this.toolbarActions);
+        }
+        if (this.searchGroup) {
+          this.searchVisible = !this.searchGroup.hidden;
+          this.searchGroup.hidden = !this.searchVisible;
+        }
+        if (this.searchToggleButton) {
+          this.updateSearchToggleState();
         }
         if (this.filterToggleButton) {
           this.updateFilterToggleState();
@@ -633,9 +671,23 @@
       searchGroup.appendChild(searchInput);
       toolbar.appendChild(searchGroup);
 
+      this.searchGroup = searchGroup;
+      if (!this.searchVisible) {
+        this.searchGroup.hidden = true;
+      }
+
       const actions = document.createElement('div');
       actions.className = 'table-toolbar__actions';
       toolbar.appendChild(actions);
+
+      const searchToggle = document.createElement('button');
+      searchToggle.type = 'button';
+      searchToggle.className = 'btn btn-outline table-toolbar__toggle';
+      searchToggle.setAttribute('data-table-search-toggle', 'true');
+      searchToggle.setAttribute('aria-label', this.messages.searchToggleLabel || this.messages.searchLabel);
+      actions.appendChild(searchToggle);
+      this.searchToggleButton = searchToggle;
+      this.updateSearchToggleState();
 
       if (this.filterRow) {
         const toggle = document.createElement('button');
@@ -643,7 +695,6 @@
         toggle.className = 'btn btn-outline table-toolbar__toggle';
         toggle.setAttribute('data-table-filter-toggle', 'true');
         toggle.setAttribute('aria-label', this.messages.toggleLabel);
-        toggle.setAttribute('aria-expanded', 'true');
         actions.appendChild(toggle);
         this.filterToggleButton = toggle;
         this.updateFilterToggleState();
@@ -657,6 +708,30 @@
       this.toolbar = toolbar;
       this.toolbarActions = actions;
       this.globalSearchInput = searchInput;
+    }
+
+    toggleGlobalSearchVisibility(force) {
+      if (!this.searchGroup) {
+        return;
+      }
+      if (typeof force === 'boolean') {
+        this.searchVisible = force;
+      } else {
+        this.searchVisible = !this.searchVisible;
+      }
+      this.searchGroup.hidden = !this.searchVisible;
+      if (!this.searchVisible) {
+        if (this.globalSearchInput) {
+          this.globalSearchInput.value = '';
+        }
+        this.setGlobalFilter('', { silent: true });
+        this.applyFilters({ resetSort: false });
+      } else if (this.globalSearchInput) {
+        const current = this.globalSearchInput.value;
+        this.setGlobalFilter(current, { silent: true });
+        this.applyFilters({ resetSort: false });
+      }
+      this.updateSearchToggleState();
     }
 
     toggleAdvancedFilters(force) {
@@ -680,7 +755,19 @@
       const label = this.filtersVisible ? this.messages.hideFilters : this.messages.showFilters;
       this.filterToggleButton.textContent = label;
       this.filterToggleButton.setAttribute('aria-expanded', this.filtersVisible ? 'true' : 'false');
-      this.filterToggleButton.classList.toggle('is-muted', !this.filtersVisible);
+      this.filterToggleButton.classList.toggle('is-active', this.filtersVisible);
+      this.filterToggleButton.classList.toggle('is-inactive', !this.filtersVisible);
+    }
+
+    updateSearchToggleState() {
+      if (!this.searchToggleButton) {
+        return;
+      }
+      const label = this.searchVisible ? this.messages.hideSearch : this.messages.showSearch;
+      this.searchToggleButton.textContent = label;
+      this.searchToggleButton.setAttribute('aria-pressed', this.searchVisible ? 'true' : 'false');
+      this.searchToggleButton.classList.toggle('is-active', this.searchVisible);
+      this.searchToggleButton.classList.toggle('is-inactive', !this.searchVisible);
     }
 
     getAdvancedFilterableColumns() {
