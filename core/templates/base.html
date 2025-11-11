@@ -45,6 +45,47 @@
             </div>
         </div>
     </div>
+    <template id="table-advanced-filter-template">
+        <div class="table-advanced-filter" role="dialog" aria-modal="true" data-table-advanced-root hidden>
+            <div class="table-advanced-filter__backdrop" data-advanced-dismiss="true"></div>
+            <div class="table-advanced-filter__panel" role="document">
+                <header class="table-advanced-filter__header">
+                    <h2 class="table-advanced-filter__title" data-i18n="title"></h2>
+                    <button type="button" class="table-advanced-filter__close" data-advanced-dismiss="true" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </header>
+                <div class="table-advanced-filter__body">
+                    <p class="table-advanced-filter__hint" data-i18n="hint"></p>
+                    <div class="table-advanced-filter__logic">
+                        <label>
+                            <span data-i18n="logicLabel"></span>
+                            <select data-advanced-logic></select>
+                        </label>
+                    </div>
+                    <div class="table-advanced-filter__saved" data-advanced-saved hidden>
+                        <p class="table-advanced-filter__saved-text" data-i18n="savedInfo"></p>
+                        <div class="table-advanced-filter__saved-actions">
+                            <button type="button" class="btn btn-sm btn-secondary" data-advanced-load></button>
+                            <button type="button" class="btn btn-sm btn-outline" data-advanced-clear-saved></button>
+                        </div>
+                    </div>
+                    <div class="table-advanced-filter__status" data-advanced-status role="status" aria-live="polite"></div>
+                    <div class="table-advanced-filter__conditions" data-advanced-conditions></div>
+                    <button type="button" class="btn btn-sm table-advanced-filter__add" data-advanced-add></button>
+                    <label class="table-advanced-filter__remember">
+                        <input type="checkbox" data-advanced-remember>
+                        <span data-i18n="remember"></span>
+                    </label>
+                </div>
+                <footer class="table-advanced-filter__footer">
+                    <button type="button" class="btn btn-primary" data-advanced-apply></button>
+                    <button type="button" class="btn btn-outline" data-advanced-reset></button>
+                    <button type="button" class="btn btn-text" data-advanced-cancel></button>
+                </footer>
+            </div>
+        </div>
+    </template>
     {% block extra_scripts %}{% endblock %}
     <script src="{% static 'core/js/scripts.js' %}"></script>
     <script src="{% static 'core/js/table.js' %}"></script>
