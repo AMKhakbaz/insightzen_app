@@ -835,6 +835,9 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
     person_mobile = None
     quota_cell = None
     call_sample_obj = None
+    prefill_age: Optional[int] = None
+    prefill_birth_year: Optional[int] = None
+    prefill_city: Optional[str] = None
     if selected_project_id:
         try:
             selected_project = Project.objects.get(pk=selected_project_id)
@@ -952,6 +955,37 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
                 person_to_call = call_sample.person
                 person_mobile = call_sample.mobile.mobile if call_sample.mobile else None
                 quota_cell = call_sample.quota
+                # Prefill optional demographic fields when available
+                person_record = call_sample.person or (call_sample.mobile.person if call_sample.mobile else None)
+                now_year = timezone.localdate().year
+                # Birth year preference: person record first, then latest interview data
+                if person_record and person_record.birth_year is not None:
+                    prefill_birth_year = person_record.birth_year
+                # Attempt to derive city from the person or related mobile record
+                if person_record and person_record.city_name:
+                    prefill_city = person_record.city_name
+                elif call_sample.mobile and call_sample.mobile.person and call_sample.mobile.person.city_name:
+                    prefill_city = call_sample.mobile.person.city_name
+                # Fallbacks from the latest interview for the same person and project
+                latest_interview = None
+                if person_record:
+                    latest_interview = (
+                        Interview.objects.filter(project=selected_project, person=person_record)
+                        .order_by('-created_at')
+                        .first()
+                    )
+                if latest_interview:
+                    if prefill_birth_year is None and latest_interview.birth_year is not None:
+                        prefill_birth_year = latest_interview.birth_year
+                    if prefill_city is None and latest_interview.city:
+                        prefill_city = latest_interview.city
+                    if latest_interview.age is not None:
+                        prefill_age = latest_interview.age
+                # Compute age from the most reliable birth year value when available
+                if prefill_birth_year is not None:
+                    calculated_age = now_year - prefill_birth_year
+                    if calculated_age >= 0:
+                        prefill_age = calculated_age
     # status codes mapping for display in template
     status_codes = {
         1: 'مصاحبه موفق' if request.session.get('lang', 'en') == 'fa' else 'Successful Interview',
@@ -992,6 +1026,9 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
         'call_sample': call_sample_obj,
         'status_codes': status_codes,
         'start_form': start_iso,
+        'prefill_age': prefill_age,
+        'prefill_birth_year': prefill_birth_year,
+        'prefill_city': prefill_city,
     }
     return render(request, 'telephone_interviewer.html', context)
 

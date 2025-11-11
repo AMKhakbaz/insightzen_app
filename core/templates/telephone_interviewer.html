@@ -61,15 +61,15 @@
             <div style="margin-bottom:0.5rem;display:flex;flex-wrap:wrap;gap:1rem;">
                 <div>
                     <label>{% if lang == 'fa' %}سن{% else %}Age{% endif %}</label>
-                    <input type="number" name="age" class="form-control" style="width:120px;" min="0" max="120">
+                    <input type="number" name="age" class="form-control" style="width:120px;" min="0" max="120" value="{{ prefill_age|default_if_none:'' }}">
                 </div>
                 <div>
                     <label>{% if lang == 'fa' %}سال تولد{% else %}Birth Year{% endif %}</label>
-                    <input type="number" name="birth_year" class="form-control" style="width:120px;" min="1900" max="2100">
+                    <input type="number" name="birth_year" class="form-control" style="width:120px;" min="1900" max="2100" value="{{ prefill_birth_year|default_if_none:'' }}">
                 </div>
                 <div>
                     <label>{% if lang == 'fa' %}شهر{% else %}City{% endif %}</label>
-                    <input type="text" name="city" class="form-control" style="width:160px;">
+                    <input type="text" name="city" class="form-control" style="width:160px;" value="{{ prefill_city|default_if_none:'' }}">
                 </div>
             </div>
             <button type="submit" class="btn" style="margin-top:0.5rem;">{% if lang == 'fa' %}ثبت{% else %}Submit{% endif %}</button>
