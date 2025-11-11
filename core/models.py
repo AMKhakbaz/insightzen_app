@@ -4,9 +4,9 @@ This module defines the database schema for the application using Django's
 ORM. The models here reflect the latest specifications provided by the
 user, including a more expressive membership model, a rich person
 registry with associated mobile numbers, a table for interviews and a
-quota table used by the quota management panel.  The ``Project`` model
-no longer stores an owner directly; instead project ownership and panel
-permissions are governed exclusively via the ``Membership`` model.
+quota table used by the quota management panel.  Project ownership and
+panel permissions are governed via the ``Membership`` model where a
+single membership per project is flagged as the owner.
 """
 
 from __future__ import annotations
@@ -101,10 +101,10 @@ class ActivityLog(models.Model):
 class Project(models.Model):
     """Represents a research project.
 
-    Projects do not store a direct ``owner`` attribute; instead, project
-    ownership and panel access are managed via the ``Membership`` model.
-    The ``filled_samples`` field tracks the number of completed
-    interviews and is automatically initialised to zero.
+    Ownership is inferred from related ``Membership`` rows with
+    ``is_owner`` set to ``True``.  The ``filled_samples`` field tracks the
+    number of completed interviews and is automatically initialised to
+    zero.
     """
 
     name = models.CharField(max_length=255)
@@ -127,7 +127,10 @@ class Membership(models.Model):
 
     Each membership record indicates which panels a user may access for
     a given project.  The ``start_work`` date captures when the
-    association was created.  Panel names are stored as boolean flags
+    association was created.  Exactly one membership per project should
+    have ``is_owner`` set to ``True`` so that, after a project's
+    deadline, only the owner retains panel access.  Panel names are
+    stored as boolean flags
     corresponding to the list provided by the user, omitting the
     ``User Management`` and ``Project Management`` panels which are
     reserved for organisation administrators.
@@ -138,6 +141,8 @@ class Membership(models.Model):
     start_work = models.DateField(auto_now_add=True)
     # Optional title to describe this membership (e.g. role or label).
     title = models.CharField(max_length=100, blank=True, null=True)
+    # Whether this membership represents the designated project owner.
+    is_owner = models.BooleanField(default=False)
     # Panel permissions
     database_management = models.BooleanField(default=False)
     quota_management = models.BooleanField(default=False)
@@ -160,6 +165,13 @@ class Membership(models.Model):
 
     class Meta:
         unique_together = ('user', 'project')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['project'],
+                condition=models.Q(is_owner=True),
+                name='unique_owner_per_project',
+            )
+        ]
 
     def __str__(self) -> str:  # pragma: no cover
         return f"{self.user.username} membership in {self.project.name}"

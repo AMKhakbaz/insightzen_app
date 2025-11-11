@@ -122,7 +122,8 @@ class UserToProjectForm(forms.Form):
     ``Membership`` model.  ``User Management`` and ``Project Management``
     are intentionally omitted here because those permissions are
     determined implicitly by whether the account represents an
-    organisation.
+    organisation.  The ``is_owner`` checkbox designates the single
+    membership that retains access once the project deadline has passed.
     """
 
     SUGGESTED_TITLES = [
@@ -156,6 +157,11 @@ class UserToProjectForm(forms.Form):
         required=False,
         max_length=100,
         widget=forms.TextInput(attrs={'class': 'form-control', 'data-behaviour': 'title-custom', 'placeholder': 'Enter custom title'})
+    )
+    is_owner = forms.BooleanField(
+        label='Project Owner',
+        required=False,
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'})
     )
     # Panel permissions; all default to False.
     database_management = forms.BooleanField(required=False, label='Database Management')
@@ -204,6 +210,10 @@ class UserToProjectForm(forms.Form):
         # select is swapped for hidden inputs in edit view contexts).
         self.fields['title'].widget.attrs.setdefault('class', 'form-select')
         self.fields['title_custom'].widget.attrs.setdefault('class', 'form-control')
+        self.fields['is_owner'].widget.attrs.setdefault('class', 'form-check-input')
+        if 'is_owner' not in self.initial:
+            self.initial['is_owner'] = False
+        self.fields['is_owner'].initial = self.initial.get('is_owner', False)
 
     def clean(self) -> dict[str, any]:  # type: ignore[override]
         cleaned_data = super().clean()
@@ -222,6 +232,7 @@ class UserToProjectForm(forms.Form):
 
         # The auxiliary field should not leak into membership kwargs.
         cleaned_data.pop('title_custom', None)
+        cleaned_data['is_owner'] = bool(cleaned_data.get('is_owner'))
         return cleaned_data
 
 

@@ -43,6 +43,16 @@
                 {{ form.title_custom.errors }}
             </div>
         </div>
+        <div class="form-check membership-owner-field">
+            {{ form.is_owner }}
+            <label for="id_is_owner">
+                {% if lang == 'fa' %}این کاربر مالک پروژه است{% else %}This user is the project owner{% endif %}
+            </label>
+            <small class="form-hint">
+                {% if lang == 'fa' %}پس از اتمام ددلاین فقط مالک به پنل‌ها دسترسی خواهد داشت.{% else %}Only the owner can access panels after the deadline passes.{% endif %}
+            </small>
+            {{ form.is_owner.errors }}
+        </div>
         {# Panel permissions grouped by category.  Each group has a
            master checkbox that toggles all child checkboxes. #}
         <fieldset style="margin-top:1rem;">

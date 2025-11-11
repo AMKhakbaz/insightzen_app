@@ -5,11 +5,13 @@
 {% block content %}
 <div class="card">
     <h1>{% if lang == 'fa' %}فهرست اعضا{% else %}Members List{% endif %}</h1>
-    <p>
+    <p class="card-intro">
         {% if lang == 'fa' %}
             در اینجا می‌توانید اعضای پروژه‌های خود را مشاهده و مدیریت کنید.
+            پس از پایان ددلاین هر پروژه فقط مالک آن به پنل‌ها دسترسی دارد.
         {% else %}
             Here you can view and manage members across your projects.
+            After a project's deadline passes only the owner retains panel access.
         {% endif %}
     </p>
     <a href="{% url 'membership_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}افزودن کاربر به پروژه{% else %}Add User to Project{% endif %}</a>
@@ -49,6 +51,12 @@
                     </th>
                     <th scope="col">
                         <button type="button" class="table-sort" data-sort-column="5" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}مالک{% else %}Owner{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="6" data-sort-type="text">
                             <span>{% if lang == 'fa' %}پنل‌ها{% else %}Panels{% endif %}</span>
                             <span class="sort-icon" aria-hidden="true"></span>
                         </button>
@@ -61,7 +69,8 @@
                     <th><input type="text" data-filter-column="2" placeholder="{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}" autocomplete="off"></th>
                     <th><input type="text" data-filter-column="3" placeholder="{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}" autocomplete="off"></th>
                     <th><input type="text" data-filter-column="4" placeholder="{% if lang == 'fa' %}تاریخ{% else %}Start{% endif %}" autocomplete="off"></th>
-                    <th><input type="text" data-filter-column="5" placeholder="{% if lang == 'fa' %}پنل{% else %}Panels{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="5" placeholder="{% if lang == 'fa' %}مالک{% else %}Owner{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="6" placeholder="{% if lang == 'fa' %}پنل{% else %}Panels{% endif %}" autocomplete="off"></th>
                     <th></th>
                 </tr>
             </thead>
@@ -73,6 +82,13 @@
                     <td>{{ m.user.profile.phone }}</td>
                     <td>{{ m.project.name }}</td>
                     <td>{{ m.start_work }}</td>
+                    <td>
+                        {% if m.is_owner %}
+                            <span class="badge badge-owner">{% if lang == 'fa' %}مالک{% else %}Owner{% endif %}</span>
+                        {% else %}
+                            <span class="badge badge-member">{% if lang == 'fa' %}عضو{% else %}Member{% endif %}</span>
+                        {% endif %}
+                    </td>
                     <td class="table-cell--ellipsis">
                         {# display enabled panel names for this membership using custom tag #}
                         {% panel_names m panel_labels as enabled_panels %}

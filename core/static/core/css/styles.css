@@ -282,6 +282,13 @@ body.rtl {
     letter-spacing: 0.3px;
 }
 
+.card-intro {
+    margin: 0 0 1rem 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+}
+
 .qc-card {
     max-width: 1200px;
     margin: 2rem auto;
@@ -452,6 +459,17 @@ body.rtl {
     font-weight: var(--font-weight-medium);
 }
 
+.membership-owner-field {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.membership-owner-field label {
+    font-weight: var(--font-weight-medium);
+}
+
 .form-check-input {
     margin-right: 0.3rem;
 }
@@ -566,6 +584,29 @@ body.rtl {
 .table-ellipsis:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.15rem 0.65rem;
+    border-radius: 999px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.02em;
+    background: var(--color-surface-muted);
+    color: var(--color-text-subtle);
+}
+
+.badge-owner {
+    background: var(--color-accent-soft);
+    color: var(--color-accent-text);
+}
+
+.badge-member {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-text-muted);
 }
 
 .table tr:nth-child(even) {

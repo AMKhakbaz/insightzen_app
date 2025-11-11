@@ -19,6 +19,9 @@
 {% block content %}
 <div class="card" style="max-width:1200px;margin:2rem auto;padding:1.5rem;">
     <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}کارایی گردآوری{% else %}Collection Performance{% endif %}</h1>
+    <p class="card-intro">
+        {% if lang == 'fa' %}پس از پایان ددلاین هر پروژه، فقط مالک می‌تواند این داشبورد را مشاهده کند.{% else %}After a project's deadline passes, only the owner can review this dashboard.{% endif %}
+    </p>
     <div class="filters" style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
         <div>
             <label for="project-select">{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</label><br>

@@ -4,6 +4,9 @@
 {% block content %}
 <div class="card" style="max-width:800px;margin:2rem auto;">
     <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}مصاحبه تلفنی{% else %}Telephone Interviewer{% endif %}</h1>
+    <p class="card-intro">
+        {% if lang == 'fa' %}دسترسی به این پنل پس از پایان ددلاین فقط برای مالک پروژه فعال می‌ماند.{% else %}After the project deadline, only the owner can continue using this panel.{% endif %}
+    </p>
     <!-- Project selection -->
     <div style="margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
         <label for="project-select">{% if lang == 'fa' %}پروژه:{% else %}Project:{% endif %}</label>

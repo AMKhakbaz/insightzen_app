@@ -36,6 +36,7 @@ from .views import (
     _user_has_panel,
     _user_is_organisation,
     _get_accessible_projects,
+    _get_locked_projects,
 )
 
 # Attempt to import openpyxl for Excel export
@@ -64,6 +65,17 @@ def collection_performance(request: HttpRequest) -> HttpResponse:
     # membership projects; individuals see only their own.
     # Build the list of projects for which the user has the collection_performance panel permission.
     accessible_projects = _get_accessible_projects(user, panel='collection_performance')
+    if not accessible_projects:
+        locked = _get_locked_projects(user, panel='collection_performance')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to view the collection performance dashboard.',
+            )
+        else:
+            messages.error(request, 'Access denied: there are no projects available for collection performance analytics.')
+        return redirect('home')
     # Determine which interviewers to display: organisation users can see members of these projects; individual users see themselves.
     if _user_is_organisation(user):
         users_qs = User.objects.filter(memberships__project__in=accessible_projects).distinct()
@@ -139,6 +151,13 @@ def collection_performance_data(request: HttpRequest) -> JsonResponse:
     accessible_projects = _get_accessible_projects(user, panel='collection_performance')
     if accessible_projects:
         qs = qs.filter(project__in=accessible_projects)
+        if project_id_str:
+            try:
+                requested_project_id = int(project_id_str)
+            except ValueError:
+                return JsonResponse({'error': 'invalid_project'}, status=400)
+            if requested_project_id not in {p.id for p in accessible_projects}:
+                return JsonResponse({'error': 'project_locked'}, status=403)
     else:
         # No accessible projects: return empty result early
         return JsonResponse({

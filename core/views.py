@@ -176,14 +176,50 @@ def _user_is_organisation(user: User) -> bool:
     return bool(profile and profile.organization)
 
 
-def _user_has_panel(user: User, panel: str) -> bool:
-    """Check whether a non‑organisation user has access to a panel.
+def _project_deadline_locked_for_user(project: Project, user: User) -> bool:
+    """Return True when the project's deadline has passed for this user."""
 
-    Organisation users automatically have access to all panels.
-    """
-    if _user_is_organisation(user):
+    today = timezone.now().date()
+    if today <= project.deadline:
+        return False
+    return not Membership.objects.filter(project=project, user=user, is_owner=True).exists()
+
+
+def _user_has_panel(user: User, panel: str) -> bool:
+    """Check whether the user has access to a panel respecting deadlines."""
+
+    memberships = Membership.objects.filter(user=user)
+    if not memberships.exists() and _user_is_organisation(user):
         return True
-    return any(getattr(m, panel) for m in user.memberships.all())
+    panel_filter = {panel: True}
+    return memberships.filter(**panel_filter).exists()
+
+
+def _ensure_project_deadline_access(request: HttpRequest, project: Project) -> bool:
+    """Ensure the current user may access the project after its deadline."""
+
+    if not _project_deadline_locked_for_user(project, request.user):
+        return True
+    messages.error(
+        request,
+        f'Access denied: "{project.name}" is locked because the deadline has passed. Only the owner may use this panel.',
+    )
+    return False
+
+
+def _get_locked_projects(user: User, panel: str | None = None) -> List[Project]:
+    """Return projects that are locked for the user because the deadline passed."""
+
+    today = timezone.now().date()
+    memberships = Membership.objects.filter(
+        user=user,
+        project__deadline__lt=today,
+        is_owner=False,
+    )
+    if panel:
+        memberships = memberships.filter(**{panel: True})
+    projects = {m.project for m in memberships.select_related('project')}
+    return list(projects)
 
 
 # Helper function to log user actions
@@ -435,12 +471,15 @@ def _get_accessible_projects(user: User, panel: str | None = None) -> List[Proje
     which they have a membership (typically all that they created).
     """
     qs = Project.objects.filter(memberships__user=user)
-    # If a specific panel permission is requested, filter projects by memberships where that flag is True.
     if panel:
         filter_kwargs = {f"memberships__{panel}": True}
         qs = qs.filter(**filter_kwargs)
-    # For organisations, return distinct projects; for individuals, the same applies but they will have only their memberships
-    return list(qs.distinct())
+    projects: List[Project] = []
+    for project in qs.distinct():
+        if _project_deadline_locked_for_user(project, user):
+            continue
+        projects.append(project)
+    return projects
 
 
 @login_required
@@ -471,6 +510,7 @@ def project_add(request: HttpRequest) -> HttpResponse:
             mem = Membership.objects.create(
                 user=user,
                 project=project,
+                is_owner=True,
                 database_management=True,
                 quota_management=True,
                 collection_management=True,
@@ -551,8 +591,20 @@ def membership_list(request: HttpRequest) -> HttpResponse:
     if not _user_is_organisation(user):
         messages.warning(request, 'Access denied: only organisation accounts can manage memberships.')
         return redirect('home')
+    accessible_projects = _get_accessible_projects(user)
+    if not accessible_projects:
+        locked = _get_locked_projects(user)
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can view memberships.',
+            )
+        else:
+            messages.error(request, 'Access denied: there are no projects available to display memberships.')
+        return redirect('home')
     # list all memberships for projects of this organisation
-    memberships = Membership.objects.filter(project__memberships__user=user).distinct()
+    memberships = Membership.objects.filter(project__in=accessible_projects).distinct()
     # map field names to human readable labels for display
     panel_labels = {
         'database_management': 'Database Management',
@@ -586,6 +638,17 @@ def membership_add(request: HttpRequest) -> HttpResponse:
         return redirect('home')
     # projects the organisation can assign users to
     accessible_projects = _get_accessible_projects(user)
+    if not accessible_projects:
+        locked = _get_locked_projects(user)
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to manage memberships.',
+            )
+        else:
+            messages.error(request, 'Access denied: there are no projects available for membership changes.')
+        return redirect('home')
     if request.method == 'POST':
         form = UserToProjectForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in accessible_projects])
@@ -608,6 +671,10 @@ def membership_add(request: HttpRequest) -> HttpResponse:
                 if field in ('email', 'project', 'title_custom'):
                     continue
                 mem_kwargs[field] = form.cleaned_data[field]
+            if mem_kwargs.get('is_owner'):
+                Membership.objects.filter(project=project, is_owner=True).update(is_owner=False)
+            elif not Membership.objects.filter(project=project, is_owner=True).exists():
+                mem_kwargs['is_owner'] = True
             membership = Membership.objects.create(user=target_user, project=project, **mem_kwargs)
             messages.success(request, 'User assigned to project.')
             # log activity
@@ -631,7 +698,15 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
     if not Membership.objects.filter(project=membership.project, user=user).exists():
         messages.error(request, 'You do not have permission to edit this membership.')
         return redirect('membership_list')
-    panel_fields = [f for f in UserToProjectForm().fields if f not in ('email', 'project', 'title_custom')]
+    if _project_deadline_locked_for_user(membership.project, user):
+        messages.error(
+            request,
+            'Access denied: the project deadline has passed and only the owner may update memberships.',
+        )
+        return redirect('membership_list')
+    panel_fields = [
+        f for f in UserToProjectForm().fields if f not in ('email', 'project', 'title_custom', 'is_owner')
+    ]
     if request.method == 'POST':
         form = UserToProjectForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk=membership.project.pk)
@@ -639,7 +714,24 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
         if form.is_valid():
             for field in panel_fields:
                 setattr(membership, field, form.cleaned_data[field])
+            membership.is_owner = form.cleaned_data['is_owner']
             membership.save()
+            if membership.is_owner:
+                Membership.objects.filter(project=membership.project).exclude(pk=membership.pk).update(is_owner=False)
+            else:
+                if not Membership.objects.filter(project=membership.project, is_owner=True).exclude(pk=membership.pk).exists():
+                    replacement = (
+                        Membership.objects.filter(project=membership.project)
+                        .exclude(pk=membership.pk)
+                        .order_by('start_work', 'pk')
+                        .first()
+                    )
+                    if replacement:
+                        replacement.is_owner = True
+                        replacement.save(update_fields=['is_owner'])
+                    else:
+                        membership.is_owner = True
+                        membership.save(update_fields=['is_owner'])
             messages.success(request, 'Membership updated successfully.')
             # log activity
             log_activity(user, 'Updated membership', f"Membership {membership_id}")
@@ -648,6 +740,7 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
         initial = {'email': membership.user.email, 'project': membership.project, 'title': membership.title}
         for field in panel_fields:
             initial[field] = getattr(membership, field)
+        initial['is_owner'] = membership.is_owner
         form = UserToProjectForm(initial=initial)
         form.fields['project'].queryset = Project.objects.filter(pk=membership.project.pk)
         form.fields['email'].widget = forms.HiddenInput()  # type: ignore
@@ -668,9 +761,25 @@ def membership_delete(request: HttpRequest, pk: int) -> HttpResponse:
     if not Membership.objects.filter(project=membership.project, user=user).exists():
         messages.error(request, 'You do not have permission to remove this membership.')
         return redirect('membership_list')
+    if _project_deadline_locked_for_user(membership.project, user):
+        messages.error(
+            request,
+            'Access denied: the project deadline has passed and only the owner may update memberships.',
+        )
+        return redirect('membership_list')
     membership_user = membership.user.username
     project_id = membership.project.pk
+    was_owner = membership.is_owner
     membership.delete()
+    if was_owner:
+        replacement = (
+            Membership.objects.filter(project_id=project_id)
+            .order_by('start_work', 'pk')
+            .first()
+        )
+        if replacement:
+            replacement.is_owner = True
+            replacement.save(update_fields=['is_owner'])
     messages.success(request, 'Membership removed.')
     # log activity
     log_activity(user, 'Removed membership', f"User {membership_user} from Project {project_id}")
@@ -699,6 +808,17 @@ def quota_management(request: HttpRequest) -> HttpResponse:
         messages.error(request, 'Access denied: you do not have quota management permissions.')
         return redirect('home')
     projects = _get_accessible_projects(user, 'quota_management')
+    if not projects:
+        locked = _get_locked_projects(user, panel='quota_management')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to manage quotas.',
+            )
+        else:
+            messages.error(request, 'Access denied: there are no projects available for quota management.')
+        return redirect('home')
 
     # Determine selected project from query param or session
     project_param = request.GET.get('project') or request.session.get('quota_project')
@@ -706,9 +826,17 @@ def quota_management(request: HttpRequest) -> HttpResponse:
     if project_param:
         try:
             selected_project = Project.objects.get(pk=project_param)
-            request.session['quota_project'] = selected_project.pk
         except Project.DoesNotExist:
             selected_project = None
+        else:
+            if _project_deadline_locked_for_user(selected_project, user):
+                messages.error(
+                    request,
+                    'Access denied: the project deadline has passed and only the owner may manage quotas.',
+                )
+                selected_project = None
+            else:
+                request.session['quota_project'] = selected_project.pk
 
     if request.method == 'POST':
         project_id = request.POST.get('project')
@@ -719,10 +847,16 @@ def quota_management(request: HttpRequest) -> HttpResponse:
             return redirect('quota_management')
         try:
             project = Project.objects.get(pk=project_id)
-            request.session['quota_project'] = project.pk
         except Project.DoesNotExist:
             messages.error(request, 'Project not found.')
             return redirect('quota_management')
+        if _project_deadline_locked_for_user(project, user):
+            messages.error(
+                request,
+                'Access denied: the project deadline has passed and only the owner may manage quotas.',
+            )
+            return redirect('quota_management')
+        request.session['quota_project'] = project.pk
         # ensure user has membership or organisation rights
         if not _user_is_organisation(user) and not Membership.objects.filter(project=project, user=user, quota_management=True).exists():
             messages.error(request, 'You do not have quota permissions for this project.')
@@ -891,6 +1025,17 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
         return redirect('home')
     # determine accessible projects for telephone interviewer
     projects = _get_accessible_projects(user, 'telephone_interviewer')
+    if not projects:
+        locked = _get_locked_projects(user, panel='telephone_interviewer')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to use the telephone interviewer panel.',
+            )
+        else:
+            messages.error(request, 'Access denied: there are no projects available for telephone interviewing.')
+        return redirect('home')
     # selected project id from GET or session
     selected_project_id = request.GET.get('project') or request.session.get('telephone_project')
     selected_project = None
@@ -908,6 +1053,12 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
         except Project.DoesNotExist:
             selected_project = None
         else:
+            if selected_project not in projects or _project_deadline_locked_for_user(selected_project, user):
+                messages.error(
+                    request,
+                    'Access denied: the project deadline has passed and only the owner may use the telephone interviewer panel.',
+                )
+                return redirect('telephone_interviewer')
             # store selection in session for convenience
             request.session['telephone_project'] = selected_project_id
             quota_remaining = {
@@ -1404,6 +1555,15 @@ def database_list(request: HttpRequest) -> HttpResponse:
         return redirect('home')
     # Determine which projects the user can manage
     projects = _get_accessible_projects(user, panel='database_management')
+    if not projects:
+        locked = _get_locked_projects(user, panel='database_management')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to use the database panel.',
+            )
+            return redirect('home')
     entries = DatabaseEntry.objects.filter(project__in=projects).select_related('project')
     return render(request, 'database_list.html', {'entries': entries})
 
@@ -1423,6 +1583,17 @@ def database_add(request: HttpRequest) -> HttpResponse:
         messages.error(request, 'Access denied: you do not have permission to add databases.')
         return redirect('home')
     projects = _get_accessible_projects(user, panel='database_management')
+    if not projects:
+        locked = _get_locked_projects(user, panel='database_management')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to use the database panel.',
+            )
+        else:
+            messages.error(request, 'Access denied: you do not have a project available for database management.')
+        return redirect('home')
     if request.method == 'POST':
         form = DatabaseEntryForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
@@ -1480,6 +1651,8 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
     if entry.project not in projects:
         messages.error(request, 'You do not have permission to edit this database.')
         return redirect('database_list')
+    if not _ensure_project_deadline_access(request, entry.project):
+        return redirect('database_list')
     if request.method == 'POST':
         form = DatabaseEntryForm(request.POST, instance=entry)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
@@ -1533,6 +1706,8 @@ def database_delete(request: HttpRequest, pk: int) -> HttpResponse:
     if entry.project not in projects:
         messages.error(request, 'You do not have permission to delete this database.')
         return redirect('database_list')
+    if not _ensure_project_deadline_access(request, entry.project):
+        return redirect('database_list')
     # Attempt to drop the table corresponding to this entry
     try:
         # Build a connection to the default database configured in settings
@@ -1578,6 +1753,8 @@ def database_update(request: HttpRequest, pk: int) -> HttpResponse:
     projects = _get_accessible_projects(user, panel='database_management')
     if entry.project not in projects:
         messages.error(request, 'You do not have permission to update this database.')
+        return redirect('database_list')
+    if not _ensure_project_deadline_access(request, entry.project):
         return redirect('database_list')
 
     now = timezone.now()
@@ -1654,6 +1831,8 @@ def database_view(request: HttpRequest, pk: int) -> HttpResponse:
     projects = _get_accessible_projects(user, panel='database_management')
     if entry.project not in projects:
         messages.error(request, 'You do not have permission to view this database.')
+        return redirect('database_list')
+    if not _ensure_project_deadline_access(request, entry.project):
         return redirect('database_list')
     snapshot = load_entry_snapshot(entry)
     all_records = snapshot.records

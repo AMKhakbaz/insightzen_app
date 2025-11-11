@@ -4,6 +4,9 @@
 {% block content %}
 <div class="card" style="max-width:1000px;margin:2rem auto;padding:1.5rem;">
     <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}</h1>
+    <p class="card-intro">
+        {% if lang == 'fa' %}پس از پایان ددلاین هر پروژه، تنها مالک می‌تواند داده‌ها را مشاهده یا به‌روزرسانی کند.{% else %}Once a project's deadline passes, only the owner can view or update its cached data.{% endif %}
+    </p>
     <div style="display:flex;justify-content:flex-start;align-items:center;margin-bottom:1rem;">
         <a href="{% url 'database_add' %}" class="btn btn-secondary">
             {% if lang == 'fa' %}افزودن پایگاه داده{% else %}Add Database{% endif %}

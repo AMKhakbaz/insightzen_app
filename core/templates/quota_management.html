@@ -4,6 +4,9 @@
 {% block content %}
 <div class="card" style="max-width:1100px;margin:2rem auto;">
     <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}</h1>
+    <p class="card-intro">
+        {% if lang == 'fa' %}به‌محض اتمام ددلاین، فقط مالک پروژه می‌تواند سهمیه‌ها را مشاهده یا ویرایش کند.{% else %}Once the deadline passes, only the project owner can review or edit quotas.{% endif %}
+    </p>
     <form method="post" onsubmit="return prepareQuotaData();">
         {% csrf_token %}
         <div style="margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
