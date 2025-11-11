@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib.auth.models import User
-from .models import Project, Membership
-from .models import DatabaseEntry
+
+from .models import DatabaseEntry, Membership, Project
 
 
 class RegistrationForm(forms.Form):
@@ -125,15 +125,38 @@ class UserToProjectForm(forms.Form):
     organisation.
     """
 
+    SUGGESTED_TITLES = [
+        ('supervision', 'Supervision'),
+        ('interviewer', 'Interviewer'),
+        ('reviewer', 'Reviewer'),
+    ]
+    TITLE_CHOICES = [
+        ('', '---------'),
+        *SUGGESTED_TITLES,
+        ('__custom__', 'Other / سایر'),
+    ]
+
     email = forms.EmailField(label='User Email', widget=forms.EmailInput(attrs={'class': 'form-control'}))
     project = forms.ModelChoiceField(
         queryset=Project.objects.none(),
         label='Project',
         widget=forms.Select(attrs={'class': 'form-select'})
     )
-    # Membership title input.  Optional descriptive label for the membership.
-    title = forms.CharField(label='Membership Title', required=False, max_length=100,
-                            widget=forms.TextInput(attrs={'class': 'form-control'}))
+    # Membership title input with suggested values and an "Other" option for custom entries.
+    title = forms.TypedChoiceField(
+        label='Membership Title',
+        required=False,
+        choices=TITLE_CHOICES,
+        coerce=str,
+        empty_value='',
+        widget=forms.Select(attrs={'class': 'form-select', 'data-behaviour': 'title-choice'})
+    )
+    title_custom = forms.CharField(
+        label='Custom Title',
+        required=False,
+        max_length=100,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'data-behaviour': 'title-custom', 'placeholder': 'Enter custom title'})
+    )
     # Panel permissions; all default to False.
     database_management = forms.BooleanField(required=False, label='Database Management')
     quota_management = forms.BooleanField(required=False, label='Quota Management')
@@ -153,6 +176,53 @@ class UserToProjectForm(forms.Form):
     funnel_analysis = forms.BooleanField(required=False, label='Funnel Analysis')
     conjoint_analysis = forms.BooleanField(required=False, label='Conjoint Analysis')
     segmentation_analysis = forms.BooleanField(required=False, label='Segmentation Analysis')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Adjust initial values when editing memberships so that custom titles
+        # populate the auxiliary input while keeping the select on "Other".
+        if not self.is_bound:
+            initial_title = self.initial.get('title')
+            if initial_title:
+                initial_title = str(initial_title)
+                suggested_map = {label.casefold(): code for code, label in self.SUGGESTED_TITLES}
+                code_map = {code: label for code, label in self.SUGGESTED_TITLES}
+                if initial_title.casefold() in suggested_map:
+                    matched_code = suggested_map[initial_title.casefold()]
+                    self.fields['title'].initial = matched_code
+                    self.initial['title'] = matched_code
+                elif initial_title in code_map:
+                    self.fields['title'].initial = initial_title
+                    self.initial['title'] = initial_title
+                else:
+                    self.initial['title_custom'] = initial_title
+                    self.fields['title'].initial = '__custom__'
+                    self.fields['title_custom'].initial = initial_title
+                    self.initial['title'] = '__custom__'
+
+        # Ensure widgets carry consistent CSS classes (particularly after the
+        # select is swapped for hidden inputs in edit view contexts).
+        self.fields['title'].widget.attrs.setdefault('class', 'form-select')
+        self.fields['title_custom'].widget.attrs.setdefault('class', 'form-control')
+
+    def clean(self) -> dict[str, any]:  # type: ignore[override]
+        cleaned_data = super().clean()
+        title_choice = (cleaned_data.get('title') or '').strip()
+        custom_value = cleaned_data.get('title_custom', '').strip()
+
+        if title_choice == '__custom__':
+            if not custom_value:
+                self.add_error('title_custom', 'Please provide a custom title.')
+            cleaned_data['title'] = custom_value
+        elif title_choice:
+            label_map = {code: label for code, label in self.SUGGESTED_TITLES}
+            cleaned_data['title'] = label_map.get(title_choice, title_choice)
+        else:
+            cleaned_data['title'] = ''
+
+        # The auxiliary field should not leak into membership kwargs.
+        cleaned_data.pop('title_custom', None)
+        return cleaned_data
 
 
 # Form for creating or editing a database entry (Database Management panel)

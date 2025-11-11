@@ -421,6 +421,37 @@ body.rtl {
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.form-hint {
+    display: block;
+    margin-top: -0.35rem;
+    margin-bottom: 0.5rem;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-subtle);
+}
+
+.membership-title-field {
+    margin-top: 0.75rem;
+}
+
+.membership-title-inputs {
+    display: flex;
+    flex-direction: column;
+}
+
+.membership-title-custom {
+    margin-top: 0.35rem;
+}
+
+.membership-title-custom[hidden] {
+    display: none !important;
+}
+
+.membership-title-custom label {
+    display: inline-block;
+    margin-bottom: 0.35rem;
+    font-weight: var(--font-weight-medium);
+}
+
 .form-check-input {
     margin-right: 0.3rem;
 }

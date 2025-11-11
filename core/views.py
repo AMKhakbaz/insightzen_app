@@ -605,8 +605,9 @@ def membership_add(request: HttpRequest) -> HttpResponse:
             # create membership with selected panels and title
             mem_kwargs = {}
             for field in form.fields:
-                if field not in ('email', 'project'):
-                    mem_kwargs[field] = form.cleaned_data[field]
+                if field in ('email', 'project', 'title_custom'):
+                    continue
+                mem_kwargs[field] = form.cleaned_data[field]
             membership = Membership.objects.create(user=target_user, project=project, **mem_kwargs)
             messages.success(request, 'User assigned to project.')
             # log activity
@@ -630,7 +631,7 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
     if not Membership.objects.filter(project=membership.project, user=user).exists():
         messages.error(request, 'You do not have permission to edit this membership.')
         return redirect('membership_list')
-    panel_fields = [f for f in UserToProjectForm().fields if f not in ('email', 'project')]
+    panel_fields = [f for f in UserToProjectForm().fields if f not in ('email', 'project', 'title_custom')]
     if request.method == 'POST':
         form = UserToProjectForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk=membership.project.pk)
