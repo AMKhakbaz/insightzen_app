@@ -332,9 +332,17 @@ def generate_call_samples(project: Project, replenish: bool = False) -> None:
             all samples from scratch.
     """
     quotas = Quota.objects.filter(project=project).order_by('city', 'age_start', 'age_end')
-    if not replenish:
+    if replenish:
+        open_map = {
+            row['quota_id']: row['total']
+            for row in CallSample.objects.filter(project=project, completed=False)
+            .values('quota_id')
+            .annotate(total=Count('id'))
+        }
+    else:
         # Clear existing samples when regenerating from scratch
         CallSample.objects.filter(project=project).delete()
+        open_map: Dict[int, int] = {}
     # Keep track of numbers already assigned or interviewed for this project
     assigned_mobiles = set(
         CallSample.objects.filter(project=project).values_list('mobile__mobile', flat=True)
@@ -347,12 +355,15 @@ def generate_call_samples(project: Project, replenish: bool = False) -> None:
     current_year = timezone.now().year
 
     for q in quotas:
-        desired = max(int(q.target_count) * 3, 0)
-        existing_open = CallSample.objects.filter(project=project, quota=q, completed=False).count()
+        remaining_gap = int(q.target_count) - int(q.assigned_count)
+        if remaining_gap < 0:
+            remaining_gap = 0
+        desired_total = remaining_gap * 3
+        existing_open = open_map.get(q.pk, 0)
         if replenish:
-            to_create = max(desired - existing_open, 0)
+            to_create = max(desired_total - existing_open, 0)
         else:
-            to_create = desired
+            to_create = desired_total
         if to_create <= 0:
             continue
         # compute birth year range from age range
@@ -395,6 +406,7 @@ def generate_call_samples(project: Project, replenish: bool = False) -> None:
         random.shuffle(candidates)
         selected_ids = candidates[:to_create]
         persons = Person.objects.filter(national_code__in=selected_ids).prefetch_related('mobiles')
+        created = 0
         for person in persons:
             mob = person.mobiles.first()
             if not mob:
@@ -410,6 +422,9 @@ def generate_call_samples(project: Project, replenish: bool = False) -> None:
                 completed_at=None,
             )
             exclude_mobiles.add(mob.mobile)
+            created += 1
+        if created:
+            open_map[q.pk] = existing_open + created
 
 
 def _get_accessible_projects(user: User, panel: str | None = None) -> List[Project]:
@@ -885,6 +900,7 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
     prefill_age: Optional[int] = None
     prefill_birth_year: Optional[int] = None
     prefill_city: Optional[str] = None
+    quota_remaining: Dict[int, int] = {}
     if selected_project_id:
         try:
             selected_project = Project.objects.get(pk=selected_project_id)
@@ -893,6 +909,12 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
         else:
             # store selection in session for convenience
             request.session['telephone_project'] = selected_project_id
+            quota_remaining = {
+                row['id']: int(row['target_count']) - int(row['assigned_count'])
+                for row in Quota.objects.filter(project=selected_project).values(
+                    'id', 'target_count', 'assigned_count'
+                )
+            }
             # handle POST submissions: record interview and mark sample as completed
             if request.method == 'POST':
                 call_sample_id = request.POST.get('call_sample_id')
@@ -959,14 +981,24 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
                 return redirect(f"{reverse('telephone_interviewer')}?project={selected_project.pk}")
             # GET: assign or fetch a call sample for the user
             # First, see if the user already has a pending sample
-            call_sample = CallSample.objects.filter(
-                project=selected_project, assigned_to=user, completed=False
-            ).first()
+            call_sample = (
+                CallSample.objects.filter(
+                    project=selected_project, assigned_to=user, completed=False
+                )
+                .annotate(quota_remaining=F('quota__target_count') - F('quota__assigned_count'))
+                .order_by('-quota_remaining', 'assigned_at', 'pk')
+                .first()
+            )
             if not call_sample:
                 # Assign the next unassigned sample
-                call_sample = CallSample.objects.filter(
-                    project=selected_project, assigned_to__isnull=True, completed=False
-                ).first()
+                call_sample = (
+                    CallSample.objects.filter(
+                        project=selected_project, assigned_to__isnull=True, completed=False
+                    )
+                    .annotate(quota_remaining=F('quota__target_count') - F('quota__assigned_count'))
+                    .order_by('-quota_remaining', 'pk')
+                    .first()
+                )
                 if call_sample:
                     call_sample.assigned_to = user
                     call_sample.assigned_at = timezone.now()
@@ -977,9 +1009,14 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
                     generate_call_samples(selected_project, replenish=True)
                 except Exception:
                     pass
-                call_sample = CallSample.objects.filter(
-                    project=selected_project, assigned_to__isnull=True, completed=False
-                ).first()
+                call_sample = (
+                    CallSample.objects.filter(
+                        project=selected_project, assigned_to__isnull=True, completed=False
+                    )
+                    .annotate(quota_remaining=F('quota__target_count') - F('quota__assigned_count'))
+                    .order_by('-quota_remaining', 'pk')
+                    .first()
+                )
                 if call_sample:
                     call_sample.assigned_to = user
                     call_sample.assigned_at = timezone.now()
@@ -990,9 +1027,14 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
                     generate_call_samples(selected_project, replenish=False)
                 except Exception:
                     pass
-                call_sample = CallSample.objects.filter(
-                    project=selected_project, assigned_to__isnull=True, completed=False
-                ).first()
+                call_sample = (
+                    CallSample.objects.filter(
+                        project=selected_project, assigned_to__isnull=True, completed=False
+                    )
+                    .annotate(quota_remaining=F('quota__target_count') - F('quota__assigned_count'))
+                    .order_by('-quota_remaining', 'pk')
+                    .first()
+                )
                 if call_sample:
                     call_sample.assigned_to = user
                     call_sample.assigned_at = timezone.now()
@@ -1071,6 +1113,7 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
         'mobile': person_mobile,
         'quota_cell': quota_cell,
         'call_sample': call_sample_obj,
+        'quota_remaining': quota_remaining,
         'status_codes': status_codes,
         'start_form': start_iso,
         'prefill_age': prefill_age,
