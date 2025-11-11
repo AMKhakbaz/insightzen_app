@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let barChart = null;
   let donutChart = null;
   let lineChart = null;
+  let donutSegments = [];
   let topData = [];
   let topTableInstance = null;
   let needsTableRefresh = false;
@@ -58,15 +59,16 @@ document.addEventListener('DOMContentLoaded', function () {
   function buildUrl() {
     const baseUrl = barCanvas.dataset.url;
     const params = new URLSearchParams();
-    const project = document.getElementById('project-select').value;
+    const projectSelect = document.getElementById('project-select');
     const start = document.getElementById('start-date').value;
     const end = document.getElementById('end-date').value;
     const userSelect = document.getElementById('user-select');
-    const selectedUsers = Array.from(userSelect.selectedOptions).map((o) => o.value).join(',');
-    if (project) params.append('project', project);
+    const selectedProjects = projectSelect ? Array.from(projectSelect.selectedOptions).map((o) => o.value).filter((v) => v) : [];
+    const selectedUsers = Array.from(userSelect.selectedOptions).map((o) => o.value).filter((v) => v);
+    if (selectedProjects.length) params.append('projects', selectedProjects.join(','));
     if (start) params.append('start_date', start);
     if (end) params.append('end_date', end);
-    if (selectedUsers) params.append('users', selectedUsers);
+    if (selectedUsers.length) params.append('users', selectedUsers.join(','));
     return params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
   }
 
@@ -75,9 +77,10 @@ document.addEventListener('DOMContentLoaded', function () {
       .then((resp) => resp.json())
       .then((data) => {
         // Update bar chart
-        const labels = data.labels || [];
-        const totals = data.totals || [];
-        const successes = data.successes || [];
+        const barData = data.bar || {};
+        const labels = barData.labels || [];
+        const totals = barData.totals || [];
+        const successes = barData.successes || [];
         const primary = getCssVar('--primary', 'rgba(88,166,255,0.6)');
         const primaryBorder = getCssVar('--primary-light', 'rgba(88,166,255,1)');
         const secondary = getCssVar('--secondary', 'rgba(139,92,246,0.6)');
@@ -147,7 +150,8 @@ document.addEventListener('DOMContentLoaded', function () {
           });
         }
         // Update donut chart
-        const donutData = data.donut || { labels: [], values: [] };
+        const donutData = data.donut || { labels: [], values: [], segments: [] };
+        donutSegments = donutData.segments || [];
         const donutColours = getPalette(donutData.values.length);
         if (donutChart) {
           donutChart.data.labels = donutData.labels;
@@ -176,6 +180,15 @@ document.addEventListener('DOMContentLoaded', function () {
                   position: 'bottom',
                   labels: {
                     color: getCssVar('--text-color', '#e2e8f0'),
+                  },
+                },
+                tooltip: {
+                  callbacks: {
+                    label(context) {
+                      const segment = donutSegments[context.dataIndex];
+                      const label = segment ? segment.label : context.label;
+                      return `${label}: ${context.formattedValue}`;
+                    },
                   },
                 },
               },
@@ -253,7 +266,7 @@ document.addEventListener('DOMContentLoaded', function () {
           });
         }
         // Update top data and render table
-        topData = data.top5_all || [];
+        topData = data.top && data.top.rows ? data.top.rows : [];
         renderTopTable();
       })
       .catch((err) => {
@@ -275,6 +288,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const sorted = topData.slice().sort((a, b) => b.total - a.total);
     sorted.forEach((row) => {
       const tr = document.createElement('tr');
+      const projectCell = document.createElement('td');
+      projectCell.textContent = row.project || '';
       const userCell = document.createElement('td');
       userCell.textContent = row.user;
       const totalCell = document.createElement('td');
@@ -286,6 +301,7 @@ document.addEventListener('DOMContentLoaded', function () {
       const rateCell = document.createElement('td');
       rateCell.textContent = `${row.rate}%`;
       rateCell.dataset.sortValue = row.rate;
+      tr.appendChild(projectCell);
       tr.appendChild(userCell);
       tr.appendChild(totalCell);
       tr.appendChild(successCell);

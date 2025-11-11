@@ -23,28 +23,34 @@
         {% if lang == 'fa' %}پس از پایان ددلاین هر پروژه، فقط مالک می‌تواند این داشبورد را مشاهده کند.{% else %}After a project's deadline passes, only the owner can review this dashboard.{% endif %}
     </p>
     <div class="filters" style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
-        <div>
+        <div style="min-width:220px;">
             <label for="project-select">{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</label><br>
-            <select id="project-select" class="form-select" style="min-width:180px;">
-                <option value="">{% if lang == 'fa' %}همه{% else %}All{% endif %}</option>
+            <select id="project-select" class="form-select" multiple style="min-width:220px;max-height:150px;">
                 {% for p in projects %}
-                    <option value="{{ p.pk }}">{{ p.name }}</option>
+                    <option value="{{ p.pk }}" {% if p.pk in filters.project_ids %}selected{% endif %}>{{ p.name }}</option>
                 {% endfor %}
             </select>
+            <small class="form-hint">
+                {% if lang == 'fa' %}
+                    برای انتخاب چند پروژه کلیدهای Ctrl (یا Cmd در مک) را نگه دارید؛ خالی گذاشتن یعنی همه پروژه‌ها.
+                {% else %}
+                    Hold Ctrl (or Cmd on macOS) to choose multiple projects, or leave empty for all.
+                {% endif %}
+            </small>
         </div>
         <div>
             <label for="start-date">{% if lang == 'fa' %}از{% else %}From{% endif %}</label><br>
-            <input type="datetime-local" id="start-date" class="form-control">
+            <input type="datetime-local" id="start-date" class="form-control" value="{{ filters.start|default:'' }}">
         </div>
         <div>
             <label for="end-date">{% if lang == 'fa' %}تا{% else %}To{% endif %}</label><br>
-            <input type="datetime-local" id="end-date" class="form-control">
+            <input type="datetime-local" id="end-date" class="form-control" value="{{ filters.end|default:'' }}">
         </div>
         <div>
             <label for="user-select">{% if lang == 'fa' %}پرسشگران{% else %}Interviewers{% endif %}</label><br>
             <select id="user-select" class="form-select" multiple style="min-width:200px;max-height:130px;">
                 {% for u in users %}
-                    <option value="{{ u.pk }}">{{ u.first_name }}</option>
+                    <option value="{{ u.pk }}" {% if u.pk in filters.user_ids %}selected{% endif %}>{{ u.first_name }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -73,34 +79,41 @@
                     <tr>
                         <th scope="col">
                             <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="1" data-sort-type="text">
                                 <span>{% if lang == 'fa' %}کاربر{% else %}User{% endif %}</span>
                                 <span class="sort-icon" aria-hidden="true"></span>
                             </button>
                         </th>
                         <th scope="col">
-                            <button type="button" class="table-sort" data-sort-column="1" data-sort-type="number">
+                            <button type="button" class="table-sort" data-sort-column="2" data-sort-type="number">
                                 <span>{% if lang == 'fa' %}کل تماس‌ها{% else %}Total Calls{% endif %}</span>
                                 <span class="sort-icon" aria-hidden="true"></span>
                             </button>
                         </th>
                         <th scope="col">
-                            <button type="button" class="table-sort" data-sort-column="2" data-sort-type="number">
+                            <button type="button" class="table-sort" data-sort-column="3" data-sort-type="number">
                                 <span>{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}</span>
                                 <span class="sort-icon" aria-hidden="true"></span>
                             </button>
                         </th>
                         <th scope="col">
-                            <button type="button" class="table-sort" data-sort-column="3" data-sort-type="number">
+                            <button type="button" class="table-sort" data-sort-column="4" data-sort-type="number">
                                 <span>{% if lang == 'fa' %}نرخ موفقیت{% else %}Success Rate{% endif %}</span>
                                 <span class="sort-icon" aria-hidden="true"></span>
                             </button>
                         </th>
                     </tr>
                     <tr class="table-filter-row">
-                        <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}نام کاربر{% else %}User{% endif %}" autocomplete="off"></th>
-                        <th><input type="text" data-filter-column="1" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا >۱۰{% else %}Number or >10{% endif %}" autocomplete="off"></th>
-                        <th><input type="text" data-filter-column="2" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا <۵{% else %}Number or <5{% endif %}" autocomplete="off"></th>
-                        <th><input type="text" data-filter-column="3" data-filter-type="number" placeholder="{% if lang == 'fa' %}٪ یا >۵۰{% else %}% or >50{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}نام پروژه{% else %}Project{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}نام کاربر{% else %}User{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="2" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا >۱۰{% else %}Number or >10{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="3" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا <۵{% else %}Number or <5{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="4" data-filter-type="number" placeholder="{% if lang == 'fa' %}٪ یا >۵۰{% else %}% or >50{% endif %}" autocomplete="off"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -122,15 +135,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const exportUrl = "{% url 'collection_performance_export' %}";
     exportBtn.addEventListener('click', function () {
         const params = new URLSearchParams();
-        const project = document.getElementById('project-select').value;
+        const projectSelect = document.getElementById('project-select');
         const start = document.getElementById('start-date').value;
         const end = document.getElementById('end-date').value;
         const userSelect = document.getElementById('user-select');
-        const selectedUsers = Array.from(userSelect.selectedOptions).map(function (o) { return o.value; }).join(',');
-        if (project) params.append('project', project);
+        const selectedProjects = projectSelect ? Array.from(projectSelect.selectedOptions).map(function (o) { return o.value; }).filter(function (v) { return v; }) : [];
+        const selectedUsers = Array.from(userSelect.selectedOptions).map(function (o) { return o.value; }).filter(function (v) { return v; });
+        if (selectedProjects.length) params.append('projects', selectedProjects.join(','));
         if (start) params.append('start_date', start);
         if (end) params.append('end_date', end);
-        if (selectedUsers) params.append('users', selectedUsers);
+        if (selectedUsers.length) params.append('users', selectedUsers.join(','));
         const url = params.toString() ? (exportUrl + '?' + params.toString()) : exportUrl;
         window.open(url, '_blank');
     });
