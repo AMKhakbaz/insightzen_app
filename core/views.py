@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from collections import defaultdict
 from math import ceil
 from typing import Any, Dict, Iterable, List, Tuple, Optional
 
@@ -773,6 +774,51 @@ def quota_management(request: HttpRequest) -> HttpResponse:
     if selected_project:
         quotas = list(Quota.objects.filter(project=selected_project))
         if quotas:
+            # Calculate successful interview counts per quota cell using the
+            # Interview table so progress always reflects actual outcomes.
+            quotas_by_city: Dict[str, List[Quota]] = {}
+            for q in quotas:
+                quotas_by_city.setdefault(q.city, []).append(q)
+            for quota_list in quotas_by_city.values():
+                quota_list.sort(key=lambda item: item.age_start)
+
+            success_counts: Dict[int, int] = defaultdict(int)
+            successful_interviews = (
+                Interview.objects.filter(project=selected_project, status=True)
+                .select_related('person')
+            )
+            current_year = timezone.localdate().year
+            for interview in successful_interviews:
+                city_name = (interview.city or
+                             (interview.person.city_name if interview.person else None))
+                if not city_name:
+                    continue
+                city_name = city_name.strip()
+                age_value: Optional[int] = interview.age
+                if age_value is None:
+                    birth_year_source = interview.birth_year
+                    if birth_year_source is None and interview.person and interview.person.birth_year:
+                        birth_year_source = interview.person.birth_year
+                    if birth_year_source is not None:
+                        derived_age = current_year - birth_year_source
+                        if derived_age >= 0:
+                            age_value = derived_age
+                if age_value is None:
+                    continue
+                for quota in quotas_by_city.get(city_name, []):
+                    if quota.age_start <= age_value <= quota.age_end:
+                        success_counts[quota.pk] += 1
+                        break
+
+            to_update: List[Quota] = []
+            for quota in quotas:
+                computed = success_counts.get(quota.pk, 0)
+                if quota.assigned_count != computed:
+                    quota.assigned_count = computed
+                    to_update.append(quota)
+            if to_update:
+                Quota.objects.bulk_update(to_update, ['assigned_count'])
+
             city_headers = sorted({q.city for q in quotas})
             age_ranges = sorted({(q.age_start, q.age_end) for q in quotas}, key=lambda x: x[0])
             table_rows: List[Dict[str, Any]] = []
@@ -781,10 +827,11 @@ def quota_management(request: HttpRequest) -> HttpResponse:
                 for city in city_headers:
                     q_match = next((q for q in quotas if q.city == city and q.age_start == start and q.age_end == end), None)
                     if q_match:
+                        assigned_value = success_counts.get(q_match.pk, 0)
                         row_counts.append({
                             'target': q_match.target_count,
-                            'assigned': q_match.assigned_count,
-                            'over': q_match.assigned_count > q_match.target_count,
+                            'assigned': assigned_value,
+                            'over': assigned_value > q_match.target_count,
                         })
                     else:
                         row_counts.append({'target': 0, 'assigned': 0, 'over': False})
@@ -898,9 +945,9 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
                 log_activity(user, 'Recorded interview', f"Project {selected_project.pk}, code {code}, call_sample_id {call_sample_id or ''}")
                 # update quota assigned count and mark sample completed
                 if call_sample:
-                    quota_obj = call_sample.quota
-                    quota_obj.assigned_count = quota_obj.assigned_count + 1
-                    quota_obj.save()
+                    if status:
+                        quota_obj = call_sample.quota
+                        Quota.objects.filter(pk=quota_obj.pk).update(assigned_count=F('assigned_count') + 1)
                     call_sample.completed = True
                     call_sample.completed_at = timezone.now()
                     call_sample.save()
