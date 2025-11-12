@@ -53,6 +53,7 @@ urlpatterns = [
     # Collection performance dashboard and API (enhanced)
     path('performance/', perf.collection_performance, name='collection_performance'),
     path('api/performance/', perf.collection_performance_data, name='collection_performance_data'),
+    path('api/performance/raw/', perf.collection_performance_raw, name='collection_performance_raw'),
     path('performance/export/', perf.collection_performance_export, name='collection_performance_export'),
 
     # Database management

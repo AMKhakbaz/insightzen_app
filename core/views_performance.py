@@ -22,6 +22,7 @@ from typing import Dict, List, Sequence
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -345,6 +346,101 @@ def collection_performance_data(request: HttpRequest) -> JsonResponse:
         'end_date': filters['end_raw'],  # type: ignore[index]
     }
     return JsonResponse(payload)
+
+
+@login_required
+def collection_performance_raw(request: HttpRequest) -> JsonResponse:
+    """Return paginated raw interview records for the dashboard table."""
+
+    user = request.user
+    if not _user_has_panel(user, 'collection_performance'):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+
+    accessible_projects = _get_accessible_projects(user, panel='collection_performance')
+    if not accessible_projects:
+        return JsonResponse(
+            {
+                'results': [],
+                'page': 1,
+                'page_size': 0,
+                'total_pages': 0,
+                'total_items': 0,
+            }
+        )
+
+    try:
+        filters = _extract_filters(request, accessible_projects)
+    except PermissionError:
+        return JsonResponse({'error': 'project_locked'}, status=403)
+
+    qs = (
+        _filter_interviews(user, accessible_projects, filters)
+        .select_related('project', 'user')
+        .order_by('-created_at')
+    )
+
+    allowed_page_sizes = {30, 50, 200}
+    default_page_size = 30
+    try:
+        requested_size = int(request.GET.get('page_size', default_page_size))
+    except (TypeError, ValueError):
+        requested_size = default_page_size
+    page_size = requested_size if requested_size in allowed_page_sizes else default_page_size
+
+    paginator = Paginator(qs, page_size)
+    if paginator.count == 0:
+        return JsonResponse(
+            {
+                'results': [],
+                'page': 1,
+                'page_size': page_size,
+                'total_pages': 1,
+                'total_items': 0,
+            }
+        )
+    try:
+        page_number = int(request.GET.get('page', 1))
+    except (TypeError, ValueError):
+        page_number = 1
+    try:
+        page_obj = paginator.page(page_number)
+    except PageNotAnInteger:
+        page_number = 1
+        page_obj = paginator.page(page_number)
+    except EmptyPage:
+        page_number = paginator.num_pages or 1
+        page_obj = paginator.page(page_number)
+
+    def _format_dt(value):
+        if not value:
+            return None
+        return timezone.localtime(value).isoformat()
+
+    results = [
+        {
+            'id': interview.id,
+            'project_id': interview.project_id,
+            'project': interview.project.name if interview.project else '',
+            'user_id': interview.user_id,
+            'user': interview.user.first_name or interview.user.get_username(),
+            'code': interview.code,
+            'status': interview.status,
+            'start_form': _format_dt(interview.start_form),
+            'end_form': _format_dt(interview.end_form),
+            'created_at': _format_dt(interview.created_at),
+        }
+        for interview in page_obj
+    ]
+
+    return JsonResponse(
+        {
+            'results': results,
+            'page': page_obj.number,
+            'page_size': page_size,
+            'total_pages': paginator.num_pages,
+            'total_items': paginator.count,
+        }
+    )
 
 @login_required
 def collection_performance_export(request: HttpRequest) -> HttpResponse:

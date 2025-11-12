@@ -60,6 +60,99 @@
             </button>
         </div>
     </div>
+    <section id="raw-records" style="margin-bottom:1.5rem;">
+        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:1rem;">
+            <h2 style="margin:0;">{% if lang == 'fa' %}رکوردهای خام{% else %}Raw Interviews{% endif %}</h2>
+            <p class="card-intro" style="margin:0;">
+                {% if lang == 'fa' %}
+                    فهرست زیر داده‌های خام مصاحبه را با همان فیلترهای بالا نمایش می‌دهد. برای جست‌وجوی پیشرفته می‌توانید از نوار ابزار جدول استفاده کنید.
+                {% else %}
+                    The table below reflects the raw interview records that match your filters. Use the table toolbar to run quick searches or open the advanced filter builder.
+                {% endif %}
+            </p>
+        </div>
+        <div class="table-responsive">
+            <table id="raw-records-table" class="table" data-table="interactive" data-url="{% url 'collection_performance_raw' %}" data-empty-text="{% if lang == 'fa' %}داده‌ای برای نمایش وجود ندارد.{% else %}No interviews match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+                <thead>
+                    <tr>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="1" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}پرسشگر{% else %}Interviewer{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="2" data-sort-type="number">
+                                <span>{% if lang == 'fa' %}کد{% else %}Code{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="3" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+        
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="4" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}شروع فرم{% else %}Form Started{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="5" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}پایان فرم{% else %}Form Submitted{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="6" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}ثبت{% else %}Logged{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                    </tr>
+                    <tr class="table-filter-row" hidden>
+                        <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}نام پروژه{% else %}Project{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}نام پرسشگر{% else %}Interviewer{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="2" data-filter-type="number" placeholder="{% if lang == 'fa' %}کد{% else %}Code{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="3" placeholder="{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="4" placeholder="{% if lang == 'fa' %}مثال: 2024-01-01{% else %}e.g. 2024-01-01{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="5" placeholder="{% if lang == 'fa' %}مثال: 2024-01-01{% else %}e.g. 2024-01-01{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="6" placeholder="{% if lang == 'fa' %}تاریخ{% else %}Date{% endif %}" autocomplete="off"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Raw rows populated dynamically -->
+                </tbody>
+            </table>
+        </div>
+        <div class="table-pagination" id="raw-pagination" style="margin-top:1rem;">
+            <div class="page-size-control">
+                <label for="raw-page-size" style="margin:0;">{% if lang == 'fa' %}تعداد در هر صفحه{% else %}Rows per page{% endif %}</label>
+                <select id="raw-page-size">
+                    <option value="30">30</option>
+                    <option value="50">50</option>
+                    <option value="200">200</option>
+                </select>
+            </div>
+            <div class="page-info" id="raw-page-info" style="color:var(--color-text-muted);font-size:var(--font-size-sm);">
+                {% if lang == 'fa' %}در حال بارگذاری…{% else %}Loading…{% endif %}
+            </div>
+            <div class="page-controls">
+                <button type="button" class="btn btn-outline" id="raw-page-prev">{% if lang == 'fa' %}قبلی{% else %}Previous{% endif %}</button>
+                <span id="raw-results-status" style="color:var(--color-text-muted);font-size:var(--font-size-sm);"></span>
+                <button type="button" class="btn btn-outline" id="raw-page-next">{% if lang == 'fa' %}بعدی{% else %}Next{% endif %}</button>
+            </div>
+        </div>
+    </section>
     <div class="chart-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;margin-bottom:1.5rem;">
         <div class="chart-container" style="height:320px;">
             <canvas id="bar-chart" data-url="{% url 'collection_performance_data' %}" data-total-label="{% if lang == 'fa' %}کل{% else %}Total{% endif %}" data-success-label="{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}"></canvas>

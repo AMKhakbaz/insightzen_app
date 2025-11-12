@@ -15,6 +15,12 @@ document.addEventListener('DOMContentLoaded', function () {
   const donutCanvas = document.getElementById('donut-chart');
   const lineCanvas = document.getElementById('line-chart');
   const topTable = document.getElementById('top5-table');
+  const rawTable = document.getElementById('raw-records-table');
+  const rawPageSizeSelect = document.getElementById('raw-page-size');
+  const rawPageInfo = document.getElementById('raw-page-info');
+  const rawPrevButton = document.getElementById('raw-page-prev');
+  const rawNextButton = document.getElementById('raw-page-next');
+  const rawResultsStatus = document.getElementById('raw-results-status');
   if (!barCanvas || !donutCanvas || !lineCanvas || !topTable) {
     return;
   }
@@ -29,6 +35,16 @@ document.addEventListener('DOMContentLoaded', function () {
   let topData = [];
   let topTableInstance = null;
   let needsTableRefresh = false;
+  let rawTableInstance = null;
+  let rawNeedsRefresh = false;
+  let rawCurrentPage = 1;
+  let rawTotalPages = 1;
+  const locale = document.documentElement.lang || 'en';
+  const isPersian = locale.startsWith('fa');
+  const statusLabels = {
+    true: isPersian ? 'موفق' : 'Successful',
+    false: isPersian ? 'ناموفق' : 'Unsuccessful',
+  };
 
   topTable.addEventListener('interactive-table:init', (event) => {
     topTableInstance = event.detail.instance;
@@ -37,6 +53,16 @@ document.addEventListener('DOMContentLoaded', function () {
       needsTableRefresh = false;
     }
   });
+
+  if (rawTable) {
+    rawTable.addEventListener('interactive-table:init', (event) => {
+      rawTableInstance = event.detail.instance;
+      if (rawNeedsRefresh) {
+        rawTableInstance.refresh();
+        rawNeedsRefresh = false;
+      }
+    });
+  }
 
   // Generate a palette of colours for donut segments
   function getPalette(n) {
@@ -56,24 +82,284 @@ document.addEventListener('DOMContentLoaded', function () {
     return val && val.trim() ? val.trim() : fallback;
   }
 
-  function buildUrl() {
+  function collectFilters() {
+    const projectSelect = document.getElementById('project-select');
+    const userSelect = document.getElementById('user-select');
+    const startInput = document.getElementById('start-date');
+    const endInput = document.getElementById('end-date');
+    const selectedProjects = projectSelect
+      ? Array.from(projectSelect.selectedOptions)
+          .map((option) => option.value)
+          .filter((value) => value)
+      : [];
+    const selectedUsers = userSelect
+      ? Array.from(userSelect.selectedOptions)
+          .map((option) => option.value)
+          .filter((value) => value)
+      : [];
+    const start = startInput ? startInput.value : '';
+    const end = endInput ? endInput.value : '';
+    return {
+      projects: selectedProjects,
+      users: selectedUsers,
+      start,
+      end,
+    };
+  }
+
+  function appendFilters(params, filters) {
+    if (filters.projects.length) {
+      params.append('projects', filters.projects.join(','));
+    }
+    if (filters.start) {
+      params.append('start_date', filters.start);
+    }
+    if (filters.end) {
+      params.append('end_date', filters.end);
+    }
+    if (filters.users.length) {
+      params.append('users', filters.users.join(','));
+    }
+  }
+
+  function formatNumber(value) {
+    if (!Number.isFinite(value)) {
+      return '';
+    }
+    const localeName = isPersian ? 'fa-IR' : undefined;
+    return value.toLocaleString(localeName);
+  }
+
+  function formatDateTime(value) {
+    if (!value) {
+      return { display: '', sort: '' };
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return { display: value, sort: value };
+    }
+    const localeName = isPersian ? 'fa-IR' : undefined;
+    const options = {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    };
+    const display = date.toLocaleString(localeName || undefined, options);
+    return { display, sort: date.toISOString() };
+  }
+
+  function buildChartUrl() {
     const baseUrl = barCanvas.dataset.url;
     const params = new URLSearchParams();
-    const projectSelect = document.getElementById('project-select');
-    const start = document.getElementById('start-date').value;
-    const end = document.getElementById('end-date').value;
-    const userSelect = document.getElementById('user-select');
-    const selectedProjects = projectSelect ? Array.from(projectSelect.selectedOptions).map((o) => o.value).filter((v) => v) : [];
-    const selectedUsers = Array.from(userSelect.selectedOptions).map((o) => o.value).filter((v) => v);
-    if (selectedProjects.length) params.append('projects', selectedProjects.join(','));
-    if (start) params.append('start_date', start);
-    if (end) params.append('end_date', end);
-    if (selectedUsers.length) params.append('users', selectedUsers.join(','));
+    const filters = collectFilters();
+    appendFilters(params, filters);
     return params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
   }
 
-  function fetchAndRender() {
-    fetch(buildUrl())
+  function buildRawUrl(pageOverride) {
+    if (!rawTable || !rawTable.dataset || !rawTable.dataset.url) {
+      return '';
+    }
+    const baseUrl = rawTable.dataset.url;
+    const params = new URLSearchParams();
+    const filters = collectFilters();
+    appendFilters(params, filters);
+    let pageSize = 30;
+    if (rawPageSizeSelect) {
+      const parsed = parseInt(rawPageSizeSelect.value, 10);
+      if (!Number.isNaN(parsed) && [30, 50, 200].includes(parsed)) {
+        pageSize = parsed;
+      }
+    }
+    params.append('page_size', pageSize);
+    const pageNumber = pageOverride && pageOverride > 0 ? pageOverride : rawCurrentPage || 1;
+    params.append('page', pageNumber);
+    return params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+  }
+
+  function setRawLoading() {
+    if (rawPageInfo) {
+      rawPageInfo.textContent = isPersian ? 'در حال بارگذاری…' : 'Loading…';
+    }
+    if (rawResultsStatus) {
+      rawResultsStatus.textContent = '';
+    }
+    if (rawPrevButton) {
+      rawPrevButton.disabled = true;
+    }
+    if (rawNextButton) {
+      rawNextButton.disabled = true;
+    }
+  }
+
+  function updateRawPagination(totalItems, page, pageSize, totalPages) {
+    const safeTotalPages = Math.max(totalPages || 1, 1);
+    rawTotalPages = safeTotalPages;
+    rawCurrentPage = page;
+    if (rawPageSizeSelect && String(pageSize) !== rawPageSizeSelect.value) {
+      const option = Array.from(rawPageSizeSelect.options).find((opt) => opt.value === String(pageSize));
+      if (option) {
+        rawPageSizeSelect.value = option.value;
+      }
+    }
+    if (rawPageInfo) {
+      if (totalItems === 0) {
+        rawPageInfo.textContent = isPersian ? 'هیچ رکوردی یافت نشد' : 'No records';
+      } else {
+        const pageLabel = isPersian
+          ? `صفحه ${formatNumber(page)} از ${formatNumber(safeTotalPages)}`
+          : `Page ${page} of ${safeTotalPages}`;
+        rawPageInfo.textContent = pageLabel;
+      }
+    }
+    if (rawResultsStatus) {
+      if (totalItems === 0) {
+        rawResultsStatus.textContent = isPersian ? 'هیچ مصاحبه‌ای برای نمایش وجود ندارد' : 'No interviews to display';
+      } else {
+        const startIndex = (page - 1) * pageSize + 1;
+        const endIndex = Math.min(totalItems, startIndex + pageSize - 1);
+        const startLabel = formatNumber(startIndex);
+        const endLabel = formatNumber(endIndex);
+        const totalLabel = formatNumber(totalItems);
+        rawResultsStatus.textContent = isPersian
+          ? `نمایش ${startLabel}–${endLabel} از ${totalLabel}`
+          : `Showing ${startLabel}–${endLabel} of ${totalLabel}`;
+      }
+    }
+    if (rawPrevButton) {
+      rawPrevButton.disabled = totalItems === 0 || page <= 1;
+    }
+    if (rawNextButton) {
+      rawNextButton.disabled = totalItems === 0 || page >= safeTotalPages;
+    }
+  }
+
+  function renderRawRows(results) {
+    if (!rawTable) {
+      return;
+    }
+    const tbody = rawTable.querySelector('tbody');
+    if (!tbody) {
+      return;
+    }
+    tbody.innerHTML = '';
+    if (!Array.isArray(results) || results.length === 0) {
+      if (rawTableInstance) {
+        rawTableInstance.refresh();
+      } else {
+        rawNeedsRefresh = true;
+      }
+      return;
+    }
+    results.forEach((item) => {
+      const tr = document.createElement('tr');
+      const projectCell = document.createElement('td');
+      projectCell.textContent = item.project || '';
+      tr.appendChild(projectCell);
+
+      const userCell = document.createElement('td');
+      userCell.textContent = item.user || '';
+      tr.appendChild(userCell);
+
+      const codeCell = document.createElement('td');
+      if (item.code != null) {
+        codeCell.textContent = String(item.code);
+        codeCell.dataset.sortValue = String(item.code);
+      } else {
+        codeCell.textContent = '';
+        delete codeCell.dataset.sortValue;
+      }
+      tr.appendChild(codeCell);
+
+      const statusCell = document.createElement('td');
+      const statusKey = item.status ? true : false;
+      statusCell.textContent = statusLabels[statusKey];
+      statusCell.dataset.sortValue = item.status ? '1' : '0';
+      tr.appendChild(statusCell);
+
+      const startCell = document.createElement('td');
+      const startFormatted = formatDateTime(item.start_form);
+      startCell.textContent = startFormatted.display;
+      if (startFormatted.sort) {
+        startCell.dataset.sortValue = startFormatted.sort;
+      } else {
+        delete startCell.dataset.sortValue;
+      }
+      tr.appendChild(startCell);
+
+      const endCell = document.createElement('td');
+      const endFormatted = formatDateTime(item.end_form);
+      endCell.textContent = endFormatted.display;
+      if (endFormatted.sort) {
+        endCell.dataset.sortValue = endFormatted.sort;
+      } else {
+        delete endCell.dataset.sortValue;
+      }
+      tr.appendChild(endCell);
+
+      const createdCell = document.createElement('td');
+      const createdFormatted = formatDateTime(item.created_at);
+      createdCell.textContent = createdFormatted.display;
+      if (createdFormatted.sort) {
+        createdCell.dataset.sortValue = createdFormatted.sort;
+      } else {
+        delete createdCell.dataset.sortValue;
+      }
+      tr.appendChild(createdCell);
+
+      tbody.appendChild(tr);
+    });
+    if (rawTableInstance) {
+      rawTableInstance.refresh();
+    } else {
+      rawNeedsRefresh = true;
+    }
+  }
+
+  function fetchRawData(pageOverride) {
+    if (!rawTable || !rawTable.dataset || !rawTable.dataset.url) {
+      return;
+    }
+    setRawLoading();
+    const url = buildRawUrl(pageOverride);
+    if (!url) {
+      renderRawRows([]);
+      updateRawPagination(0, 1, 30, 1);
+      return;
+    }
+    fetch(url)
+      .then((resp) => resp.json())
+      .then((data) => {
+        const results = Array.isArray(data.results) ? data.results : [];
+        const page = data.page || 1;
+        const pageSize = data.page_size || (rawPageSizeSelect ? parseInt(rawPageSizeSelect.value, 10) || 30 : 30);
+        const totalPages = data.total_pages || 1;
+        const totalItems = data.total_items || 0;
+        renderRawRows(results);
+        updateRawPagination(totalItems, page, pageSize, totalPages);
+      })
+      .catch((error) => {
+        console.error('Error loading raw interviews', error);
+        if (rawPageInfo) {
+          rawPageInfo.textContent = isPersian ? 'خطا در بارگیری داده‌ها' : 'Failed to load data';
+        }
+        if (rawResultsStatus) {
+          rawResultsStatus.textContent = '';
+        }
+        if (rawPrevButton) {
+          rawPrevButton.disabled = true;
+        }
+        if (rawNextButton) {
+          rawNextButton.disabled = true;
+        }
+      });
+  }
+
+
+  function fetchChartsAndTop() {
+    fetch(buildChartUrl())
       .then((resp) => resp.json())
       .then((data) => {
         // Update bar chart
@@ -315,12 +601,47 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+  function refreshAll(resetRawPage = false) {
+    fetchChartsAndTop();
+    if (rawTable && rawTable.dataset && rawTable.dataset.url) {
+      if (resetRawPage) {
+        rawCurrentPage = 1;
+      }
+      fetchRawData(rawCurrentPage);
+    }
+  }
+
   // Fetch data initially and whenever filters change
-  fetchAndRender();
+  refreshAll(true);
   ['project-select', 'start-date', 'end-date', 'user-select'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
-      el.addEventListener('change', fetchAndRender);
+      el.addEventListener('change', () => refreshAll(true));
     }
   });
+
+  if (rawPageSizeSelect) {
+    rawPageSizeSelect.addEventListener('change', () => {
+      rawCurrentPage = 1;
+      fetchRawData(rawCurrentPage);
+    });
+  }
+
+  if (rawPrevButton) {
+    rawPrevButton.addEventListener('click', () => {
+      if (rawCurrentPage > 1) {
+        rawCurrentPage -= 1;
+        fetchRawData(rawCurrentPage);
+      }
+    });
+  }
+
+  if (rawNextButton) {
+    rawNextButton.addEventListener('click', () => {
+      if (rawCurrentPage < rawTotalPages) {
+        rawCurrentPage += 1;
+        fetchRawData(rawCurrentPage);
+      }
+    });
+  }
 });
