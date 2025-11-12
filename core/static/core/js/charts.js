@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const codeCanvas = document.getElementById('code-chart');
   const hourlyCanvas = document.getElementById('hourly-chart');
   const topTable = document.getElementById('top5-table');
+  const topTableTitle = document.getElementById('top-table-title');
   const rawTable = document.getElementById('raw-records-table');
   const rawPageSizeSelect = document.getElementById('raw-page-size');
   const rawPageInfo = document.getElementById('raw-page-info');
@@ -39,6 +40,8 @@ document.addEventListener('DOMContentLoaded', function () {
   let hourlyChart = null;
   let donutSegments = [];
   let topData = [];
+  const topTableLimitRaw = topTable && topTable.dataset.topLimit ? parseInt(topTable.dataset.topLimit, 10) : NaN;
+  const topTableLimit = Number.isFinite(topTableLimitRaw) && topTableLimitRaw > 0 ? topTableLimitRaw : 5;
   let topTableInstance = null;
   let needsTableRefresh = false;
   let rawTableInstance = null;
@@ -791,6 +794,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const tbody = topTable.querySelector('tbody');
     tbody.innerHTML = '';
     if (!topData.length) {
+      updateTopHeading(0);
       if (topTableInstance) {
         topTableInstance.refresh();
       } else {
@@ -799,7 +803,9 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
     const sorted = topData.slice().sort((a, b) => b.total - a.total);
-    sorted.forEach((row) => {
+    const limited = sorted.slice(0, topTableLimit);
+    updateTopHeading(limited.length);
+    limited.forEach((row) => {
       const tr = document.createElement('tr');
       const projectCell = document.createElement('td');
       projectCell.textContent = row.project || '';
@@ -826,6 +832,23 @@ document.addEventListener('DOMContentLoaded', function () {
     } else {
       needsTableRefresh = true;
     }
+  }
+
+  function updateTopHeading(renderedCount) {
+    if (!topTableTitle) {
+      return;
+    }
+    const labelTemplate = isPersian
+      ? topTableTitle.dataset.labelFa || topTableTitle.textContent || ''
+      : topTableTitle.dataset.labelEn || topTableTitle.textContent || '';
+    if (!labelTemplate) {
+      return;
+    }
+    const countDisplay = isPersian
+      ? (Number.isFinite(renderedCount) ? renderedCount.toLocaleString('fa-IR') : '۰')
+      : (Number.isFinite(renderedCount) ? renderedCount.toLocaleString() : '0');
+    const updated = labelTemplate.replace('{count}', countDisplay);
+    topTableTitle.textContent = updated;
   }
 
   function refreshAll(resetRawPage = false) {

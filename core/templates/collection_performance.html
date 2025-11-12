@@ -191,9 +191,9 @@
         </div>
     </div>
     <div class="top-table">
-        <h2 style="margin-bottom:0.5rem;">{% if lang == 'fa' %}۵ پرسشگر برتر{% else %}Top Interviewers{% endif %}</h2>
+        <h2 id="top-table-title" style="margin-bottom:0.5rem;" data-label-fa="{count} پرسشگر برتر" data-label-en="Top {count} Interviewers">{% if lang == 'fa' %}پرسشگران برتر{% else %}Top Interviewers{% endif %}</h2>
         <div class="table-responsive">
-            <table id="top5-table" class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}داده‌ای برای نمایش نیست.{% else %}No interviewers match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+            <table id="top5-table" class="table" data-table="interactive" data-top-limit="5" data-empty-text="{% if lang == 'fa' %}داده‌ای برای نمایش نیست.{% else %}No interviewers match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
                 <thead>
                     <tr>
                         <th scope="col">
