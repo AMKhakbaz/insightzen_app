@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', function () {
   const barCanvas = document.getElementById('bar-chart');
   const donutCanvas = document.getElementById('donut-chart');
   const lineCanvas = document.getElementById('line-chart');
+  const codeCanvas = document.getElementById('code-chart');
+  const hourlyCanvas = document.getElementById('hourly-chart');
   const topTable = document.getElementById('top5-table');
   const rawTable = document.getElementById('raw-records-table');
   const rawPageSizeSelect = document.getElementById('raw-page-size');
@@ -28,9 +30,13 @@ document.addEventListener('DOMContentLoaded', function () {
   const ctxBar = barCanvas.getContext('2d');
   const ctxDonut = donutCanvas.getContext('2d');
   const ctxLine = lineCanvas.getContext('2d');
+  const ctxCode = codeCanvas ? codeCanvas.getContext('2d') : null;
+  const ctxHourly = hourlyCanvas ? hourlyCanvas.getContext('2d') : null;
   let barChart = null;
   let donutChart = null;
   let lineChart = null;
+  let codeChart = null;
+  let hourlyChart = null;
   let donutSegments = [];
   let topData = [];
   let topTableInstance = null;
@@ -41,6 +47,12 @@ document.addEventListener('DOMContentLoaded', function () {
   let rawTotalPages = 1;
   const locale = document.documentElement.lang || 'en';
   const isPersian = locale.startsWith('fa');
+  const kpiTotal = document.getElementById('kpi-total-interviews');
+  const kpiSuccess = document.getElementById('kpi-successful-interviews');
+  const kpiRate = document.getElementById('kpi-success-rate');
+  const kpiDuration = document.getElementById('kpi-average-duration');
+  const kpiDurationSample = document.getElementById('kpi-duration-sample');
+  const kpiPeakHour = document.getElementById('kpi-peak-hour');
   const statusLabels = {
     true: isPersian ? 'موفق' : 'Successful',
     false: isPersian ? 'ناموفق' : 'Unsuccessful',
@@ -148,6 +160,90 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     const display = date.toLocaleString(localeName || undefined, options);
     return { display, sort: date.toISOString() };
+  }
+
+  function formatDurationMinutes(value) {
+    if (!Number.isFinite(value) || value <= 0) {
+      return isPersian ? '—' : '—';
+    }
+    const totalSeconds = Math.round(value * 60);
+    const seconds = totalSeconds % 60;
+    const minutes = Math.floor(totalSeconds / 60) % 60;
+    const hours = Math.floor(totalSeconds / 3600);
+    if (hours > 0) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function getHeatColor(ratio) {
+    const clamped = Math.max(0, Math.min(1, ratio || 0));
+    const hue = 210 - clamped * 150; // shift from blue to warm as intensity increases
+    const saturation = 70;
+    const lightness = 32 + (1 - clamped) * 18;
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  }
+
+  function buildHeatColours(values) {
+    if (!Array.isArray(values) || values.length === 0) {
+      return [];
+    }
+    const max = Math.max(...values.map((v) => (Number.isFinite(v) ? v : 0)));
+    if (!max) {
+      return values.map(() => getCssVar('--surface-raised', '#1e293b'));
+    }
+    return values.map((value) => getHeatColor(value / max));
+  }
+
+  function updateKpis(meta) {
+    const safeMeta = meta || {};
+    const total = Number.isFinite(safeMeta.total_interviews) ? safeMeta.total_interviews : 0;
+    const success = Number.isFinite(safeMeta.successful_interviews) ? safeMeta.successful_interviews : 0;
+    const rateValue = Number.isFinite(safeMeta.success_rate)
+      ? safeMeta.success_rate
+      : total
+      ? (success / total) * 100
+      : 0;
+    if (kpiTotal) {
+      kpiTotal.textContent = formatNumber(total);
+    }
+    if (kpiSuccess) {
+      kpiSuccess.textContent = formatNumber(success);
+    }
+    if (kpiRate) {
+      if (Number.isFinite(rateValue)) {
+        const localeName = isPersian ? 'fa-IR' : undefined;
+        kpiRate.textContent = `${rateValue.toLocaleString(localeName, {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        })}%`;
+      } else {
+        kpiRate.textContent = '—';
+      }
+    }
+
+    const durationLabel = safeMeta.average_duration_label || formatDurationMinutes(safeMeta.average_duration_minutes);
+    if (kpiDuration) {
+      kpiDuration.textContent = durationLabel || '—';
+    }
+    if (kpiDurationSample) {
+      const sample = Number.isFinite(safeMeta.duration_sample_size) ? safeMeta.duration_sample_size : 0;
+      if (sample > 0) {
+        kpiDurationSample.textContent = isPersian
+          ? `بر پایه ${formatNumber(sample)} رکورد`
+          : `Based on ${formatNumber(sample)} records`;
+      } else {
+        kpiDurationSample.textContent = isPersian ? 'داده‌ای موجود نیست' : 'No duration data';
+      }
+    }
+    if (kpiPeakHour) {
+      const label = safeMeta.peak_hour_label || '';
+      if (label) {
+        kpiPeakHour.textContent = isPersian ? `اوج: ${label}` : `Peak: ${label}`;
+      } else {
+        kpiPeakHour.textContent = isPersian ? 'اوج مشخص نیست' : 'No peak hour';
+      }
+    }
   }
 
   function buildChartUrl() {
@@ -362,6 +458,7 @@ document.addEventListener('DOMContentLoaded', function () {
     fetch(buildChartUrl())
       .then((resp) => resp.json())
       .then((data) => {
+        updateKpis(data.meta);
         // Update bar chart
         const barData = data.bar || {};
         const labels = barData.labels || [];
@@ -484,6 +581,136 @@ document.addEventListener('DOMContentLoaded', function () {
               cutout: '60%',
             },
           });
+        }
+        // Update code breakdown chart
+        if (ctxCode) {
+          const codeItems = data.codes && Array.isArray(data.codes.items) ? data.codes.items : [];
+          const codeValues = codeItems.map((item) => (Number.isFinite(item.count) ? item.count : Number(item.count) || 0));
+          const codeLabels = codeItems.map((item) => {
+            if (item.code === null || item.code === undefined || item.code === '') {
+              return isPersian ? 'نامشخص' : 'Unknown';
+            }
+            const baseLabel = item.label || item.code;
+            return isPersian ? `کد ${baseLabel}` : `Code ${baseLabel}`;
+          });
+          const codeColours = codeValues.length ? getPalette(codeValues.length) : [];
+          if (codeChart) {
+            codeChart.data.labels = codeLabels;
+            codeChart.data.datasets[0].data = codeValues;
+            codeChart.data.datasets[0].backgroundColor = codeColours.length ? codeColours : [];
+            codeChart.data.datasets[0].borderColor = codeColours.length ? codeColours : [];
+            codeChart.update();
+          } else {
+            codeChart = new Chart(ctxCode, {
+              type: 'doughnut',
+              data: {
+                labels: codeLabels,
+                datasets: [
+                  {
+                    data: codeValues,
+                    backgroundColor: codeColours.length ? codeColours : [],
+                    borderColor: codeColours.length ? codeColours : [],
+                    borderWidth: 1,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '55%',
+                plugins: {
+                  legend: {
+                    position: 'bottom',
+                    labels: {
+                      color: getCssVar('--text-color', '#e2e8f0'),
+                    },
+                  },
+                },
+                animation: {
+                  duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 500,
+                },
+              },
+            });
+          }
+        }
+        // Update hourly distribution chart
+        if (ctxHourly) {
+          const hourly = data.hourly || { labels: [], totals: [], successes: [] };
+          const totalsData = Array.isArray(hourly.totals) ? hourly.totals : [];
+          const successData = Array.isArray(hourly.successes) ? hourly.successes : [];
+          const heatColours = buildHeatColours(totalsData);
+          if (hourlyChart) {
+            hourlyChart.data.labels = Array.isArray(hourly.labels) ? hourly.labels : [];
+            hourlyChart.data.datasets[0].data = totalsData;
+            hourlyChart.data.datasets[0].backgroundColor = heatColours;
+            hourlyChart.data.datasets[0].borderColor = heatColours;
+            hourlyChart.data.datasets[1].data = successData;
+            hourlyChart.update();
+          } else {
+            hourlyChart = new Chart(ctxHourly, {
+              type: 'bar',
+              data: {
+                labels: Array.isArray(hourly.labels) ? hourly.labels : [],
+                datasets: [
+                  {
+                    label: isPersian ? 'کل تماس‌ها' : 'Total Calls',
+                    data: totalsData,
+                    backgroundColor: heatColours,
+                    borderColor: heatColours,
+                    borderWidth: 1,
+                    maxBarThickness: 28,
+                  },
+                  {
+                    label: isPersian ? 'موفق' : 'Successful',
+                    data: successData,
+                    type: 'line',
+                    borderColor: secondaryBorder,
+                    backgroundColor: 'rgba(0,0,0,0)',
+                    borderWidth: 2,
+                    tension: 0.25,
+                    pointRadius: 2,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                  x: {
+                    grid: {
+                      color: getCssVar('--border-color', '#2a3551'),
+                    },
+                    ticks: {
+                      color: getCssVar('--text-color', '#e2e8f0'),
+                      maxRotation: 0,
+                      minRotation: 0,
+                      autoSkip: true,
+                      maxTicksLimit: 12,
+                    },
+                  },
+                  y: {
+                    beginAtZero: true,
+                    grid: {
+                      color: getCssVar('--border-color', '#2a3551'),
+                    },
+                    ticks: {
+                      color: getCssVar('--text-color', '#e2e8f0'),
+                    },
+                  },
+                },
+                plugins: {
+                  legend: {
+                    labels: {
+                      color: getCssVar('--text-color', '#e2e8f0'),
+                    },
+                  },
+                },
+                animation: {
+                  duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 500,
+                },
+              },
+            });
+          }
         }
         // Update line chart (daily trend)
         const daily = data.daily || { labels: [], totals: [], successes: [] };

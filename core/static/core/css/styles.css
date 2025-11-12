@@ -289,6 +289,103 @@ body.rtl {
     line-height: 1.6;
 }
 
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.kpi-card {
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: var(--color-shadow-soft);
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-height: 120px;
+}
+
+.kpi-card--metrics {
+    gap: 0.4rem;
+}
+
+.kpi-label {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    font-weight: var(--font-weight-medium);
+}
+
+.kpi-value {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    letter-spacing: 0.3px;
+}
+
+.kpi-subvalue {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.chart-container {
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 1rem;
+    min-height: 260px;
+    box-shadow: var(--color-shadow-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.chart-container--tall {
+    min-height: 320px;
+}
+
+.chart-container--compact {
+    min-height: 260px;
+}
+
+.chart-container--wide {
+    grid-column: 1 / -1;
+    min-height: 320px;
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+@media (max-width: 720px) {
+    .kpi-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .kpi-value {
+        font-size: 1.5rem;
+    }
+
+    .chart-grid {
+        gap: 1rem;
+    }
+}
+
 .qc-card {
     max-width: 1200px;
     margin: 2rem auto;

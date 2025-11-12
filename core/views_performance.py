@@ -23,8 +23,8 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
-from django.db.models import Count, Q
-from django.db.models.functions import TruncDate
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q
+from django.db.models.functions import TruncDate, ExtractHour
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -223,6 +223,83 @@ def _build_chart_payload(qs) -> Dict[str, object]:
             'rate': round(rate, 2),
         })
 
+    status_rows = qs.values('status').annotate(count=Count('id'))
+    status_breakdown = {
+        'successful': 0,
+        'unsuccessful': 0,
+        'unknown': 0,
+    }
+    for row in status_rows:
+        status_value = row['status']
+        if status_value is True:
+            status_breakdown['successful'] = row['count']
+        elif status_value is False:
+            status_breakdown['unsuccessful'] = row['count']
+        else:
+            status_breakdown['unknown'] = row['count']
+
+    code_labels: List[str] = []
+    code_values: List[int] = []
+    code_items: List[Dict[str, object]] = []
+    for row in qs.values('code').annotate(count=Count('id')).order_by('code'):
+        code_value = row['code']
+        label = str(code_value) if code_value is not None else '—'
+        code_labels.append(label)
+        code_values.append(row['count'])
+        code_items.append({
+            'code': code_value,
+            'label': label,
+            'count': row['count'],
+        })
+
+    duration_qs = qs.filter(start_form__isnull=False, end_form__isnull=False)
+    duration_expr = ExpressionWrapper(F('end_form') - F('start_form'), output_field=DurationField())
+    avg_duration = duration_qs.aggregate(avg_duration=Avg(duration_expr))['avg_duration']
+    avg_duration_minutes: float | None = None
+    avg_duration_label = ''
+    if avg_duration:
+        total_seconds = avg_duration.total_seconds()
+        avg_duration_minutes = total_seconds / 60 if total_seconds else 0
+        seconds = int(total_seconds % 60)
+        minutes = int((total_seconds // 60) % 60)
+        hours = int(total_seconds // 3600)
+        if hours:
+            avg_duration_label = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        else:
+            avg_duration_label = f"{minutes:02d}:{seconds:02d}"
+
+    hourly_rows = (
+        qs.annotate(hour=ExtractHour('created_at'))
+        .values('hour')
+        .annotate(total=Count('id'), success=Count('id', filter=Q(code=1)))
+    )
+    hour_map = {row['hour']: row for row in hourly_rows if row['hour'] is not None}
+    hourly_labels: List[str] = []
+    hourly_totals: List[int] = []
+    hourly_successes: List[int] = []
+    for hour in range(24):
+        hourly_labels.append(f"{hour:02d}:00")
+        row = hour_map.get(hour)
+        if row:
+            hourly_totals.append(row['total'])
+            hourly_successes.append(row['success'])
+        else:
+            hourly_totals.append(0)
+            hourly_successes.append(0)
+
+    total_interviews = sum(bar_totals)
+    successful_interviews = sum(bar_successes)
+    success_rate = (successful_interviews / total_interviews * 100) if total_interviews else 0
+
+    peak_hour = None
+    peak_hour_label = ''
+    if any(hourly_totals):
+        max_total = max(hourly_totals)
+        if max_total > 0:
+            peak_index = hourly_totals.index(max_total)
+            peak_hour = peak_index
+            peak_hour_label = f"{peak_index:02d}:00"
+
     return {
         'bar': {
             'labels': bar_labels,
@@ -243,9 +320,27 @@ def _build_chart_payload(qs) -> Dict[str, object]:
         'top': {
             'rows': top_rows,
         },
+        'codes': {
+            'labels': code_labels,
+            'values': code_values,
+            'items': code_items,
+        },
+        'hourly': {
+            'labels': hourly_labels,
+            'totals': hourly_totals,
+            'successes': hourly_successes,
+        },
         'meta': {
-            'total_interviews': sum(bar_totals),
-            'successful_interviews': sum(bar_successes),
+            'total_interviews': total_interviews,
+            'successful_interviews': successful_interviews,
+            'success_rate': round(success_rate, 2),
+            'status_breakdown': status_breakdown,
+            'code_breakdown': code_items,
+            'average_duration_minutes': avg_duration_minutes,
+            'average_duration_label': avg_duration_label,
+            'duration_sample_size': duration_qs.count(),
+            'peak_hour': peak_hour,
+            'peak_hour_label': peak_hour_label,
         },
     }
 
@@ -328,7 +423,20 @@ def collection_performance_data(request: HttpRequest) -> JsonResponse:
                 'donut': {'labels': [], 'values': [], 'segments': []},
                 'daily': {'labels': [], 'totals': [], 'successes': []},
                 'top': {'rows': []},
-                'meta': {'total_interviews': 0, 'successful_interviews': 0},
+                'codes': {'labels': [], 'values': [], 'items': []},
+                'hourly': {'labels': [], 'totals': [], 'successes': []},
+                'meta': {
+                    'total_interviews': 0,
+                    'successful_interviews': 0,
+                    'success_rate': 0,
+                    'status_breakdown': {'successful': 0, 'unsuccessful': 0, 'unknown': 0},
+                    'code_breakdown': [],
+                    'average_duration_minutes': None,
+                    'average_duration_label': '',
+                    'duration_sample_size': 0,
+                    'peak_hour': None,
+                    'peak_hour_label': '',
+                },
             }
         )
 

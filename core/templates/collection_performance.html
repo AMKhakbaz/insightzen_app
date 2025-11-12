@@ -153,14 +153,40 @@
             </div>
         </div>
     </section>
-    <div class="chart-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;margin-bottom:1.5rem;">
-        <div class="chart-container" style="height:320px;">
+    <div class="kpi-grid" aria-live="polite">
+        <div class="kpi-card">
+            <p class="kpi-label">{% if lang == 'fa' %}کل تماس‌ها{% else %}Total Calls{% endif %}</p>
+            <p class="kpi-value" id="kpi-total-interviews">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">{% if lang == 'fa' %}تماس‌های موفق{% else %}Successful Calls{% endif %}</p>
+            <p class="kpi-value" id="kpi-successful-interviews">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">{% if lang == 'fa' %}نرخ موفقیت{% else %}Success Rate{% endif %}</p>
+            <p class="kpi-value" id="kpi-success-rate">—</p>
+        </div>
+        <div class="kpi-card kpi-card--metrics">
+            <p class="kpi-label">{% if lang == 'fa' %}میانگین مدت و اوج زمانی{% else %}Avg Duration & Peak Hour{% endif %}</p>
+            <p class="kpi-value" id="kpi-average-duration">—</p>
+            <p class="kpi-subvalue" id="kpi-duration-sample">{% if lang == 'fa' %}داده‌ای موجود نیست{% else %}No duration data{% endif %}</p>
+            <p class="kpi-subvalue" id="kpi-peak-hour">—</p>
+        </div>
+    </div>
+    <div class="chart-grid">
+        <div class="chart-container chart-container--tall">
             <canvas id="bar-chart" data-url="{% url 'collection_performance_data' %}" data-total-label="{% if lang == 'fa' %}کل{% else %}Total{% endif %}" data-success-label="{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}"></canvas>
         </div>
-        <div class="chart-container" style="height:320px;">
+        <div class="chart-container chart-container--tall">
             <canvas id="donut-chart" data-url="{% url 'collection_performance_data' %}"></canvas>
         </div>
-        <div class="chart-container" style="height:320px;grid-column:1/-1;">
+        <div class="chart-container chart-container--compact">
+            <canvas id="code-chart" data-url="{% url 'collection_performance_data' %}"></canvas>
+        </div>
+        <div class="chart-container chart-container--compact">
+            <canvas id="hourly-chart" data-url="{% url 'collection_performance_data' %}"></canvas>
+        </div>
+        <div class="chart-container chart-container--wide">
             <canvas id="line-chart" data-url="{% url 'collection_performance_data' %}" data-total-label="{% if lang == 'fa' %}کل{% else %}Total{% endif %}" data-success-label="{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}"></canvas>
         </div>
     </div>
@@ -201,7 +227,7 @@
                             </button>
                         </th>
                     </tr>
-                    <tr class="table-filter-row">
+                    <tr class="table-filter-row" hidden>
                         <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}نام پروژه{% else %}Project{% endif %}" autocomplete="off"></th>
                         <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}نام کاربر{% else %}User{% endif %}" autocomplete="off"></th>
                         <th><input type="text" data-filter-column="2" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا >۱۰{% else %}Number or >10{% endif %}" autocomplete="off"></th>
