@@ -43,6 +43,7 @@ from core.services.database_cache import (
     refresh_entry_cache,
     request_enketo_edit_url,
 )
+from core.services.persian_dates import calculate_age_from_birth_info
 try:
     # Optional import for Excel export; if the library is missing the export view
     # will inform the user appropriately.
@@ -937,7 +938,6 @@ def quota_management(request: HttpRequest) -> HttpResponse:
                 Interview.objects.filter(project=selected_project, status=True)
                 .select_related('person')
             )
-            current_year = timezone.localdate().year
             for interview in successful_interviews:
                 city_name = (interview.city or
                              (interview.person.city_name if interview.person else None))
@@ -949,10 +949,12 @@ def quota_management(request: HttpRequest) -> HttpResponse:
                     birth_year_source = interview.birth_year
                     if birth_year_source is None and interview.person and interview.person.birth_year:
                         birth_year_source = interview.person.birth_year
-                    if birth_year_source is not None:
-                        derived_age = current_year - birth_year_source
-                        if derived_age >= 0:
-                            age_value = derived_age
+                    birth_date_source = (
+                        interview.person.birth_date if interview.person and interview.person.birth_date else None
+                    )
+                    derived_age = calculate_age_from_birth_info(birth_year_source, birth_date_source)
+                    if derived_age is not None:
+                        age_value = derived_age
                 if age_value is None:
                     continue
                 for quota in quotas_by_city.get(city_name, []):
@@ -1045,6 +1047,7 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
     call_sample_obj = None
     prefill_age: Optional[int] = None
     prefill_birth_year: Optional[int] = None
+    prefill_birth_date: Optional[str] = None
     prefill_city: Optional[str] = None
     quota_remaining: Dict[int, int] = {}
     if selected_project_id:
@@ -1198,10 +1201,12 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
                 quota_cell = call_sample.quota
                 # Prefill optional demographic fields when available
                 person_record = call_sample.person or (call_sample.mobile.person if call_sample.mobile else None)
-                now_year = timezone.localdate().year
                 # Birth year preference: person record first, then latest interview data
-                if person_record and person_record.birth_year is not None:
-                    prefill_birth_year = person_record.birth_year
+                if person_record:
+                    if person_record.birth_year is not None:
+                        prefill_birth_year = person_record.birth_year
+                    if person_record.birth_date:
+                        prefill_birth_date = person_record.birth_date
                 # Attempt to derive city from the person or related mobile record
                 if person_record and person_record.city_name:
                     prefill_city = person_record.city_name
@@ -1222,11 +1227,10 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
                         prefill_city = latest_interview.city
                     if latest_interview.age is not None:
                         prefill_age = latest_interview.age
-                # Compute age from the most reliable birth year value when available
-                if prefill_birth_year is not None:
-                    calculated_age = now_year - prefill_birth_year
-                    if calculated_age >= 0:
-                        prefill_age = calculated_age
+                # Compute age from the most reliable birth information when available
+                calculated_age = calculate_age_from_birth_info(prefill_birth_year, prefill_birth_date)
+                if calculated_age is not None:
+                    prefill_age = calculated_age
     # status codes mapping for display in template
     status_codes = {
         1: 'مصاحبه موفق' if request.session.get('lang', 'en') == 'fa' else 'Successful Interview',
