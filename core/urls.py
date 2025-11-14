@@ -37,6 +37,7 @@ urlpatterns = [
     path('memberships/<int:membership_id>/edit/', views.membership_edit, name='membership_edit'),
     # Delete membership
     path('memberships/<int:pk>/delete/', views.membership_delete, name='membership_delete'),
+    path('api/memberships/message/', views.membership_message_send, name='membership_message_send'),
 
     # Conjoint Analysis
     path('conjoint/', views.conjoint, name='conjoint'),

@@ -23,6 +23,7 @@ class Notification(models.Model):
         MEMBERSHIP_ADDED = 'membership_added', 'Membership Added'
         PROJECT_STARTED = 'project_started', 'Project Started'
         PROJECT_DEADLINE = 'project_deadline', 'Project Deadline'
+        CUSTOM_MESSAGE = 'custom_message', 'Custom Message'
 
     recipient = models.ForeignKey(
         User,

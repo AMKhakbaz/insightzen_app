@@ -535,6 +535,235 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  const messagingPanel = document.querySelector('[data-member-messaging]');
+  if (messagingPanel) {
+    const endpoint = messagingPanel.getAttribute('data-member-endpoint');
+    const textarea = messagingPanel.querySelector('[data-member-message-input]');
+    const sendButton = messagingPanel.querySelector('[data-member-send]');
+    const clearButton = messagingPanel.querySelector('[data-member-clear]');
+    const counterNode = messagingPanel.querySelector('[data-member-char-count]');
+    const selectedCountNode = messagingPanel.querySelector('[data-member-selected-count]');
+    const statusNode = messagingPanel.querySelector('[data-member-status]');
+    const table = document.getElementById('membership-table');
+    const masterCheckbox = document.querySelector('[data-member-select-all]');
+    const lang = document.documentElement.lang === 'fa' ? 'fa' : 'en';
+    const text = {
+      en: {
+        sending: 'Sending message…',
+        success: (count) => `${count} notification${count === 1 ? '' : 's'} sent.`,
+        partial: 'Some recipients were skipped because they lack access.',
+        required: 'Enter a message before sending.',
+        none: 'Select at least one member.',
+        error: 'Unable to send the message. Please try again.',
+      },
+      fa: {
+        sending: 'در حال ارسال پیام…',
+        success: (count) => `${count} اعلان ارسال شد.`,
+        partial: 'برخی کاربران به دلیل محدودیت دسترسی نادیده گرفته شدند.',
+        required: 'لطفاً متن پیام را وارد کنید.',
+        none: 'حداقل یک کاربر را انتخاب کنید.',
+        error: 'امکان ارسال پیام وجود ندارد. دوباره تلاش کنید.',
+      },
+    };
+
+    const state = {
+      selected: new Set(),
+      sending: false,
+    };
+
+    const setStatus = (message, variant) => {
+      if (!statusNode) return;
+      statusNode.textContent = message || '';
+      statusNode.classList.remove('is-error', 'is-success');
+      if (variant === 'error') {
+        statusNode.classList.add('is-error');
+      } else if (variant === 'success') {
+        statusNode.classList.add('is-success');
+      }
+    };
+
+    const clearStatus = () => setStatus('', null);
+
+    const getCheckboxes = () => {
+      if (!table) return [];
+      return Array.from(table.querySelectorAll('[data-member-checkbox]'));
+    };
+
+    const syncCounter = () => {
+      if (!textarea || !counterNode) return;
+      const maxLen = 500;
+      if (textarea.value.length > maxLen) {
+        textarea.value = textarea.value.slice(0, maxLen);
+      }
+      counterNode.textContent = `${textarea.value.length} / ${maxLen}`;
+    };
+
+    const updateControls = () => {
+      const hasSelection = state.selected.size > 0;
+      const message = textarea ? textarea.value.trim() : '';
+      if (selectedCountNode) {
+        selectedCountNode.textContent = state.selected.size;
+      }
+      if (sendButton) {
+        const disabled =
+          !endpoint || !hasSelection || !message || message.length > 500 || state.sending;
+        sendButton.disabled = disabled;
+      }
+      if (clearButton) {
+        clearButton.disabled = !hasSelection || state.sending;
+      }
+    };
+
+    const refreshMaster = () => {
+      if (!masterCheckbox) return;
+      const boxes = getCheckboxes();
+      const total = boxes.length;
+      if (!total) {
+        masterCheckbox.checked = false;
+        masterCheckbox.indeterminate = false;
+        return;
+      }
+      const selected = state.selected.size;
+      masterCheckbox.checked = selected > 0 && selected === total;
+      masterCheckbox.indeterminate = selected > 0 && selected < total;
+    };
+
+    const toggleSelection = (checkbox, force) => {
+      if (!checkbox) return;
+      const value = parseInt(checkbox.value, 10);
+      if (Number.isNaN(value)) {
+        return;
+      }
+      const shouldCheck = typeof force === 'boolean' ? force : checkbox.checked;
+      checkbox.checked = shouldCheck;
+      if (shouldCheck) {
+        state.selected.add(value);
+      } else {
+        state.selected.delete(value);
+      }
+    };
+
+    const attachCheckboxHandlers = () => {
+      getCheckboxes().forEach((checkbox) => {
+        checkbox.addEventListener('change', (event) => {
+          const target = event.currentTarget;
+          if (!(target instanceof HTMLInputElement)) return;
+          toggleSelection(target);
+          refreshMaster();
+          updateControls();
+          clearStatus();
+        });
+      });
+    };
+
+    const clearSelection = () => {
+      getCheckboxes().forEach((checkbox) => {
+        toggleSelection(checkbox, false);
+      });
+      state.selected.clear();
+      if (masterCheckbox) {
+        masterCheckbox.checked = false;
+        masterCheckbox.indeterminate = false;
+      }
+      updateControls();
+    };
+
+    const sendMessage = () => {
+      if (!textarea || !sendButton || !endpoint) return;
+      const message = textarea.value.trim();
+      if (!state.selected.size) {
+        setStatus(text[lang].none, 'error');
+        return;
+      }
+      if (!message) {
+        setStatus(text[lang].required, 'error');
+        return;
+      }
+      const csrftoken = getCookie('csrftoken') || '';
+      state.sending = true;
+      updateControls();
+      setStatus(text[lang].sending, null);
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken,
+        },
+        body: JSON.stringify({
+          message,
+          user_ids: Array.from(state.selected),
+        }),
+      })
+        .then((response) =>
+          response
+            .json()
+            .then((data) => ({ ok: response.ok, data }))
+            .catch(() => ({ ok: response.ok, data: {} }))
+        )
+        .then((result) => {
+          const data = result.data || {};
+          if (!result.ok || !data.ok) {
+            setStatus(data.message || text[lang].error, 'error');
+            return;
+          }
+          const count = Number(data.created || 0);
+          let messageText = text[lang].success(count);
+          if (Array.isArray(data.skipped) && data.skipped.length) {
+            messageText = `${messageText} ${text[lang].partial}`;
+          }
+          setStatus(messageText, 'success');
+          textarea.value = '';
+          syncCounter();
+          clearSelection();
+        })
+        .catch(() => {
+          setStatus(text[lang].error, 'error');
+        })
+        .finally(() => {
+          state.sending = false;
+          updateControls();
+        });
+    };
+
+    attachCheckboxHandlers();
+    refreshMaster();
+    syncCounter();
+    updateControls();
+
+    if (masterCheckbox) {
+      masterCheckbox.addEventListener('change', () => {
+        const shouldCheck = masterCheckbox.checked;
+        getCheckboxes().forEach((checkbox) => {
+          toggleSelection(checkbox, shouldCheck);
+        });
+        if (!shouldCheck) {
+          masterCheckbox.indeterminate = false;
+        }
+        updateControls();
+        clearStatus();
+      });
+    }
+
+    if (clearButton) {
+      clearButton.addEventListener('click', () => {
+        clearSelection();
+        clearStatus();
+      });
+    }
+
+    if (textarea) {
+      textarea.addEventListener('input', () => {
+        syncCounter();
+        updateControls();
+        clearStatus();
+      });
+    }
+
+    if (sendButton) {
+      sendButton.addEventListener('click', sendMessage);
+    }
+  }
+
   const bulkModal = document.getElementById('bulk-membership-modal');
   if (bulkModal) {
     const userScript = document.getElementById('project-user-options');

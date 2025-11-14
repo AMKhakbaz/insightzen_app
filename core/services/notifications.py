@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, List
 
 from django.contrib.auth.models import User
 
@@ -131,6 +131,34 @@ def ensure_project_deadline_notifications(project: Project) -> None:
             extra_metadata={'project_id': project.pk},
         )
 
+
+def notify_custom_message(
+    recipients: Iterable[User],
+    *,
+    message_en: str,
+    message_fa: str | None = None,
+    actor: User | None = None,
+) -> List[Notification]:
+    """Send a custom notification to one or more recipients."""
+
+    created: List[Notification] = []
+    actor_name = _user_display(actor)
+    fallback = message_fa or message_en
+    for recipient in recipients:
+        metadata: Dict[str, Any] = {}
+        if actor_name:
+            metadata['actor'] = actor_name
+        created.append(
+            create_notification(
+                recipient,
+                message_en=message_en,
+                message_fa=fallback,
+                event_type=Notification.EventType.CUSTOM_MESSAGE,
+                project=None,
+                extra_metadata=metadata or None,
+            )
+        )
+    return created
 
 def localised_message(notification: Notification, lang: str) -> str:
     """Return the notification message for the requested language."""

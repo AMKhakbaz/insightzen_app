@@ -52,6 +52,7 @@ from core.services.notifications import (
     ensure_project_deadline_notifications,
     localised_message,
     mark_notifications_read,
+    notify_custom_message,
     notify_membership_added,
     notify_project_started,
 )
@@ -847,6 +848,75 @@ def membership_bulk_add(request: HttpRequest, project_id: int) -> JsonResponse:
         response['message'] = 'Users added successfully.'
 
     return JsonResponse(response, status=status_code)
+
+
+
+@login_required
+@require_http_methods(["POST"])
+def membership_message_send(request: HttpRequest) -> JsonResponse:
+    """Send a custom notification to selected project members."""
+
+    user = request.user
+    if not _user_is_organisation(user):
+        return JsonResponse({'ok': False, 'message': 'Access denied.'}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'ok': False, 'message': 'Invalid payload.'}, status=400)
+
+    raw_message = str(payload.get('message') or '').strip()
+    if not raw_message:
+        return JsonResponse({'ok': False, 'message': 'Message is required.'}, status=400)
+    if len(raw_message) > 500:
+        return JsonResponse({'ok': False, 'message': 'Messages are limited to 500 characters.'}, status=400)
+
+    user_ids = payload.get('user_ids')
+    if not isinstance(user_ids, list):
+        return JsonResponse({'ok': False, 'message': 'No recipients selected.'}, status=400)
+    try:
+        id_set = {int(value) for value in user_ids}
+    except (TypeError, ValueError):
+        return JsonResponse({'ok': False, 'message': 'Invalid recipient identifiers.'}, status=400)
+    if not id_set:
+        return JsonResponse({'ok': False, 'message': 'No recipients selected.'}, status=400)
+
+    projects = _get_accessible_projects(user)
+    if not projects:
+        return JsonResponse({'ok': False, 'message': 'No accessible projects available.'}, status=400)
+
+    memberships = (
+        Membership.objects.filter(project__in=projects, user_id__in=id_set)
+        .select_related('user')
+        .order_by('user_id')
+    )
+    recipients: List[User] = []
+    seen: set[int] = set()
+    for membership in memberships:
+        if membership.user_id in seen:
+            continue
+        seen.add(membership.user_id)
+        recipients.append(membership.user)
+
+    if not recipients:
+        return JsonResponse({'ok': False, 'message': 'No valid recipients found.'}, status=400)
+
+    notifications = notify_custom_message(
+        recipients,
+        message_en=raw_message,
+        message_fa=raw_message,
+        actor=user,
+    )
+    log_activity(user, 'Sent custom membership message', f"Recipients: {len(notifications)}")
+
+    skipped = list(sorted(id_set.difference(seen)))
+    return JsonResponse(
+        {
+            'ok': True,
+            'created': len(notifications),
+            'skipped': skipped,
+        }
+    )
 
 
 @login_required
