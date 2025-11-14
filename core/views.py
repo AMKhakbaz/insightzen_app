@@ -13,7 +13,10 @@ separately.
 from __future__ import annotations
 
 import json
+import csv
 from datetime import datetime, timedelta
+from functools import cmp_to_key
+from io import BytesIO, StringIO
 from collections import defaultdict
 from math import ceil
 from typing import Any, Dict, Iterable, List, Tuple, Optional
@@ -113,6 +116,27 @@ MEMBERSHIP_PANEL_FIELDS: List[str] = [
     'conjoint_analysis',
     'segmentation_analysis',
 ]
+
+MEMBERSHIP_PANEL_LABELS: Dict[str, str] = {
+    'database_management': 'Database Management',
+    'quota_management': 'Quota Management',
+    'collection_management': 'Collection Management',
+    'collection_performance': 'Collection Performance',
+    'telephone_interviewer': 'Telephone Interviewer',
+    'fieldwork_interviewer': 'Fieldwork Interviewer',
+    'focus_group_panel': 'Focus Group Panel',
+    'qc_management': 'QC Management',
+    'qc_performance': 'QC Performance',
+    'voice_review': 'Voice Review',
+    'callback_qc': 'Callback QC',
+    'coding': 'Coding',
+    'statistical_health_check': 'Statistical Health Check',
+    'tabulation': 'Tabulation',
+    'statistics': 'Statistics',
+    'funnel_analysis': 'Funnel Analysis',
+    'conjoint_analysis': 'Conjoint Analysis',
+    'segmentation_analysis': 'Segmentation Analysis',
+}
 
 
 def register(request: HttpRequest) -> HttpResponse:
@@ -215,6 +239,12 @@ def home(request: HttpRequest) -> HttpResponse:
 def _user_is_organisation(user: User) -> bool:
     profile = getattr(user, 'profile', None)
     return bool(profile and profile.organization)
+
+
+def _localise_text(lang: str, english: str, persian: str) -> str:
+    """Return the appropriate string for the provided language code."""
+
+    return persian if lang == 'fa' else english
 
 
 def _project_deadline_locked_for_user(project: Project, user: User) -> bool:
@@ -384,6 +414,784 @@ def _detect_sort_type(records: Iterable[Dict[str, Any]], column: str) -> str:
         if isinstance(value, str) and _coerce_numeric(value) is not None:
             return 'numeric'
     return 'text'
+
+
+################################################################################
+# Table export helpers
+################################################################################
+
+def _normalise_table_value(value: Any) -> str:
+    return _normalise_record_value(value)
+
+
+def _evaluate_text_condition(cell_text: str, operator: str, values: List[str]) -> bool:
+    candidate = cell_text.lower()
+    first = (values[0] if values else '') or ''
+    query = first.lower()
+    if operator == 'eq':
+        return candidate == query
+    if operator == 'neq':
+        return candidate != query
+    if operator == 'notContains':
+        return query not in candidate
+    if operator == 'startsWith':
+        return candidate.startswith(query)
+    if operator == 'endsWith':
+        return candidate.endswith(query)
+    if operator == 'empty':
+        return candidate == ''
+    if operator == 'notEmpty':
+        return candidate != ''
+    return query in candidate
+
+
+def _evaluate_number_condition(cell_text: str, operator: str, values: List[str]) -> bool:
+    number = _coerce_numeric(cell_text)
+    if operator == 'empty':
+        return number is None
+    if operator == 'notEmpty':
+        return number is not None
+    first_value = _coerce_numeric(values[0]) if values else None
+    second_value = _coerce_numeric(values[1]) if len(values) > 1 else None
+    if operator == 'between' and first_value is not None and second_value is not None:
+        if number is None:
+            return False
+        low, high = sorted((first_value, second_value))
+        return low <= number <= high
+    if number is None or first_value is None:
+        return False
+    if operator == 'gt':
+        return number > first_value
+    if operator == 'gte':
+        return number >= first_value
+    if operator == 'lt':
+        return number < first_value
+    if operator == 'lte':
+        return number <= first_value
+    if operator == 'neq':
+        return number != first_value
+    return number == first_value
+
+
+def _evaluate_advanced_condition(
+    row: Dict[str, Any],
+    column_meta: Dict[str, Any],
+    condition: Dict[str, Any],
+) -> bool:
+    field = column_meta.get('field')
+    if not field:
+        return False
+    operator = condition.get('operator') or 'contains'
+    cell_text = _normalise_table_value(row.get(field, ''))
+    cond_type = condition.get('type') or column_meta.get('type') or 'text'
+    values = condition.get('values') if isinstance(condition.get('values'), list) else []
+    if operator == 'empty':
+        return cell_text == ''
+    if operator == 'notEmpty':
+        return cell_text != ''
+    if cond_type == 'number':
+        return _evaluate_number_condition(cell_text, operator, values)
+    return _evaluate_text_condition(cell_text, operator, values)
+
+
+def _evaluate_advanced_filters(
+    row: Dict[str, Any],
+    column_map: Dict[int, Dict[str, Any]],
+    advanced_spec: Dict[str, Any],
+) -> bool:
+    filters = advanced_spec.get('filters')
+    if not isinstance(filters, list) or not filters:
+        return True
+    results: List[bool] = []
+    for condition in filters:
+        try:
+            column_index = int(condition.get('column'))
+        except (TypeError, ValueError):
+            results.append(False)
+            continue
+        column_meta = column_map.get(column_index)
+        if not column_meta:
+            results.append(False)
+            continue
+        results.append(_evaluate_advanced_condition(row, column_meta, condition))
+    logic = advanced_spec.get('logic')
+    if logic == 'or':
+        return any(results)
+    return all(results)
+
+
+def _filter_table_rows(
+    rows: List[Dict[str, Any]],
+    columns: List[Dict[str, Any]],
+    filters: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    if not rows or not filters:
+        return rows
+    column_map: Dict[int, Dict[str, Any]] = {
+        index: column for index, column in enumerate(columns)
+    }
+    global_term = str(filters.get('global') or '').strip().lower()
+    column_filters = filters.get('columnFilters') if isinstance(filters.get('columnFilters'), list) else []
+    advanced_spec = filters.get('advanced') if isinstance(filters.get('advanced'), dict) else {}
+    filtered: List[Dict[str, Any]] = []
+    for row in rows:
+        if global_term:
+            found = False
+            for column in column_map.values():
+                field = column.get('field')
+                if not field:
+                    continue
+                if global_term in _normalise_table_value(row.get(field, '')).lower():
+                    found = True
+                    break
+            if not found:
+                continue
+        matches_basic = True
+        for filter_spec in column_filters:
+            try:
+                column_index = int(filter_spec.get('column'))
+            except (TypeError, ValueError):
+                continue
+            column_meta = column_map.get(column_index)
+            if not column_meta or not column_meta.get('field'):
+                continue
+            value_text = _normalise_table_value(row.get(column_meta['field'], ''))
+            if filter_spec.get('type') == 'number':
+                if not _matches_filter_value(value_text, filter_spec.get('value', '')):
+                    matches_basic = False
+                    break
+            else:
+                candidate = (filter_spec.get('valueLower') or filter_spec.get('value') or '').strip().lower()
+                if candidate and candidate not in value_text.lower():
+                    matches_basic = False
+                    break
+        if not matches_basic:
+            continue
+        if advanced_spec and not _evaluate_advanced_filters(row, column_map, advanced_spec):
+            continue
+        filtered.append(row)
+    sort_spec = filters.get('sort') if isinstance(filters.get('sort'), dict) else None
+    if sort_spec and sort_spec.get('column') is not None:
+        return _sort_filtered_rows(filtered, column_map, sort_spec)
+    return filtered
+
+
+def _sort_filtered_rows(
+    rows: List[Dict[str, Any]],
+    column_map: Dict[int, Dict[str, Any]],
+    sort_spec: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    try:
+        column_index = int(sort_spec.get('column'))
+    except (TypeError, ValueError):
+        return rows
+    column_meta = column_map.get(column_index)
+    if not column_meta or not column_meta.get('field'):
+        return rows
+    direction = -1 if sort_spec.get('direction') == 'desc' else 1
+    field = column_meta['field']
+
+    def comparator(left: Tuple[int, Dict[str, Any]], right: Tuple[int, Dict[str, Any]]) -> int:
+        idx_a, row_a = left
+        idx_b, row_b = right
+        value_a = _normalise_table_value(row_a.get(field, ''))
+        value_b = _normalise_table_value(row_b.get(field, ''))
+        if column_meta.get('type') == 'number':
+            num_a = _coerce_numeric(value_a)
+            num_b = _coerce_numeric(value_b)
+            if num_a is None and num_b is None:
+                return idx_a - idx_b
+            if num_a is None:
+                return 1 * direction
+            if num_b is None:
+                return -1 * direction
+            if num_a == num_b:
+                return idx_a - idx_b
+            return direction if num_a > num_b else -direction
+        text_a = value_a.lower()
+        text_b = value_b.lower()
+        if text_a == text_b:
+            return idx_a - idx_b
+        return direction if text_a > text_b else -direction
+
+    decorated = list(enumerate(rows))
+    decorated.sort(key=cmp_to_key(comparator))
+    return [row for _, row in decorated]
+
+
+def _format_membership_panels(membership: Membership) -> str:
+    labels: List[str] = []
+    for field in MEMBERSHIP_PANEL_FIELDS:
+        if getattr(membership, field, False):
+            label = MEMBERSHIP_PANEL_LABELS.get(field)
+            if label:
+                labels.append(label)
+    return ', '.join(labels)
+
+
+def _build_membership_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_is_organisation(user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    projects = _get_accessible_projects(user)
+    if not projects:
+        raise PermissionError(
+            _localise_text(lang, 'No projects available for export.', 'پروژه‌ای برای خروجی در دسترس نیست.')
+        )
+    memberships = (
+        Membership.objects.filter(project__in=projects)
+        .select_related('user__profile', 'project')
+        .order_by('project__name', 'user__username')
+    )
+    columns = [
+        {'field': '__selection__', 'label': 'Select', 'type': 'text', 'export': False},
+        {'field': 'email', 'label': 'Email', 'type': 'text', 'export': True},
+        {'field': 'full_name', 'label': 'Full Name', 'type': 'text', 'export': True},
+        {'field': 'phone', 'label': 'Phone', 'type': 'text', 'export': True},
+        {'field': 'project', 'label': 'Project', 'type': 'text', 'export': True},
+        {'field': 'start_work', 'label': 'Start Work', 'type': 'text', 'export': True},
+        {'field': 'owner', 'label': 'Owner', 'type': 'text', 'export': True},
+        {'field': 'panels', 'label': 'Panels', 'type': 'text', 'export': True},
+        {'field': '__actions__', 'label': 'Actions', 'type': 'text', 'export': False},
+    ]
+    owner_label = _localise_text(lang, 'Owner', 'مالک')
+    member_label = _localise_text(lang, 'Member', 'عضو')
+    rows: List[Dict[str, Any]] = []
+    for membership in memberships:
+        user_obj = membership.user
+        full_name = user_obj.get_full_name().strip() if user_obj.get_full_name() else user_obj.first_name
+        profile = getattr(user_obj, 'profile', None)
+        rows.append(
+            {
+                '__selection__': '',
+                'email': user_obj.username,
+                'full_name': full_name or user_obj.username,
+                'phone': getattr(profile, 'phone', ''),
+                'project': membership.project.name,
+                'start_work': membership.start_work,
+                'owner': owner_label if membership.is_owner else member_label,
+                'panels': _format_membership_panels(membership) or '-',
+                '__actions__': '',
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'memberships'}
+
+
+def _build_projects_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_is_organisation(user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    projects = _get_accessible_projects(user)
+    columns = [
+        {'field': 'name', 'label': 'Name', 'type': 'text', 'export': True},
+        {'field': 'status', 'label': 'Status', 'type': 'text', 'export': True},
+        {'field': 'type', 'label': 'Type', 'type': 'text', 'export': True},
+        {'field': 'start_date', 'label': 'Start Date', 'type': 'text', 'export': True},
+        {'field': 'deadline', 'label': 'Deadline', 'type': 'text', 'export': True},
+        {'field': 'sample_size', 'label': 'Sample Size', 'type': 'number', 'export': True},
+        {'field': 'filled_samples', 'label': 'Filled Samples', 'type': 'number', 'export': True},
+        {'field': '__actions__', 'label': 'Actions', 'type': 'text', 'export': False},
+    ]
+    rows = []
+    for project in projects:
+        rows.append(
+            {
+                'name': project.name,
+                'status': _localise_text(lang, 'Active', 'فعال') if project.status else _localise_text(lang, 'Inactive', 'غیرفعال'),
+                'type': project.type,
+                'start_date': project.start_date,
+                'deadline': project.deadline,
+                'sample_size': project.sample_size,
+                'filled_samples': project.filled_samples,
+                '__actions__': '',
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'projects'}
+
+
+def _build_database_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'database_management'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    projects = _get_accessible_projects(user, panel='database_management')
+    entries = DatabaseEntry.objects.filter(project__in=projects).select_related('project')
+    columns = [
+        {'field': 'project', 'label': 'Project', 'type': 'text', 'export': True},
+        {'field': 'db_name', 'label': 'DB Name', 'type': 'text', 'export': True},
+        {'field': 'token', 'label': 'Token', 'type': 'text', 'export': True},
+        {'field': 'asset_id', 'label': 'Asset ID', 'type': 'text', 'export': True},
+        {'field': 'status', 'label': 'Status', 'type': 'text', 'export': True},
+        {'field': '__actions__', 'label': 'Actions', 'type': 'text', 'export': False},
+    ]
+    rows = []
+    for entry in entries:
+        status_label = _localise_text(lang, 'Synced', 'همگام شده') if entry.status else _localise_text(lang, 'Pending', 'در انتظار')
+        rows.append(
+            {
+                'project': entry.project.name,
+                'db_name': entry.db_name,
+                'token': entry.token,
+                'asset_id': entry.asset_id,
+                'status': status_label,
+                '__actions__': '',
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'databases'}
+
+
+def _build_activity_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    if not _user_is_organisation(request.user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    logs = ActivityLog.objects.select_related('user').all()[:500]
+    columns = [
+        {'field': 'timestamp', 'label': 'Timestamp', 'type': 'text', 'export': True},
+        {'field': 'user', 'label': 'User', 'type': 'text', 'export': True},
+        {'field': 'action', 'label': 'Action', 'type': 'text', 'export': True},
+        {'field': 'details', 'label': 'Details', 'type': 'text', 'export': True},
+    ]
+    rows = []
+    for log in logs:
+        rows.append(
+            {
+                'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                'user': log.user.username if log.user else '—',
+                'action': log.action,
+                'details': log.details,
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'activity-logs'}
+
+
+def _resolve_entry_param(params: Dict[str, Any], key_variants: Iterable[str]) -> int:
+    for key in key_variants:
+        value = params.get(key)
+        if value in (None, '', 'null'):
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise ValueError('Invalid entry identifier provided.')
+    raise ValueError('A database entry identifier is required for export.')
+
+
+def _resolve_project_param(params: Dict[str, Any], key_variants: Iterable[str]) -> int:
+    for key in key_variants:
+        value = params.get(key)
+        if value in (None, '', 'null'):
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise ValueError('Invalid project identifier provided.')
+    raise ValueError('A project identifier is required for export.')
+
+
+def _extract_param_values(raw: Any) -> List[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple, set)):
+        values: List[str] = []
+        for item in raw:
+            values.extend(_extract_param_values(item))
+        return values
+    return [str(raw)]
+
+
+def _parse_int_param_list(raw: Any) -> List[int]:
+    values: List[int] = []
+    for chunk in _extract_param_values(raw):
+        parts = [part.strip() for part in chunk.split(',')]
+        for part in parts:
+            if not part:
+                continue
+            try:
+                number = int(part)
+            except (TypeError, ValueError):
+                continue
+            if number not in values:
+                values.append(number)
+    return values
+
+
+def _parse_iso_datetime_param(raw: Any) -> Optional[datetime]:
+    if raw in (None, '', 'null'):
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        candidate = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if timezone.is_naive(candidate):
+        candidate = timezone.make_aware(candidate, timezone.get_current_timezone())
+    return candidate
+
+
+def _build_database_view_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'database_management'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    entry_id = _resolve_entry_param(params, ('entry', 'entryId'))
+    entry = get_object_or_404(DatabaseEntry, pk=entry_id)
+    projects = _get_accessible_projects(user, panel='database_management')
+    if entry.project not in projects or _project_deadline_locked_for_user(entry.project, user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    snapshot = load_entry_snapshot(entry)
+    records = snapshot.records
+    columns = [
+        {'field': column, 'label': column, 'type': 'text', 'export': True}
+        for column in infer_columns(records)
+    ]
+    rows = []
+    for record in records:
+        rows.append({column['field']: record.get(column['field'], '') for column in columns})
+    filename = _sanitize_identifier(entry.db_name or 'database')
+    return {'columns': columns, 'rows': rows, 'filename': filename or 'database'}
+
+
+def _build_qc_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not (_user_has_panel(user, 'qc_management') or _user_has_panel(user, 'qc_performance')):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    entry_id = _resolve_entry_param(params, ('entry', 'entryId'))
+    entry = get_object_or_404(DatabaseEntry, pk=entry_id)
+    if _project_deadline_locked_for_user(entry.project, user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    snapshot = load_entry_snapshot(entry)
+    records = snapshot.records
+    column_names = infer_columns(records)
+    columns = [
+        {'field': column, 'label': column, 'type': 'text', 'export': True}
+        for column in column_names
+    ]
+    rows = []
+    for record in records:
+        rows.append({column: _normalise_record_value(record.get(column, '')) for column in column_names})
+    filename = f"qc-entry-{entry.pk}"
+    return {'columns': columns, 'rows': rows, 'filename': filename}
+
+
+def _build_quota_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'quota_management'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    project_id = _resolve_project_param(params, ('project', 'projectId', 'project_id'))
+    project = get_object_or_404(Project, pk=project_id)
+    accessible = _get_accessible_projects(user, panel='quota_management')
+    if project not in accessible or _project_deadline_locked_for_user(project, user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    quotas = list(Quota.objects.filter(project=project))
+    age_label = _localise_text(lang, 'Age Range', 'رنج سنی')
+    columns: List[Dict[str, Any]] = [
+        {'field': 'age_range', 'label': age_label, 'type': 'text', 'export': True}
+    ]
+    if not quotas:
+        return {'columns': columns, 'rows': [], 'filename': f'quota-{project.pk}'}
+    quotas_by_city: Dict[str, List[Quota]] = defaultdict(list)
+    quota_lookup: Dict[Tuple[str, int, int], Quota] = {}
+    for quota in quotas:
+        quotas_by_city[quota.city].append(quota)
+        quota_lookup[(quota.city, quota.age_start, quota.age_end)] = quota
+    for city_list in quotas_by_city.values():
+        city_list.sort(key=lambda item: item.age_start)
+    success_counts: Dict[int, int] = defaultdict(int)
+    interviews = (
+        Interview.objects.filter(project=project, status=True)
+        .select_related('person')
+    )
+    for interview in interviews:
+        city_name = interview.city or (interview.person.city_name if interview.person else None)
+        if not city_name:
+            continue
+        city_key = city_name.strip()
+        age_value: Optional[int] = interview.age
+        if age_value is None:
+            birth_year = interview.birth_year or (interview.person.birth_year if interview.person else None)
+            birth_date = interview.person.birth_date if interview.person and interview.person.birth_date else None
+            derived_age = calculate_age_from_birth_info(birth_year, birth_date)
+            if derived_age is None:
+                continue
+            age_value = derived_age
+        for quota in quotas_by_city.get(city_key, []):
+            if quota.age_start <= age_value <= quota.age_end:
+                success_counts[quota.pk] += 1
+                break
+    city_headers = sorted({quota.city for quota in quotas})
+    age_ranges = sorted({(quota.age_start, quota.age_end) for quota in quotas}, key=lambda rng: rng[0])
+    for index, city in enumerate(city_headers):
+        columns.append({'field': f'city_{index}', 'label': city, 'type': 'text', 'export': True})
+    rows: List[Dict[str, Any]] = []
+    for (start, end) in age_ranges:
+        row = {'age_range': f"{start}-{end}"}
+        for idx, city in enumerate(city_headers):
+            quota = quota_lookup.get((city, start, end))
+            if quota:
+                assigned = success_counts.get(quota.pk, 0)
+                row[f'city_{idx}'] = f"{assigned} / {quota.target_count}"
+            else:
+                row[f'city_{idx}'] = '0 / 0'
+        rows.append(row)
+    return {'columns': columns, 'rows': rows, 'filename': f'quota-{project.pk}'}
+
+
+def _build_collection_raw_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'collection_performance'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    accessible_projects = _get_accessible_projects(user, panel='collection_performance')
+    if not accessible_projects:
+        raise ValueError(_localise_text(lang, 'No projects available for export.', 'پروژه‌ای برای خروجی در دسترس نیست.'))
+    accessible_ids = {project.pk for project in accessible_projects}
+    project_ids = _parse_int_param_list(
+        params.get('projects') or params.get('project') or params.get('projectId')
+    )
+    if project_ids:
+        invalid = [pk for pk in project_ids if pk not in accessible_ids]
+        if invalid:
+            raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    else:
+        project_ids = list(accessible_ids)
+    user_ids = _parse_int_param_list(
+        params.get('users') or params.get('user') or params.get('userId')
+    )
+    start_dt = _parse_iso_datetime_param(params.get('startDate') or params.get('start_date'))
+    end_dt = _parse_iso_datetime_param(params.get('endDate') or params.get('end_date'))
+    queryset = Interview.objects.select_related('project', 'user').filter(project__in=accessible_projects)
+    if project_ids:
+        queryset = queryset.filter(project__id__in=project_ids)
+    if start_dt:
+        queryset = queryset.filter(created_at__gte=start_dt)
+    if end_dt:
+        queryset = queryset.filter(created_at__lte=end_dt)
+    if not _user_is_organisation(user):
+        queryset = queryset.filter(user=user)
+    elif user_ids:
+        queryset = queryset.filter(user__id__in=user_ids)
+    queryset = queryset.order_by('-created_at')
+
+    project_label = _localise_text(lang, 'Project', 'پروژه')
+    user_label = _localise_text(lang, 'User', 'کاربر')
+    code_label = _localise_text(lang, 'Code', 'کد')
+    status_label = _localise_text(lang, 'Status', 'وضعیت')
+    start_label = _localise_text(lang, 'Form Started', 'شروع فرم')
+    end_label = _localise_text(lang, 'Form Submitted', 'پایان فرم')
+    created_label = _localise_text(lang, 'Logged', 'زمان ثبت')
+
+    success_text = _localise_text(lang, 'Successful', 'موفق')
+    failure_text = _localise_text(lang, 'Unsuccessful', 'ناموفق')
+    unknown_text = _localise_text(lang, 'Unknown', 'نامشخص')
+
+    def _format_timestamp(value: Optional[datetime]) -> str:
+        if not value:
+            return ''
+        local_value = timezone.localtime(value)
+        return local_value.strftime('%Y-%m-%d %H:%M')
+
+    columns = [
+        {'field': 'project', 'label': project_label, 'type': 'text', 'export': True},
+        {'field': 'user', 'label': user_label, 'type': 'text', 'export': True},
+        {'field': 'code', 'label': code_label, 'type': 'number', 'export': True},
+        {'field': 'status', 'label': status_label, 'type': 'text', 'export': True},
+        {'field': 'start_form', 'label': start_label, 'type': 'text', 'export': True},
+        {'field': 'end_form', 'label': end_label, 'type': 'text', 'export': True},
+        {'field': 'created_at', 'label': created_label, 'type': 'text', 'export': True},
+    ]
+    rows: List[Dict[str, Any]] = []
+    for interview in queryset:
+        if interview.status is True:
+            status_value = success_text
+        elif interview.status is False:
+            status_value = failure_text
+        else:
+            status_value = unknown_text
+        rows.append(
+            {
+                'project': interview.project.name if interview.project else '',
+                'user': interview.user.first_name or interview.user.get_username(),
+                'code': interview.code if interview.code is not None else '',
+                'status': status_value,
+                'start_form': _format_timestamp(interview.start_form),
+                'end_form': _format_timestamp(interview.end_form),
+                'created_at': _format_timestamp(interview.created_at),
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'collection-raw'}
+
+
+def _build_collection_top_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'collection_performance'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    accessible_projects = _get_accessible_projects(user, panel='collection_performance')
+    if not accessible_projects:
+        raise ValueError(_localise_text(lang, 'No projects available for export.', 'پروژه‌ای برای خروجی در دسترس نیست.'))
+    accessible_ids = {project.pk for project in accessible_projects}
+    project_ids = _parse_int_param_list(
+        params.get('projects') or params.get('project') or params.get('projectId')
+    )
+    if project_ids:
+        invalid = [pk for pk in project_ids if pk not in accessible_ids]
+        if invalid:
+            raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    else:
+        project_ids = list(accessible_ids)
+    user_ids = _parse_int_param_list(
+        params.get('users') or params.get('user') or params.get('userId')
+    )
+    start_dt = _parse_iso_datetime_param(params.get('startDate') or params.get('start_date'))
+    end_dt = _parse_iso_datetime_param(params.get('endDate') or params.get('end_date'))
+    limit_raw = params.get('limit') or params.get('topLimit')
+    try:
+        limit = int(limit_raw)
+    except (TypeError, ValueError):
+        limit = 5
+    if limit <= 0:
+        limit = 5
+    limit = min(limit, 200)
+    queryset = Interview.objects.select_related('project', 'user').filter(project__in=accessible_projects)
+    if project_ids:
+        queryset = queryset.filter(project__id__in=project_ids)
+    if start_dt:
+        queryset = queryset.filter(created_at__gte=start_dt)
+    if end_dt:
+        queryset = queryset.filter(created_at__lte=end_dt)
+    if not _user_is_organisation(user):
+        queryset = queryset.filter(user=user)
+    elif user_ids:
+        queryset = queryset.filter(user__id__in=user_ids)
+    ranking = (
+        queryset.values('project__name', 'user__id', 'user__first_name')
+        .annotate(total=Count('id'), success=Count('id', filter=Q(code=1)))
+        .order_by('-total', 'project__name', 'user__first_name')
+    )
+    project_label = _localise_text(lang, 'Project', 'پروژه')
+    user_label = _localise_text(lang, 'User', 'کاربر')
+    total_label = _localise_text(lang, 'Total Calls', 'کل تماس‌ها')
+    success_label = _localise_text(lang, 'Successful', 'موفق')
+    rate_label = _localise_text(lang, 'Success Rate', 'نرخ موفقیت')
+    columns = [
+        {'field': 'project', 'label': project_label, 'type': 'text', 'export': True},
+        {'field': 'user', 'label': user_label, 'type': 'text', 'export': True},
+        {'field': 'total', 'label': total_label, 'type': 'number', 'export': True},
+        {'field': 'success', 'label': success_label, 'type': 'number', 'export': True},
+        {'field': 'success_rate', 'label': rate_label, 'type': 'number', 'export': True},
+    ]
+    rows: List[Dict[str, Any]] = []
+    for row in ranking[:limit]:
+        total_calls = row['total'] or 0
+        successful_calls = row['success'] or 0
+        rate = round((successful_calls / total_calls) * 100, 2) if total_calls else 0
+        rows.append(
+            {
+                'project': row['project__name'] or '',
+                'user': row['user__first_name'] or str(row['user__id']),
+                'total': total_calls,
+                'success': successful_calls,
+                'success_rate': f"{rate}%",
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'collection-top'}
+
+
+TABLE_EXPORT_BUILDERS: Dict[str, Any] = {
+    'membership_list': _build_membership_export_dataset,
+    'projects_list': _build_projects_export_dataset,
+    'database_list': _build_database_export_dataset,
+    'activity_logs': _build_activity_export_dataset,
+    'database_view': _build_database_view_export_dataset,
+    'qc_edit': _build_qc_export_dataset,
+    'quota_management': _build_quota_export_dataset,
+    'collection_performance_raw': _build_collection_raw_export_dataset,
+    'collection_performance_top': _build_collection_top_export_dataset,
+}
+
+
+@login_required
+@require_http_methods(["POST"])
+def table_export(request: HttpRequest) -> HttpResponse:
+    """Return a CSV or Excel export for supported interactive tables."""
+
+    lang = request.session.get('lang', 'en')
+    try:
+        payload = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except json.JSONDecodeError:
+        message = _localise_text(lang, 'Invalid export payload.', 'داده ارسال شده نامعتبر است.')
+        return JsonResponse({'error': message}, status=400)
+    context_name = payload.get('context')
+    if not context_name:
+        message = _localise_text(lang, 'Table context is required.', 'انتخاب جدول برای خروجی لازم است.')
+        return JsonResponse({'error': message}, status=400)
+    builder = TABLE_EXPORT_BUILDERS.get(context_name)
+    if not builder:
+        message = _localise_text(lang, 'This table cannot be exported yet.', 'امکان خروجی گرفتن از این جدول وجود ندارد.')
+        return JsonResponse({'error': message}, status=400)
+    export_format = (payload.get('format') or 'csv').lower()
+    params = payload.get('params') if isinstance(payload.get('params'), dict) else {}
+    filters = payload.get('filters') if isinstance(payload.get('filters'), dict) else {}
+    try:
+        dataset = builder(request, params)
+    except PermissionError as exc:
+        message = str(exc) or _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.')
+        return JsonResponse({'error': message}, status=403)
+    except (DatabaseCacheError, ValueError) as exc:
+        message = str(exc) or _localise_text(lang, 'Unable to prepare export.', 'امکان تهیه خروجی نیست.')
+        return JsonResponse({'error': message}, status=400)
+    columns: List[Dict[str, Any]] = dataset.get('columns') or []
+    rows: List[Dict[str, Any]] = dataset.get('rows') or []
+    filtered_rows = _filter_table_rows(rows, columns, filters)
+    export_columns = [column for column in columns if column.get('export', True)] or columns
+    filename = dataset.get('filename') or 'table-data'
+    safe_name = _sanitize_identifier(filename) or 'table_data'
+    timestamp = timezone.now().strftime('%Y%m%d-%H%M%S')
+    base_name = f"{safe_name}-{timestamp}"
+    headers = [column.get('label') or column.get('field', '') for column in export_columns]
+    field_names = [column.get('field') for column in export_columns]
+
+    if export_format == 'xlsx':
+        if openpyxl is None:
+            message = _localise_text(lang, 'Excel export is not available on this server.', 'امکان تهیه فایل اکسل وجود ندارد.')
+            return JsonResponse({'error': message}, status=400)
+        workbook = openpyxl.Workbook()
+        worksheet = workbook.active
+        worksheet.title = 'Export'
+        worksheet.append(headers)
+        for row in filtered_rows:
+            worksheet.append([
+                _normalise_record_value(row.get(field, ''))
+                for field in field_names
+            ])
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        response = HttpResponse(
+            stream.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{base_name}.xlsx"'
+        return response
+
+    output = StringIO()
+    writer = csv.writer(output, lineterminator='\n')
+    writer.writerow(headers)
+    for row in filtered_rows:
+        writer.writerow([
+            _normalise_record_value(row.get(field, ''))
+            for field in field_names
+        ])
+    content = '\ufeff' + output.getvalue()
+    response = HttpResponse(content, content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{base_name}.csv"'
+    return response
 
 
 def generate_call_samples(project: Project, replenish: bool = False) -> None:
@@ -688,27 +1496,14 @@ def membership_list(request: HttpRequest) -> HttpResponse:
     # list all memberships for projects of this organisation
     memberships = Membership.objects.filter(project__in=accessible_projects).distinct()
     # map field names to human readable labels for display
-    panel_labels = {
-        'database_management': 'Database Management',
-        'quota_management': 'Quota Management',
-        'collection_management': 'Collection Management',
-        'collection_performance': 'Collection Performance',
-        'telephone_interviewer': 'Telephone Interviewer',
-        'fieldwork_interviewer': 'Fieldwork Interviewer',
-        'focus_group_panel': 'Focus Group Panel',
-        'qc_management': 'QC Management',
-        'qc_performance': 'QC Performance',
-        'voice_review': 'Voice Review',
-        'callback_qc': 'Callback QC',
-        'coding': 'Coding',
-        'statistical_health_check': 'Statistical Health Check',
-        'tabulation': 'Tabulation',
-        'statistics': 'Statistics',
-        'funnel_analysis': 'Funnel Analysis',
-        'conjoint_analysis': 'Conjoint Analysis',
-        'segmentation_analysis': 'Segmentation Analysis',
-    }
-    return render(request, 'membership_list.html', {'memberships': memberships, 'panel_labels': panel_labels})
+    return render(
+        request,
+        'membership_list.html',
+        {
+            'memberships': memberships,
+            'panel_labels': MEMBERSHIP_PANEL_LABELS,
+        },
+    )
 
 
 @login_required

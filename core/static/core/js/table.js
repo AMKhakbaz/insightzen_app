@@ -140,6 +140,12 @@
       showSearch: 'نمایش جستجو',
       hideSearch: 'پنهان کردن جستجو',
       searchToggleLabel: 'تغییر وضعیت جستجوی جدول',
+      exportLabel: 'خروجی',
+      exportCSV: 'دریافت CSV',
+      exportExcel: 'دریافت Excel',
+      exporting: 'در حال آماده‌سازی فایل…',
+      exportReady: 'فایل آماده دانلود است.',
+      exportError: 'دریافت خروجی ممکن نشد.',
       advanced: {
         button: 'فیلتر پیشرفته',
         title: 'فیلترهای پیشرفته',
@@ -201,6 +207,12 @@
       showSearch: 'Show search',
       hideSearch: 'Hide search',
       searchToggleLabel: 'Toggle table search',
+      exportLabel: 'Export',
+      exportCSV: 'Download CSV',
+      exportExcel: 'Download Excel',
+      exporting: 'Preparing export…',
+      exportReady: 'Download ready.',
+      exportError: 'Unable to export data.',
       advanced: {
         button: 'Advanced filters',
         title: 'Advanced filters',
@@ -307,6 +319,12 @@
       this.savedFiltersKey = this.tableId ? `interactiveTablePresets:${this.tableId}` : null;
       this.originalBodyOverflow = null;
       this.statusEl = this.createStatusElement();
+      this.exportEndpoint = table.dataset.exportEndpoint || null;
+      this.exportFilename = table.dataset.exportFilename || this.filterContext || this.tableId || 'table-data';
+      this.exportParams = this.collectExportParams();
+      this.exportButtons = [];
+      this.exportGroup = null;
+      this.exportStatus = null;
 
       this.captureRows();
       this.cacheControls();
@@ -335,6 +353,39 @@
       status.hidden = true;
       this.container.appendChild(status);
       return status;
+    }
+
+    collectExportParams() {
+      const params = {};
+      const dataset = this.table.dataset || {};
+      Object.keys(dataset).forEach((key) => {
+        if (!key.startsWith('exportParam')) {
+          return;
+        }
+        const suffix = key.slice('exportParam'.length);
+        if (!suffix) {
+          return;
+        }
+        const normalised = suffix.charAt(0).toLowerCase() + suffix.slice(1);
+        params[normalised] = dataset[key];
+      });
+      return params;
+    }
+
+    updateExportParams(newParams, options = {}) {
+      if (!newParams || typeof newParams !== 'object') {
+        return;
+      }
+      const base = options.replace ? {} : { ...this.exportParams };
+      Object.keys(newParams).forEach((key) => {
+        const value = newParams[key];
+        if (value === undefined || value === null || value === '') {
+          delete base[key];
+        } else {
+          base[key] = value;
+        }
+      });
+      this.exportParams = base;
     }
 
     cacheControls() {
@@ -685,6 +736,7 @@
         if (this.filterToggleButton) {
           this.updateFilterToggleState();
         }
+        this.createExportControls();
         return;
       }
 
@@ -744,6 +796,45 @@
       this.toolbar = toolbar;
       this.toolbarActions = actions;
       this.globalSearchInput = searchInput;
+      this.createExportControls();
+    }
+
+    createExportControls() {
+      if (!this.toolbarActions || !this.exportEndpoint || this.exportGroup) {
+        return;
+      }
+      const group = document.createElement('div');
+      group.className = 'table-toolbar__export';
+
+      const label = document.createElement('span');
+      label.className = 'table-toolbar__export-label';
+      label.textContent = this.messages.exportLabel || 'Export';
+      group.appendChild(label);
+
+      const excelButton = document.createElement('button');
+      excelButton.type = 'button';
+      excelButton.className = 'btn btn-outline table-toolbar__export-btn';
+      excelButton.textContent = this.messages.exportExcel || 'Excel';
+      excelButton.addEventListener('click', () => this.handleExport('xlsx'));
+      group.appendChild(excelButton);
+
+      const csvButton = document.createElement('button');
+      csvButton.type = 'button';
+      csvButton.className = 'btn btn-outline table-toolbar__export-btn';
+      csvButton.textContent = this.messages.exportCSV || 'CSV';
+      csvButton.addEventListener('click', () => this.handleExport('csv'));
+      group.appendChild(csvButton);
+
+      const status = document.createElement('span');
+      status.className = 'table-toolbar__export-status';
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-live', 'polite');
+      group.appendChild(status);
+
+      this.toolbarActions.appendChild(group);
+      this.exportGroup = group;
+      this.exportButtons = [excelButton, csvButton];
+      this.exportStatus = status;
     }
 
     toggleGlobalSearchVisibility(force) {
@@ -805,6 +896,129 @@
       this.searchToggleButton.classList.toggle('is-active', this.searchVisible);
       this.searchToggleButton.classList.toggle('is-inactive', !this.searchVisible);
     }
+
+    buildExportPayload(format) {
+      const columnFilters = this.getFilters().map((filter) => ({
+        column: filter.column,
+        type: filter.type,
+        value: filter.value,
+        valueLower: filter.valueLower,
+      }));
+      const payload = {
+        context: this.filterContext,
+        format,
+        params: { ...this.exportParams },
+        filters: {
+          global: this.globalSearchInput ? this.globalSearchInput.value : this.globalFilter || '',
+          columnFilters,
+          sort:
+            this.sortColumn == null
+              ? null
+              : { column: this.sortColumn, direction: this.sortDirection },
+        },
+      };
+      if (this.advancedFilters.length) {
+        payload.filters.advanced = { logic: this.advancedLogic, filters: cloneFilters(this.advancedFilters) };
+      }
+      return payload;
+    }
+
+    setExportBusy(isBusy) {
+      if (!this.exportButtons.length) {
+        return;
+      }
+      this.exportButtons.forEach((button) => {
+        button.disabled = Boolean(isBusy);
+        button.classList.toggle('is-loading', Boolean(isBusy));
+      });
+      if (isBusy) {
+        this.setExportStatus(this.messages.exporting || 'Preparing export…', 'info');
+      }
+    }
+
+    setExportStatus(message, tone = 'info') {
+      if (!this.exportStatus) {
+        return;
+      }
+      this.exportStatus.textContent = message || '';
+      this.exportStatus.classList.remove('is-success', 'is-error', 'is-info');
+      if (!message) {
+        return;
+      }
+      const className = tone === 'success' ? 'is-success' : tone === 'error' ? 'is-error' : 'is-info';
+      this.exportStatus.classList.add(className);
+    }
+
+    extractFilename(response) {
+      const disposition = response.headers ? response.headers.get('Content-Disposition') : null;
+      if (!disposition) {
+        return null;
+      }
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      return match ? match[1] : null;
+    }
+
+    triggerDownload(blob, filename) {
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    }
+
+    async handleExport(format) {
+      if (!this.exportEndpoint) {
+        return;
+      }
+      const payload = this.buildExportPayload(format);
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/octet-stream, application/json',
+      };
+      const csrf = getCsrfToken();
+      if (csrf) {
+        headers['X-CSRFToken'] = csrf;
+      }
+      this.setExportBusy(true);
+      try {
+        const response = await fetch(this.exportEndpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          let errorMessage = this.messages.exportError || 'Unable to export data.';
+          const contentType = response.headers.get('Content-Type') || '';
+          if (contentType.includes('application/json')) {
+            try {
+              const data = await response.json();
+              if (data && data.error) {
+                errorMessage = data.error;
+              }
+            } catch (error) {
+              // ignore JSON parsing errors
+            }
+          }
+          throw new Error(errorMessage);
+        }
+        const blob = await response.blob();
+        const filename =
+          this.extractFilename(response) ||
+          `${this.exportFilename}.${format === 'xlsx' ? 'xlsx' : 'csv'}`;
+        this.triggerDownload(blob, filename);
+        this.setExportStatus(this.messages.exportReady || 'Download ready.', 'success');
+      } catch (error) {
+        const fallback = this.messages.exportError || 'Unable to export data.';
+        const message = error && error.message ? error.message : fallback;
+        this.setExportStatus(message, 'error');
+      } finally {
+        this.setExportBusy(false);
+      }
+    }
+
 
     getAdvancedFilterableColumns() {
       const entries = [];

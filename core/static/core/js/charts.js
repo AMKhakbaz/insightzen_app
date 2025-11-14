@@ -48,6 +48,8 @@ document.addEventListener('DOMContentLoaded', function () {
   let rawNeedsRefresh = false;
   let rawCurrentPage = 1;
   let rawTotalPages = 1;
+  let rawPendingExportParams = null;
+  let topPendingExportParams = null;
   const locale = document.documentElement.lang || 'en';
   const isPersian = locale.startsWith('fa');
   const kpiTotal = document.getElementById('kpi-total-interviews');
@@ -63,6 +65,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
   topTable.addEventListener('interactive-table:init', (event) => {
     topTableInstance = event.detail.instance;
+    if (topPendingExportParams) {
+      topTableInstance.updateExportParams(topPendingExportParams);
+      topPendingExportParams = null;
+    }
     if (needsTableRefresh) {
       topTableInstance.refresh();
       needsTableRefresh = false;
@@ -72,6 +78,10 @@ document.addEventListener('DOMContentLoaded', function () {
   if (rawTable) {
     rawTable.addEventListener('interactive-table:init', (event) => {
       rawTableInstance = event.detail.instance;
+      if (rawPendingExportParams) {
+        rawTableInstance.updateExportParams(rawPendingExportParams);
+        rawPendingExportParams = null;
+      }
       if (rawNeedsRefresh) {
         rawTableInstance.refresh();
         rawNeedsRefresh = false;
@@ -134,6 +144,48 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (filters.users.length) {
       params.append('users', filters.users.join(','));
+    }
+  }
+
+  function applyExportDataset(element, params) {
+    if (!element || !element.dataset || !params) {
+      return;
+    }
+    Object.keys(params).forEach((key) => {
+      const suffix = key.charAt(0).toUpperCase() + key.slice(1);
+      element.dataset[`exportParam${suffix}`] = params[key];
+    });
+  }
+
+  function buildExportParams(filters) {
+    const safeFilters = filters || {};
+    const projects = Array.isArray(safeFilters.projects)
+      ? safeFilters.projects.filter((value) => Boolean(value))
+      : [];
+    const users = Array.isArray(safeFilters.users)
+      ? safeFilters.users.filter((value) => Boolean(value))
+      : [];
+    return {
+      projects: projects.join(','),
+      users: users.join(','),
+      startDate: safeFilters.start || '',
+      endDate: safeFilters.end || '',
+    };
+  }
+
+  function syncTableExportParams(filters) {
+    const params = buildExportParams(filters);
+    applyExportDataset(rawTable, params);
+    if (rawTableInstance) {
+      rawTableInstance.updateExportParams(params);
+    } else {
+      rawPendingExportParams = { ...params };
+    }
+    applyExportDataset(topTable, params);
+    if (topTableInstance) {
+      topTableInstance.updateExportParams(params);
+    } else {
+      topPendingExportParams = { ...params };
     }
   }
 
@@ -249,21 +301,21 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  function buildChartUrl() {
+  function buildChartUrl(filtersOverride) {
     const baseUrl = barCanvas.dataset.url;
     const params = new URLSearchParams();
-    const filters = collectFilters();
+    const filters = filtersOverride || collectFilters();
     appendFilters(params, filters);
     return params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
   }
 
-  function buildRawUrl(pageOverride) {
+  function buildRawUrl(filtersOverride, pageOverride) {
     if (!rawTable || !rawTable.dataset || !rawTable.dataset.url) {
       return '';
     }
     const baseUrl = rawTable.dataset.url;
     const params = new URLSearchParams();
-    const filters = collectFilters();
+    const filters = filtersOverride || collectFilters();
     appendFilters(params, filters);
     let pageSize = 30;
     if (rawPageSizeSelect) {
@@ -417,12 +469,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  function fetchRawData(pageOverride) {
+  function fetchRawData(pageOverride, filtersOverride) {
     if (!rawTable || !rawTable.dataset || !rawTable.dataset.url) {
       return;
     }
     setRawLoading();
-    const url = buildRawUrl(pageOverride);
+    const url = buildRawUrl(filtersOverride, pageOverride);
     if (!url) {
       renderRawRows([]);
       updateRawPagination(0, 1, 30, 1);
@@ -457,8 +509,8 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
 
-  function fetchChartsAndTop() {
-    fetch(buildChartUrl())
+  function fetchChartsAndTop(filtersOverride) {
+    fetch(buildChartUrl(filtersOverride))
       .then((resp) => resp.json())
       .then((data) => {
         updateKpis(data.meta);
@@ -852,12 +904,14 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function refreshAll(resetRawPage = false) {
-    fetchChartsAndTop();
+    const filters = collectFilters();
+    syncTableExportParams(filters);
+    fetchChartsAndTop(filters);
     if (rawTable && rawTable.dataset && rawTable.dataset.url) {
       if (resetRawPage) {
         rawCurrentPage = 1;
       }
-      fetchRawData(rawCurrentPage);
+      fetchRawData(rawCurrentPage, filters);
     }
   }
 
@@ -873,7 +927,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (rawPageSizeSelect) {
     rawPageSizeSelect.addEventListener('change', () => {
       rawCurrentPage = 1;
-      fetchRawData(rawCurrentPage);
+      fetchRawData(rawCurrentPage, collectFilters());
     });
   }
 
@@ -881,7 +935,7 @@ document.addEventListener('DOMContentLoaded', function () {
     rawPrevButton.addEventListener('click', () => {
       if (rawCurrentPage > 1) {
         rawCurrentPage -= 1;
-        fetchRawData(rawCurrentPage);
+        fetchRawData(rawCurrentPage, collectFilters());
       }
     });
   }
@@ -890,7 +944,7 @@ document.addEventListener('DOMContentLoaded', function () {
     rawNextButton.addEventListener('click', () => {
       if (rawCurrentPage < rawTotalPages) {
         rawCurrentPage += 1;
-        fetchRawData(rawCurrentPage);
+        fetchRawData(rawCurrentPage, collectFilters());
       }
     });
   }
