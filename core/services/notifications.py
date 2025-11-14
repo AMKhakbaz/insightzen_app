@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Sequence
 
 from django.contrib.auth.models import User
 
-from core.models import Membership, Notification, Project
+from core.models import CalendarEvent, Membership, Notification, Project
 
 
 def _user_display(user: User | None) -> str:
@@ -159,6 +159,96 @@ def notify_custom_message(
             )
         )
     return created
+
+
+def _format_datetime(dt) -> str:
+    """Return a readable timestamp string."""
+
+    return dt.strftime('%Y-%m-%d %H:%M')
+
+
+def _event_context(event: CalendarEvent) -> Dict[str, Any]:
+    return {
+        'event_id': event.pk,
+        'title': event.title,
+        'start': event.start.isoformat(),
+        'end': event.end.isoformat(),
+    }
+
+
+def notify_event_invite(
+    event: CalendarEvent,
+    recipients: Sequence[User],
+    *,
+    actor: User | None = None,
+) -> None:
+    """Notify users that they were added to an event."""
+
+    if not recipients:
+        return
+    actor_name = _user_display(actor)
+    start_label = _format_datetime(event.start)
+    for recipient in recipients:
+        message_en = f'You were invited to "{event.title}" on {start_label}.'
+        message_fa = f'به رویداد «{event.title}» در {start_label} دعوت شدید.'
+        if actor_name:
+            message_en = f"{actor_name} invited you to \"{event.title}\" on {start_label}."
+            message_fa = f"{actor_name} شما را به رویداد «{event.title}» در {start_label} دعوت کرد."
+        create_notification(
+            recipient,
+            message_en=message_en,
+            message_fa=message_fa,
+            event_type=Notification.EventType.EVENT_INVITE,
+            project=None,
+            extra_metadata=_event_context(event),
+        )
+
+
+def notify_event_update(
+    event: CalendarEvent,
+    recipients: Sequence[User],
+    *,
+    actor: User | None = None,
+) -> None:
+    """Notify attendees that an event changed."""
+
+    if not recipients:
+        return
+    actor_name = _user_display(actor)
+    start_label = _format_datetime(event.start)
+    for recipient in recipients:
+        message_en = f'Event "{event.title}" was updated ({start_label}).'
+        message_fa = f"رویداد «{event.title}» برای {start_label} به‌روزرسانی شد."
+        if actor_name:
+            message_en = f"{actor_name} updated \"{event.title}\" ({start_label})."
+            message_fa = f"{actor_name} رویداد «{event.title}» را برای {start_label} به‌روزرسانی کرد."
+        create_notification(
+            recipient,
+            message_en=message_en,
+            message_fa=message_fa,
+            event_type=Notification.EventType.EVENT_UPDATE,
+            project=None,
+            extra_metadata=_event_context(event),
+        )
+
+
+def notify_event_reminder(event: CalendarEvent, recipients: Sequence[User]) -> None:
+    """Send reminder notifications for the event."""
+
+    if not recipients:
+        return
+    start_label = _format_datetime(event.start)
+    for recipient in recipients:
+        message_en = f'Reminder: "{event.title}" starts at {start_label}.'
+        message_fa = f"یادآوری: رویداد «{event.title}» در {start_label} آغاز می‌شود."
+        create_notification(
+            recipient,
+            message_en=message_en,
+            message_fa=message_fa,
+            event_type=Notification.EventType.EVENT_REMINDER,
+            project=None,
+            extra_metadata=_event_context(event),
+        )
 
 def localised_message(notification: Notification, lang: str) -> str:
     """Return the notification message for the requested language."""

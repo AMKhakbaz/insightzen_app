@@ -53,6 +53,9 @@ from core.services.notifications import (
     localised_message,
     mark_notifications_read,
     notify_custom_message,
+    notify_event_invite,
+    notify_event_reminder,
+    notify_event_update,
     notify_membership_added,
     notify_project_started,
 )
@@ -86,6 +89,7 @@ from .models import (
     DatabaseEntryEditRequest,
     TableFilterPreset,
     Notification,
+    CalendarEvent,
 )
 
 
@@ -2520,3 +2524,225 @@ def notifications_mark_read(request: HttpRequest) -> JsonResponse:
         updated = mark_notifications_read(request.user, id_list)
 
     return JsonResponse({'ok': True, 'updated': updated})
+
+
+def _calendar_user_label(user: User) -> str:
+    return user.get_full_name() or user.first_name or user.username
+
+
+def _calendar_participants_queryset(user: User):
+    if _user_is_organisation(user):
+        return User.objects.all()
+    project_ids = list(Membership.objects.filter(user=user).values_list('project_id', flat=True))
+    if not project_ids:
+        return User.objects.filter(pk=user.pk)
+    return User.objects.filter(Q(pk=user.pk) | Q(memberships__project_id__in=project_ids)).distinct()
+
+
+def _calendar_event_queryset(user: User):
+    return CalendarEvent.objects.filter(Q(created_by=user) | Q(participants=user)).distinct()
+
+
+def _serialise_calendar_event(event: CalendarEvent, viewer: User) -> Dict[str, Any]:
+    participants = [
+        {
+            'id': participant.pk,
+            'name': _calendar_user_label(participant),
+            'email': participant.email,
+        }
+        for participant in event.participants.all()
+    ]
+    creator_label = _calendar_user_label(event.created_by)
+    return {
+        'id': event.pk,
+        'title': event.title,
+        'description': event.description,
+        'start': event.start.isoformat(),
+        'end': event.end.isoformat(),
+        'reminder_minutes_before': event.reminder_minutes_before,
+        'participants': participants,
+        'creator': {'id': event.created_by_id, 'name': creator_label},
+        'can_edit': event.created_by_id == viewer.pk,
+    }
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed)
+    return parsed
+
+
+def _load_json_body(request: HttpRequest) -> Dict[str, Any] | None:
+    try:
+        return json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+
+def _dispatch_calendar_reminders() -> None:
+    now = timezone.now()
+    upcoming = CalendarEvent.objects.filter(
+        reminder_minutes_before__isnull=False,
+        reminder_sent=False,
+        start__gte=now - timedelta(days=1),
+    ).select_related('created_by').prefetch_related('participants')
+    for event in upcoming:
+        minutes = event.reminder_minutes_before or 0
+        if minutes <= 0:
+            continue
+        reminder_time = event.start - timedelta(minutes=minutes)
+        if reminder_time > now:
+            continue
+        recipients: List[User] = list(event.participants.all())
+        if event.created_by not in recipients:
+            recipients.append(event.created_by)
+        notify_event_reminder(event, recipients)
+        event.reminder_sent = True
+        event.save(update_fields=['reminder_sent'])
+
+
+@login_required
+@require_http_methods(["GET"])
+def calendar_participants(request: HttpRequest) -> JsonResponse:
+    qs = _calendar_participants_queryset(request.user).order_by('first_name', 'username')
+    data = [
+        {'id': user.pk, 'name': _calendar_user_label(user), 'email': user.email}
+        for user in qs
+    ]
+    return JsonResponse({'participants': data})
+
+
+def _clean_event_payload(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[datetime], Optional[datetime], Optional[int], List[int]]:
+    title = str(payload.get('title') or '').strip()
+    description = str(payload.get('description') or '').strip()
+    start_dt = _parse_iso_datetime(payload.get('start'))
+    end_dt = _parse_iso_datetime(payload.get('end'))
+    reminder = payload.get('reminder_minutes_before')
+    reminder_val: Optional[int] = None
+    if reminder not in (None, ''):
+        try:
+            reminder_val = max(0, int(reminder))
+        except (TypeError, ValueError):
+            reminder_val = None
+    participants = payload.get('participants') or []
+    participant_ids: List[int] = []
+    if isinstance(participants, list):
+        for pid in participants:
+            try:
+                participant_ids.append(int(pid))
+            except (TypeError, ValueError):
+                continue
+    return title, description, start_dt, end_dt, reminder_val, participant_ids
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def calendar_events(request: HttpRequest) -> JsonResponse:
+    _dispatch_calendar_reminders()
+    if request.method == 'GET':
+        start_dt = _parse_iso_datetime(request.GET.get('start'))
+        end_dt = _parse_iso_datetime(request.GET.get('end'))
+        qs = _calendar_event_queryset(request.user).select_related('created_by').prefetch_related('participants')
+        if start_dt and end_dt:
+            qs = qs.filter(start__lt=end_dt, end__gt=start_dt)
+        events = [_serialise_calendar_event(event, request.user) for event in qs]
+        return JsonResponse({'events': events})
+
+    payload = _load_json_body(request)
+    if payload is None:
+        return JsonResponse({'ok': False, 'message': 'Invalid payload.'}, status=400)
+    title, description, start_dt, end_dt, reminder_val, participant_ids = _clean_event_payload(payload)
+    if not title or not start_dt or not end_dt:
+        return JsonResponse({'ok': False, 'message': 'Missing required fields.'}, status=400)
+    if end_dt <= start_dt:
+        return JsonResponse({'ok': False, 'message': 'End time must be after start time.'}, status=400)
+
+    allowed_ids = set(_calendar_participants_queryset(request.user).values_list('pk', flat=True))
+    selected_ids = [pid for pid in participant_ids if pid in allowed_ids and pid != request.user.pk]
+
+    event = CalendarEvent.objects.create(
+        title=title,
+        description=description,
+        start=start_dt,
+        end=end_dt,
+        reminder_minutes_before=reminder_val,
+        created_by=request.user,
+    )
+    participant_users = list(User.objects.filter(pk__in=selected_ids))
+    if request.user not in participant_users:
+        participant_users.append(request.user)
+    event.participants.set(participant_users)
+    log_activity(request.user, 'Created calendar event', f'Event {event.pk}: {event.title}')
+    notify_event_invite(event, [user for user in participant_users if user != request.user], actor=request.user)
+
+    data = _serialise_calendar_event(event, request.user)
+    return JsonResponse({'ok': True, 'event': data})
+
+
+@login_required
+@require_http_methods(["GET", "PUT", "PATCH", "DELETE"])
+def calendar_event_detail(request: HttpRequest, event_id: int) -> JsonResponse:
+    _dispatch_calendar_reminders()
+    event = get_object_or_404(
+        _calendar_event_queryset(request.user).select_related('created_by').prefetch_related('participants'),
+        pk=event_id,
+    )
+    if request.method == 'GET':
+        return JsonResponse({'event': _serialise_calendar_event(event, request.user)})
+    if request.method == 'DELETE':
+        if event.created_by != request.user:
+            return JsonResponse({'ok': False, 'message': 'Only the event owner can delete this item.'}, status=403)
+        event.delete()
+        log_activity(request.user, 'Deleted calendar event', f'Event {event_id}')
+        return JsonResponse({'ok': True})
+
+    if event.created_by != request.user:
+        return JsonResponse({'ok': False, 'message': 'Only the event owner can update this item.'}, status=403)
+    payload = _load_json_body(request)
+    if payload is None:
+        return JsonResponse({'ok': False, 'message': 'Invalid payload.'}, status=400)
+
+    title, description, start_dt, end_dt, reminder_val, participant_ids = _clean_event_payload(payload)
+    if not title or not start_dt or not end_dt:
+        return JsonResponse({'ok': False, 'message': 'Missing required fields.'}, status=400)
+    if end_dt <= start_dt:
+        return JsonResponse({'ok': False, 'message': 'End time must be after start time.'}, status=400)
+
+    allowed_ids = set(_calendar_participants_queryset(request.user).values_list('pk', flat=True))
+    selected_ids = [pid for pid in participant_ids if pid in allowed_ids and pid != request.user.pk]
+    participant_users = list(User.objects.filter(pk__in=selected_ids))
+    if request.user not in participant_users:
+        participant_users.append(request.user)
+
+    fields_to_update = []
+    if event.title != title:
+        event.title = title
+        fields_to_update.append('title')
+    if event.description != description:
+        event.description = description
+        fields_to_update.append('description')
+    if event.start != start_dt:
+        event.start = start_dt
+        fields_to_update.append('start')
+        event.reminder_sent = False
+    if event.end != end_dt:
+        event.end = end_dt
+        fields_to_update.append('end')
+    if event.reminder_minutes_before != reminder_val:
+        event.reminder_minutes_before = reminder_val
+        fields_to_update.append('reminder_minutes_before')
+        event.reminder_sent = False
+    if fields_to_update:
+        fields_to_update.append('reminder_sent')
+        event.save(update_fields=list(set(fields_to_update)))
+    event.participants.set(participant_users)
+    log_activity(request.user, 'Updated calendar event', f'Event {event.pk}')
+    notify_event_update(event, [user for user in participant_users if user != request.user], actor=request.user)
+
+    return JsonResponse({'ok': True, 'event': _serialise_calendar_event(event, request.user)})

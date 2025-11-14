@@ -24,6 +24,9 @@ class Notification(models.Model):
         PROJECT_STARTED = 'project_started', 'Project Started'
         PROJECT_DEADLINE = 'project_deadline', 'Project Deadline'
         CUSTOM_MESSAGE = 'custom_message', 'Custom Message'
+        EVENT_INVITE = 'event_invite', 'Event Invitation'
+        EVENT_UPDATE = 'event_update', 'Event Updated'
+        EVENT_REMINDER = 'event_reminder', 'Event Reminder'
 
     recipient = models.ForeignKey(
         User,
@@ -381,6 +384,27 @@ class TableFilterPreset(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover
         return f"{self.user_id}:{self.table_id}:{self.name}"
+
+
+class CalendarEvent(models.Model):
+    """Stores collaborative events rendered in the global calendar."""
+
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    start = models.DateTimeField()
+    end = models.DateTimeField()
+    reminder_minutes_before = models.PositiveIntegerField(null=True, blank=True)
+    reminder_sent = models.BooleanField(default=False)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='calendar_events_created')
+    participants = models.ManyToManyField(User, related_name='calendar_events', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['start']
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"Event<{self.title} {self.start:%Y-%m-%d}>"
 
 
 def _shorten(value: str, length: int = 8) -> str:
