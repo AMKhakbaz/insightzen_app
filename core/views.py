@@ -80,6 +80,28 @@ from .models import (
 )
 
 
+MEMBERSHIP_PANEL_FIELDS: List[str] = [
+    'database_management',
+    'quota_management',
+    'collection_management',
+    'collection_performance',
+    'telephone_interviewer',
+    'fieldwork_interviewer',
+    'focus_group_panel',
+    'qc_management',
+    'qc_performance',
+    'voice_review',
+    'callback_qc',
+    'coding',
+    'statistical_health_check',
+    'tabulation',
+    'statistics',
+    'funnel_analysis',
+    'conjoint_analysis',
+    'segmentation_analysis',
+]
+
+
 def register(request: HttpRequest) -> HttpResponse:
     """Handle user registration.
 
@@ -496,7 +518,46 @@ def project_list(request: HttpRequest) -> HttpResponse:
         messages.warning(request, 'Access denied: only organisation accounts can manage projects.')
         return redirect('home')
     projects = _get_accessible_projects(user)
-    return render(request, 'projects_list.html', {'projects': projects})
+    member_map: Dict[int, List[int]] = defaultdict(list)
+    if projects:
+        membership_pairs = (
+            Membership.objects.filter(project__in=projects)
+            .values_list('project_id', 'user_id')
+        )
+        for project_id, user_id in membership_pairs:
+            member_map[project_id].append(user_id)
+
+    available_qs = (
+        User.objects.filter(memberships__project__memberships__user=user)
+        .distinct()
+        .select_related('profile')
+    )
+    if not available_qs.exists():
+        available_qs = User.objects.exclude(pk=user.pk).select_related('profile')
+    available_qs = available_qs.order_by('first_name', 'username')
+
+    user_options: List[Dict[str, str]] = []
+    for candidate in available_qs:
+        profile = getattr(candidate, 'profile', None)
+        if profile and getattr(profile, 'organization', False):
+            continue
+        full_name = candidate.get_full_name().strip() if candidate.get_full_name() else ''
+        display_label = full_name or candidate.first_name or ''
+        label = display_label.strip() or candidate.username
+        user_options.append(
+            {
+                'id': candidate.pk,
+                'label': label,
+                'email': candidate.username,
+            }
+        )
+
+    context = {
+        'projects': projects,
+        'available_user_options': user_options,
+        'project_member_map': dict(member_map),
+    }
+    return render(request, 'projects_list.html', context)
 
 
 @login_required
@@ -690,6 +751,90 @@ def membership_add(request: HttpRequest) -> HttpResponse:
         form = UserToProjectForm()
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in accessible_projects])
     return render(request, 'membership_form.html', {'form': form, 'title': 'Add User'})
+
+
+@login_required
+@require_http_methods(["POST"])
+def membership_bulk_add(request: HttpRequest, project_id: int) -> JsonResponse:
+    """Assign multiple users to a project in a single request."""
+
+    user = request.user
+    if not _user_is_organisation(user):
+        return JsonResponse({'ok': False, 'message': 'Only organisation accounts may assign members.'}, status=403)
+
+    project = get_object_or_404(Project, pk=project_id, memberships__user=user)
+    if _project_deadline_locked_for_user(project, user):
+        return JsonResponse(
+            {
+                'ok': False,
+                'message': 'The project deadline has passed. Only the owner may assign members.',
+            },
+            status=403,
+        )
+
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'ok': False, 'message': 'Invalid request payload.'}, status=400)
+
+    user_ids = payload.get('user_ids')
+    if not isinstance(user_ids, list) or not user_ids:
+        return JsonResponse({'ok': False, 'message': 'Select at least one user to add.'}, status=400)
+
+    panel_flags = payload.get('panels', {})
+    if not isinstance(panel_flags, dict):
+        panel_flags = {}
+
+    added: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+
+    for raw_id in user_ids:
+        try:
+            target_id = int(raw_id)
+        except (TypeError, ValueError):
+            skipped.append({'id': raw_id, 'reason': 'invalid'})
+            continue
+
+        try:
+            target_user = User.objects.select_related('profile').get(pk=target_id)
+        except User.DoesNotExist:
+            skipped.append({'id': target_id, 'reason': 'missing'})
+            continue
+
+        profile = getattr(target_user, 'profile', None)
+        if profile and getattr(profile, 'organization', False):
+            skipped.append({'id': target_id, 'email': target_user.username, 'reason': 'organization'})
+            continue
+
+        if Membership.objects.filter(user=target_user, project=project).exists():
+            skipped.append({'id': target_id, 'email': target_user.username, 'reason': 'duplicate'})
+            continue
+
+        membership_kwargs = {field: bool(panel_flags.get(field, False)) for field in MEMBERSHIP_PANEL_FIELDS}
+        membership_kwargs['is_owner'] = False
+
+        Membership.objects.create(user=target_user, project=project, **membership_kwargs)
+        added.append({'id': target_id, 'email': target_user.username})
+
+    if added:
+        summary = ', '.join(item['email'] for item in added)
+        log_activity(user, 'Bulk added memberships', f"Project {project.pk}: {summary}")
+
+    status_code = 200 if added else 400
+    response = {
+        'ok': bool(added),
+        'created': added,
+        'skipped': skipped,
+        'partial': bool(added and skipped),
+    }
+    if skipped and not added:
+        response['message'] = 'No users were added.'
+    elif skipped:
+        response['message'] = 'Some users could not be added.'
+    else:
+        response['message'] = 'Users added successfully.'
+
+    return JsonResponse(response, status=status_code)
 
 
 @login_required

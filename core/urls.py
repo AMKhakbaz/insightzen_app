@@ -33,6 +33,7 @@ urlpatterns = [
     # User management
     path('memberships/', views.membership_list, name='membership_list'),
     path('memberships/add/', views.membership_add, name='membership_add'),
+    path('projects/<int:project_id>/memberships/bulk/', views.membership_bulk_add, name='membership_bulk_add'),
     path('memberships/<int:membership_id>/edit/', views.membership_edit, name='membership_edit'),
     # Delete membership
     path('memberships/<int:pk>/delete/', views.membership_delete, name='membership_delete'),

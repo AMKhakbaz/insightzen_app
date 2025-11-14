@@ -1184,6 +1184,216 @@ body.rtl {
     color: var(--color-text-subtle);
 }
 
+/* Bulk membership modal */
+.bulk-membership-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bulk-membership-modal[hidden] {
+    display: none;
+}
+
+.bulk-membership-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 12, 16, 0.72);
+}
+
+.bulk-membership-modal__panel {
+    position: relative;
+    width: min(900px, 95vw);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-surface-elevated);
+    border-radius: 18px;
+    border: 1px solid var(--color-border);
+    box-shadow: var(--color-shadow-soft);
+    overflow: hidden;
+}
+
+.bulk-membership-modal__header,
+.bulk-membership-modal__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--color-surface);
+}
+
+.bulk-membership-modal__header h2 {
+    font-size: var(--font-size-h3);
+    margin: 0;
+}
+
+.bulk-membership-modal__close {
+    background: none;
+    border: none;
+    color: var(--color-text);
+    font-size: 1.75rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.bulk-membership-modal__close:hover,
+.bulk-membership-modal__close:focus {
+    color: var(--color-accent-strong);
+}
+
+.bulk-membership-modal__body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.bulk-membership-modal__hint {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.bulk-membership-modal__columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.25rem;
+}
+
+.bulk-membership-modal__section-title {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+}
+
+.bulk-membership-modal__user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-radius: 14px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-muted);
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.bulk-membership-modal__user-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.bulk-membership-modal__user-list::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 999px;
+}
+
+.bulk-membership-modal__user {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    padding: 0.45rem 0.65rem;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.bulk-membership-modal__user:hover,
+.bulk-membership-modal__user:focus-within {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+}
+
+.bulk-membership-modal__user.is-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.bulk-membership-modal__user.is-disabled input {
+    pointer-events: none;
+}
+
+.bulk-membership-modal__user-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.bulk-membership-modal__user-name {
+    font-size: 0.95rem;
+    font-weight: var(--font-weight-medium);
+}
+
+.bulk-membership-modal__user-email {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.bulk-membership-modal__panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 14px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-muted);
+}
+
+.bulk-membership-modal__checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+}
+
+.bulk-membership-modal__checkbox input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--color-accent);
+}
+
+.bulk-membership-modal__status {
+    min-height: 1.5rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.bulk-membership-modal__status.is-error {
+    color: var(--color-danger-strong);
+}
+
+.bulk-membership-modal__status.is-success {
+    color: var(--color-accent-strong);
+}
+
+.bulk-membership-modal__empty {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+@media (max-width: 640px) {
+    .bulk-membership-modal__panel {
+        width: 94vw;
+        border-radius: 14px;
+    }
+
+    .bulk-membership-modal__body {
+        padding: 1.25rem;
+    }
+
+    .bulk-membership-modal__columns {
+        gap: 1rem;
+    }
+}
+
 @media (max-width: 768px) {
     .table-toolbar {
         flex-direction: column;
