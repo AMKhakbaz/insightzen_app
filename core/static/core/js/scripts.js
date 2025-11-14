@@ -2,6 +2,7 @@
 // Handles sidebar toggle and Conjoint Analysis AJAX interactions.
 
 document.addEventListener('DOMContentLoaded', function () {
+  initNotificationCenter();
   // Conjoint analysis form submission
   const form = document.getElementById('conjoint-form');
   if (form) {
@@ -800,6 +801,274 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 });
+
+function initNotificationCenter() {
+  const root = document.querySelector('[data-notification-root]');
+  if (!root) return;
+
+  const toggle = root.querySelector('[data-notification-toggle]');
+  const panel = root.querySelector('[data-notification-panel]');
+  if (!toggle || !panel) return;
+
+  const list = root.querySelector('[data-notification-list]');
+  const emptyState = root.querySelector('[data-notification-empty]');
+  const countBadge = root.querySelector('[data-notification-count]');
+  const statusEl = root.querySelector('[data-notification-status]');
+  const markAllButton = root.querySelector('[data-notification-mark-all]');
+
+  const lang = document.documentElement.lang === 'fa' ? 'fa' : 'en';
+  const locale = lang === 'fa' ? 'fa-IR' : 'en-US';
+
+  const text = {
+    en: {
+      loading: 'Loading notifications…',
+      error: 'Unable to load notifications.',
+      updated: 'Notifications updated.',
+      markAll: 'Mark all as read',
+      empty: "You're all caught up.",
+      none: 'No unread notifications.',
+      project: 'Project',
+    },
+    fa: {
+      loading: 'در حال بارگذاری اعلان‌ها…',
+      error: 'بارگذاری اعلان‌ها ممکن نیست.',
+      updated: 'اعلان‌ها به‌روزرسانی شد.',
+      markAll: 'علامت‌گذاری همه به‌عنوان خوانده‌شده',
+      empty: 'اعلان خوانده‌نشده‌ای وجود ندارد.',
+      none: 'اعلان خوانده‌نشده‌ای وجود ندارد.',
+      project: 'پروژه',
+    },
+  };
+
+  if (markAllButton) {
+    markAllButton.textContent = text[lang].markAll;
+  }
+  if (emptyState) {
+    emptyState.textContent = text[lang].empty;
+  }
+
+  let totalUnread = 0;
+  let cachedItems = [];
+  let isOpen = false;
+  let isFetching = false;
+
+  const updateBadge = (total) => {
+    if (!countBadge) return;
+    if (total > 0) {
+      countBadge.hidden = false;
+      countBadge.textContent = total > 99 ? '99+' : String(total);
+    } else {
+      countBadge.hidden = true;
+    }
+  };
+
+  const setStatus = (message, tone = 'info') => {
+    if (!statusEl) return;
+    statusEl.textContent = message || '';
+    statusEl.dataset.tone = tone;
+  };
+
+  const formatTimestamp = (isoString) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      if (Number.isNaN(date.getTime())) {
+        return '';
+      }
+      return date.toLocaleString(locale, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
+    } catch (err) {
+      return '';
+    }
+  };
+
+  const renderList = (items) => {
+    cachedItems = Array.isArray(items) ? items.slice() : [];
+    if (list) {
+      list.innerHTML = '';
+    }
+    if (!list) {
+      return;
+    }
+    if (!cachedItems.length) {
+      if (emptyState) {
+        emptyState.hidden = false;
+      }
+      return;
+    }
+    if (emptyState) {
+      emptyState.hidden = true;
+    }
+
+    cachedItems.forEach((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'notification-item';
+      button.dataset.id = String(item.id);
+      button.setAttribute('role', 'listitem');
+
+      const message = document.createElement('div');
+      message.className = 'notification-item__message';
+      message.textContent = item.message || '';
+      button.appendChild(message);
+
+      const metaParts = [];
+      if (item.project) {
+        metaParts.push(`${text[lang].project}: ${item.project}`);
+      }
+      const when = formatTimestamp(item.createdAt);
+      if (when) {
+        metaParts.push(when);
+      }
+      if (metaParts.length) {
+        const meta = document.createElement('div');
+        meta.className = 'notification-item__meta';
+        meta.textContent = metaParts.join(' • ');
+        button.appendChild(meta);
+      }
+
+      list.appendChild(button);
+    });
+  };
+
+  const fetchNotifications = (force = false) => {
+    if (isFetching) return;
+    if (!force && !isOpen) {
+      return;
+    }
+    isFetching = true;
+    setStatus(text[lang].loading);
+    fetch('/api/notifications/unread/', { headers: { Accept: 'application/json' } })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        const notifications = Array.isArray(data.notifications) ? data.notifications : [];
+        totalUnread = Number(data.count) || 0;
+        renderList(notifications);
+        updateBadge(totalUnread);
+        setStatus(totalUnread ? '' : text[lang].none);
+      })
+      .catch(() => {
+        setStatus(text[lang].error, 'error');
+      })
+      .finally(() => {
+        isFetching = false;
+      });
+  };
+
+  const postMark = (payload) => {
+    return fetch('/api/notifications/mark-read/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken') || '',
+      },
+      body: JSON.stringify(payload),
+    }).then((response) => {
+      if (!response.ok) {
+        throw new Error('failed');
+      }
+      return response.json();
+    });
+  };
+
+  const closePanel = () => {
+    if (!isOpen) return;
+    isOpen = false;
+    panel.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', handleOutside, true);
+    document.removeEventListener('keydown', handleKeydown, true);
+  };
+
+  const openPanel = () => {
+    if (isOpen) return;
+    isOpen = true;
+    panel.hidden = false;
+    toggle.setAttribute('aria-expanded', 'true');
+    fetchNotifications(true);
+    document.addEventListener('click', handleOutside, true);
+    document.addEventListener('keydown', handleKeydown, true);
+  };
+
+  const handleOutside = (event) => {
+    if (!root.contains(event.target)) {
+      closePanel();
+    }
+  };
+
+  const handleKeydown = (event) => {
+    if (event.key === 'Escape') {
+      closePanel();
+    }
+  };
+
+  toggle.addEventListener('click', () => {
+    if (isOpen) {
+      closePanel();
+    } else {
+      openPanel();
+    }
+  });
+
+  if (markAllButton) {
+    markAllButton.addEventListener('click', () => {
+      if (!totalUnread) {
+        setStatus(text[lang].none);
+        return;
+      }
+      markAllButton.disabled = true;
+      setStatus(text[lang].loading);
+      postMark({ all: true })
+        .then((data) => {
+          const updated = Number(data.updated) || totalUnread;
+          totalUnread = Math.max(0, totalUnread - updated);
+          cachedItems = [];
+          renderList([]);
+          updateBadge(totalUnread);
+          setStatus(text[lang].updated);
+        })
+        .catch(() => {
+          setStatus(text[lang].error, 'error');
+        })
+        .finally(() => {
+          markAllButton.disabled = false;
+        });
+    });
+  }
+
+  if (list) {
+    list.addEventListener('click', (event) => {
+      const target = event.target.closest('.notification-item');
+      if (!target) return;
+      const id = Number(target.dataset.id);
+      if (!id) return;
+      target.disabled = true;
+      postMark({ ids: [id] })
+        .then((data) => {
+          const removed = Number(data.updated) || 1;
+          totalUnread = Math.max(0, totalUnread - removed);
+          cachedItems = cachedItems.filter((item) => item.id !== id);
+          renderList(cachedItems);
+          updateBadge(totalUnread);
+          setStatus(totalUnread ? text[lang].updated : text[lang].none);
+        })
+        .catch(() => {
+          setStatus(text[lang].error, 'error');
+          target.disabled = false;
+        });
+    });
+  }
+
+  // Prime the badge once the page loads.
+  fetchNotifications(true);
+}
 
 // Helper to get CSRF token from cookies
 function getCookie(name) {

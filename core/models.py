@@ -16,6 +16,39 @@ from django.contrib.auth.models import User
 from django.contrib.postgres.fields import ArrayField  # type: ignore
 
 
+class Notification(models.Model):
+    """Stores user facing notifications triggered by application events."""
+
+    class EventType(models.TextChoices):
+        MEMBERSHIP_ADDED = 'membership_added', 'Membership Added'
+        PROJECT_STARTED = 'project_started', 'Project Started'
+        PROJECT_DEADLINE = 'project_deadline', 'Project Deadline'
+
+    recipient = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='notifications',
+    )
+    project = models.ForeignKey(
+        'Project',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='notifications',
+    )
+    message = models.TextField()
+    event_type = models.CharField(max_length=50, choices=EventType.choices)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"Notification<{self.recipient.username} {self.event_type}>"
+
+
 class Profile(models.Model):
     """Additional information associated with a Django auth User.
 

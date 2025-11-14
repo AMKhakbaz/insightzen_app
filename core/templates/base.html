@@ -25,6 +25,27 @@
                     <span class="brand-name">InsightZen</span>
                 </div>
                 <div class="top-actions">
+                    <div class="notification-center" data-notification-root>
+                        <button type="button" class="notification-toggle" data-notification-toggle aria-haspopup="true" aria-expanded="false">
+                            <i data-feather="bell" aria-hidden="true"></i>
+                            <span class="notification-badge" data-notification-count hidden>0</span>
+                        </button>
+                        <div class="notification-panel" data-notification-panel hidden>
+                            <div class="notification-panel__header">
+                                <span class="notification-panel__title" data-notification-title>
+                                    {% if lang == 'fa' %}اعلان‌ها{% else %}Notifications{% endif %}
+                                </span>
+                                <button type="button" class="btn btn-text btn-sm" data-notification-mark-all>
+                                    {% if lang == 'fa' %}علامت‌گذاری همه{% else %}Mark all{% endif %}
+                                </button>
+                            </div>
+                            <div class="notification-panel__status" data-notification-status role="status" aria-live="polite"></div>
+                            <div class="notification-panel__list" data-notification-list role="list"></div>
+                            <div class="notification-panel__empty" data-notification-empty hidden>
+                                {% if lang == 'fa' %}اعلان خوانده‌نشده‌ای وجود ندارد.{% else %}You're all caught up.{% endif %}
+                            </div>
+                        </div>
+                    </div>
                     {% if lang == 'fa' %}
                         <a class="lang-btn" href="{% url 'toggle_language' 'en' %}">English</a>
                     {% else %}

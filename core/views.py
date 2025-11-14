@@ -48,6 +48,13 @@ from core.services.database_cache import (
     request_enketo_edit_url,
 )
 from core.services.persian_dates import calculate_age_from_birth_info
+from core.services.notifications import (
+    ensure_project_deadline_notifications,
+    localised_message,
+    mark_notifications_read,
+    notify_membership_added,
+    notify_project_started,
+)
 try:
     # Optional import for Excel export; if the library is missing the export view
     # will inform the user appropriately.
@@ -77,6 +84,7 @@ from .models import (
     DatabaseEntry,
     DatabaseEntryEditRequest,
     TableFilterPreset,
+    Notification,
 )
 
 
@@ -210,6 +218,7 @@ def _project_deadline_locked_for_user(project: Project, user: User) -> bool:
     today = timezone.now().date()
     if today <= project.deadline:
         return False
+    ensure_project_deadline_notifications(project)
     return not Membership.objects.filter(project=project, user=user, is_owner=True).exists()
 
 
@@ -600,6 +609,7 @@ def project_add(request: HttpRequest) -> HttpResponse:
             messages.success(request, 'Project created successfully.')
             # log activity
             log_activity(user, 'Created project', f"Project {project.pk}: {project.name}")
+            notify_project_started(project, initiator=user)
             return redirect('project_list')
     else:
         form = ProjectForm()
@@ -746,6 +756,7 @@ def membership_add(request: HttpRequest) -> HttpResponse:
             messages.success(request, 'User assigned to project.')
             # log activity
             log_activity(user, 'Added membership', f"User {target_user.username} to Project {project.pk}")
+            notify_membership_added(membership, actor=user)
             return redirect('membership_list')
     else:
         form = UserToProjectForm()
@@ -813,7 +824,8 @@ def membership_bulk_add(request: HttpRequest, project_id: int) -> JsonResponse:
         membership_kwargs = {field: bool(panel_flags.get(field, False)) for field in MEMBERSHIP_PANEL_FIELDS}
         membership_kwargs['is_owner'] = False
 
-        Membership.objects.create(user=target_user, project=project, **membership_kwargs)
+        membership = Membership.objects.create(user=target_user, project=project, **membership_kwargs)
+        notify_membership_added(membership, actor=user)
         added.append({'id': target_id, 'email': target_user.username})
 
     if added:
@@ -2389,3 +2401,52 @@ def table_filter_presets(request: HttpRequest, table_id: str) -> JsonResponse:
             'message': message,
         }
     )
+
+
+@login_required
+@require_http_methods(["GET"])
+def notifications_unread(request: HttpRequest) -> JsonResponse:
+    """Return unread notifications for the current user."""
+
+    lang = request.session.get('lang', 'en')
+    lang = 'fa' if lang == 'fa' else 'en'
+    unread_qs = Notification.objects.filter(recipient=request.user, is_read=False).order_by('-created_at')
+    total = unread_qs.count()
+    items: List[Dict[str, Any]] = []
+    for note in unread_qs[:50]:
+        items.append(
+            {
+                'id': note.pk,
+                'message': localised_message(note, lang),
+                'eventType': note.event_type,
+                'createdAt': note.created_at.isoformat(),
+                'project': note.project.name if note.project else None,
+                'metadata': note.metadata,
+            }
+        )
+    return JsonResponse({'notifications': items, 'count': total})
+
+
+@login_required
+@require_http_methods(["POST"])
+def notifications_mark_read(request: HttpRequest) -> JsonResponse:
+    """Mark notifications as read for the current user."""
+
+    try:
+        payload = json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'ok': False, 'message': 'Invalid payload.'}, status=400)
+
+    if payload.get('all'):
+        updated = mark_notifications_read(request.user, None)
+    else:
+        ids = payload.get('ids')
+        if not isinstance(ids, list):
+            return JsonResponse({'ok': False, 'message': 'No notifications specified.'}, status=400)
+        try:
+            id_list = [int(value) for value in ids]
+        except (TypeError, ValueError):
+            return JsonResponse({'ok': False, 'message': 'Invalid notification identifiers.'}, status=400)
+        updated = mark_notifications_read(request.user, id_list)
+
+    return JsonResponse({'ok': True, 'updated': updated})

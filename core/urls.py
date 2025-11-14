@@ -57,6 +57,8 @@ urlpatterns = [
     path('api/performance/raw/', perf.collection_performance_raw, name='collection_performance_raw'),
     path('performance/export/', perf.collection_performance_export, name='collection_performance_export'),
     path('api/table-filters/<str:table_id>/', views.table_filter_presets, name='table_filter_presets'),
+    path('api/notifications/unread/', views.notifications_unread, name='notifications_unread'),
+    path('api/notifications/mark-read/', views.notifications_mark_read, name='notifications_mark_read'),
 
     # Database management
     path('databases/', views.database_list, name='database_list'),
