@@ -69,7 +69,7 @@
         </form>
     </div>
     <div class="table-responsive">
-        <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}داده‌ای با این فیلتر یافت نشد.{% else %}No records match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+        <table id="database-records-table" class="table" data-table="interactive" data-filter-context="database_view" data-empty-text="{% if lang == 'fa' %}داده‌ای با این فیلتر یافت نشد.{% else %}No records match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
                     {% for col in columns %}

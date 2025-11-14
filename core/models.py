@@ -328,6 +328,27 @@ class DatabaseEntryEditRequest(models.Model):
         return f"Edit request for {_shorten(self.submission_id)} on {self.entry}"
 
 
+class TableFilterPreset(models.Model):
+    """Stores named advanced-filter presets for interactive tables."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='table_filter_presets')
+    table_id = models.CharField(max_length=128)
+    name = models.CharField(max_length=150)
+    payload = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'table_id', 'name')
+        indexes = [
+            models.Index(fields=['user', 'table_id']),
+        ]
+        ordering = ['name']
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"{self.user_id}:{self.table_id}:{self.name}"
+
+
 def _shorten(value: str, length: int = 8) -> str:
     """Utility to abbreviate identifiers for string representations."""
 

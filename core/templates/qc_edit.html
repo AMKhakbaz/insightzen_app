@@ -72,7 +72,7 @@
 
     {% if selected_entry and columns %}
         <div class="table-responsive qc-table-wrapper">
-            <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}سطر مطابق فیلتر یافت نشد.{% else %}No rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+            <table id="qc-table" class="table" data-table="interactive" data-filter-context="qc_edit" data-empty-text="{% if lang == 'fa' %}سطر مطابق فیلتر یافت نشد.{% else %}No rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
                 <thead>
                     <tr>
                         {% for col in column_meta %}

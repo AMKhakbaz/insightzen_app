@@ -24,6 +24,19 @@
     '٩': '9',
   };
 
+  const STORAGE_VERSION = 1;
+
+  function getCsrfToken() {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    if (typeof window.getCookie === 'function') {
+      return window.getCookie('csrftoken');
+    }
+    const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
   function normaliseText(value) {
     if (value == null) {
       return '';
@@ -131,16 +144,25 @@
         button: 'فیلتر پیشرفته',
         title: 'فیلترهای پیشرفته',
         hint:
-          'شرایط دقیق را بسازید و با عملگرهای AND/OR ترکیب کنید. برای جست‌وجوی ساده‌تر همچنان می‌توانید از جستجو و فیلترهای بالای جدول استفاده کنید. برای ذخیره یا پاک کردن حالت‌ها از گزینه‌های زیر کمک بگیرید.',
+          'شرایط دقیق را بسازید و با عملگرهای AND/OR ترکیب کنید. برای جست‌وجوی ساده‌تر همچنان می‌توانید از جستجو و فیلترهای بالای جدول استفاده کنید. برای ذخیره مجموعه فیلترها نام یکتا انتخاب کنید و در صورت نیاز آن را بارگذاری یا حذف نمایید.',
         logicLabel: 'ردیف زمانی نمایش داده شود که',
         logicAll: 'همه شرایط برقرار باشند (AND)',
         logicAny: 'حداقل یکی از شرایط برقرار باشد (OR)',
-        savedInfo: 'یک فیلتر ذخیره‌شده برای این جدول در دسترس است.',
-        noSaved: 'هنوز فیلتری ذخیره نشده است.',
-        loadSaved: 'بارگذاری فیلتر ذخیره‌شده',
-        clearSaved: 'پاک کردن فیلتر ذخیره‌شده',
+        savedLabel: 'فیلترهای ذخیره‌شده',
+        savedPlaceholder: 'فیلتر ذخیره‌شده را انتخاب کنید',
+        noSaved: 'هنوز فیلتری برای این جدول ذخیره نشده است.',
+        loadSaved: 'بارگذاری فیلتر',
+        deleteSaved: 'حذف فیلتر',
+        saveLabel: 'ذخیره فیلترهای جاری با نام',
+        savePlaceholder: 'نام فیلتر',
+        saveButton: 'ذخیره فیلتر',
+        saveHint: 'از نام‌های یکتا استفاده کنید تا بعداً بتوانید فیلترها را تشخیص دهید.',
+        saveRequiresFilters: 'برای ذخیرهٔ فیلتر باید حداقل یک شرط فعال داشته باشید.',
+        saveSuccess: 'فیلتر ذخیره شد. برای اعمال آن، دکمهٔ اعمال را فشار دهید.',
+        deleteSuccess: 'فیلتر حذف شد.',
+        saveError: 'ذخیره فیلتر انجام نشد.',
+        deleteError: 'حذف فیلتر انجام نشد.',
         addCondition: 'افزودن شرط',
-        remember: 'این فیلترها را برای این جدول ذخیره کن',
         apply: 'اعمال فیلترها',
         cancel: 'بستن',
         reset: 'حذف فیلترهای جاری',
@@ -153,7 +175,6 @@
         empty: 'هنوز شرطی تعریف نشده است.',
         validationMissingValue: 'برای اعمال فیلتر، مقادیر لازم را تکمیل کنید.',
         loadedSaved: 'فیلتر ذخیره‌شده بارگذاری شد. برای اعمال روی جدول، دکمهٔ اعمال را فشار دهید.',
-        clearedSaved: 'فیلتر ذخیره‌شده حذف شد.',
         operators: {
           eq: 'برابر باشد با',
           neq: 'برابر نباشد با',
@@ -184,16 +205,25 @@
         button: 'Advanced filters',
         title: 'Advanced filters',
         hint:
-          'Create precise conditions and combine them with AND/OR. Keep using the quick filters and search above for simple lookups. Use the controls below to save, reload, or clear complex filter sets.',
+          'Create precise conditions and combine them with AND/OR. Keep using the quick filters and search above for simple lookups. Give your presets unique names so you can reload or remove them later.',
         logicLabel: 'Show rows when',
         logicAll: 'All conditions are true (AND)',
         logicAny: 'Any condition is true (OR)',
-        savedInfo: 'A saved filter set is available for this table.',
-        noSaved: 'No saved filters yet.',
-        loadSaved: 'Load saved filters',
-        clearSaved: 'Clear saved filters',
+        savedLabel: 'Saved presets',
+        savedPlaceholder: 'Select a saved preset',
+        noSaved: 'No presets saved for this table yet.',
+        loadSaved: 'Load preset',
+        deleteSaved: 'Delete preset',
+        saveLabel: 'Save current filters as',
+        savePlaceholder: 'Preset name',
+        saveButton: 'Save preset',
+        saveHint: 'Use unique names so you can recognise presets later.',
+        saveRequiresFilters: 'Define at least one condition before saving a preset.',
+        saveSuccess: 'Preset saved. Press Apply to filter the table.',
+        deleteSuccess: 'Preset removed.',
+        saveError: 'Failed to save filter.',
+        deleteError: 'Failed to delete filter.',
         addCondition: 'Add condition',
-        remember: 'Remember these filters for this table',
         apply: 'Apply filters',
         cancel: 'Close',
         reset: 'Clear current filters',
@@ -205,8 +235,7 @@
         removeCondition: 'Remove condition',
         empty: 'No advanced conditions yet.',
         validationMissingValue: 'Fill in the required values before applying.',
-        loadedSaved: 'Saved filters loaded. Press Apply to filter the table.',
-        clearedSaved: 'Saved filters cleared.',
+        loadedSaved: 'Saved preset loaded. Press Apply to filter the table.',
         operators: {
           eq: 'Equals',
           neq: 'Does not equal',
@@ -268,7 +297,14 @@
       this.advancedFilters = [];
       this.advancedLogic = 'and';
       this.savedAdvancedFilters = null;
-      this.savedFiltersKey = table.id ? `interactiveTableAdvanced:${table.id}` : null;
+      this.tableId = table.getAttribute('id') || table.dataset.filterId || null;
+      this.filterContext = table.dataset.filterContext || '';
+      this.filterEndpoint = this.tableId
+        ? `/api/table-filters/${encodeURIComponent(this.tableId)}/`
+        : null;
+      this.savedPresets = [];
+      this.currentPresetName = null;
+      this.savedFiltersKey = this.tableId ? `interactiveTablePresets:${this.tableId}` : null;
       this.originalBodyOverflow = null;
       this.statusEl = this.createStatusElement();
 
@@ -822,12 +858,15 @@
       this.advancedApplyButton = instance.querySelector('[data-advanced-apply]');
       this.advancedCancelButton = instance.querySelector('[data-advanced-cancel]');
       this.advancedResetButton = instance.querySelector('[data-advanced-reset]');
-      this.advancedRememberCheckbox = instance.querySelector('[data-advanced-remember]');
       this.advancedStatus = instance.querySelector('[data-advanced-status]');
-      this.advancedSavedSection = instance.querySelector('[data-advanced-saved]');
-      this.advancedSavedText = instance.querySelector('.table-advanced-filter__saved-text');
+      this.advancedPresetsContainer = instance.querySelector('[data-advanced-presets]');
+      this.advancedPresetSelect = instance.querySelector('[data-advanced-preset-select]');
       this.advancedLoadButton = instance.querySelector('[data-advanced-load]');
-      this.advancedClearSavedButton = instance.querySelector('[data-advanced-clear-saved]');
+      this.advancedDeleteButton = instance.querySelector('[data-advanced-delete]');
+      this.advancedSaveSection = instance.querySelector('[data-advanced-save]');
+      this.advancedSaveInput = instance.querySelector('[data-advanced-save-name]');
+      this.advancedSaveButton = instance.querySelector('[data-advanced-save-button]');
+      this.advancedSaveHint = instance.querySelector('.table-advanced-filter__save-hint');
 
       this.populateAdvancedText();
       this.populateLogicOptions();
@@ -843,11 +882,17 @@
         }
       });
       this.handleAdvancedKeydown = this.handleAdvancedKeydown.bind(this);
+      if (this.advancedPresetSelect) {
+        this.advancedPresetSelect.addEventListener('change', () => this.updatePresetButtonState());
+      }
       if (this.advancedLoadButton) {
         this.advancedLoadButton.addEventListener('click', () => this.handleAdvancedLoadSaved());
       }
-      if (this.advancedClearSavedButton) {
-        this.advancedClearSavedButton.addEventListener('click', () => this.handleAdvancedClearSaved());
+      if (this.advancedDeleteButton) {
+        this.advancedDeleteButton.addEventListener('click', () => this.handleAdvancedDeleteSaved());
+      }
+      if (this.advancedSaveButton) {
+        this.advancedSaveButton.addEventListener('click', () => this.handleAdvancedSave());
       }
       this.updateSavedUI();
     }
@@ -860,8 +905,9 @@
         title: this.messages.advanced.title,
         hint: this.messages.advanced.hint,
         logicLabel: this.messages.advanced.logicLabel,
-        savedInfo: this.messages.advanced.savedInfo,
-        remember: this.messages.advanced.remember,
+        savedLabel: this.messages.advanced.savedLabel,
+        saveLabel: this.messages.advanced.saveLabel,
+        saveHint: this.messages.advanced.saveHint,
       };
       Object.entries(mapping).forEach(([key, value]) => {
         const el = this.advancedPanel.querySelector(`[data-i18n="${key}"]`);
@@ -884,8 +930,14 @@
       if (this.advancedLoadButton) {
         this.advancedLoadButton.textContent = this.messages.advanced.loadSaved;
       }
-      if (this.advancedClearSavedButton) {
-        this.advancedClearSavedButton.textContent = this.messages.advanced.clearSaved;
+      if (this.advancedDeleteButton) {
+        this.advancedDeleteButton.textContent = this.messages.advanced.deleteSaved;
+      }
+      if (this.advancedSaveButton) {
+        this.advancedSaveButton.textContent = this.messages.advanced.saveButton;
+      }
+      if (this.advancedSaveInput) {
+        this.advancedSaveInput.placeholder = this.messages.advanced.savePlaceholder;
       }
     }
 
@@ -913,10 +965,15 @@
       }
       this.renderAdvancedConditions();
       this.populateLogicOptions();
-      if (this.advancedRememberCheckbox) {
-        this.advancedRememberCheckbox.checked = Boolean(this.savedAdvancedFilters);
-      }
       this.setAdvancedStatus('', 'none');
+      if (this.advancedSaveInput) {
+        this.advancedSaveInput.value = this.currentPresetName || '';
+      }
+      if (this.advancedPresetSelect) {
+        this.advancedPresetSelect.value = this.currentPresetName || '';
+      }
+      this.updatePresetButtonState();
+      this.refreshAdvancedPresets({ silent: true });
       this.advancedPanel.hidden = false;
       this.advancedPanel.dataset.open = 'true';
       this.advancedFilterButton.setAttribute('aria-expanded', 'true');
@@ -1201,8 +1258,7 @@
       this.advancedLogic = logic;
       this.closeAdvancedFilter();
       this.applyFilters();
-      const remember = this.advancedRememberCheckbox && this.advancedRememberCheckbox.checked;
-      this.persistAdvancedFilters({ remember, clearWhenEmpty: true });
+      this.persistAdvancedFilters({ logic, filters });
       this.updateAdvancedFilterButtonState();
     }
 
@@ -1212,29 +1268,210 @@
       if (this.advancedLogicSelect) {
         this.advancedLogicSelect.value = 'and';
       }
+      if (this.advancedPresetSelect) {
+        this.advancedPresetSelect.value = '';
+      }
+      if (this.advancedSaveInput) {
+        this.advancedSaveInput.value = '';
+      }
+      this.currentPresetName = null;
       this.renderAdvancedConditions();
       this.setAdvancedStatus('', 'none');
-      const remember = this.advancedRememberCheckbox && this.advancedRememberCheckbox.checked;
-      this.persistAdvancedFilters({ remember, clearWhenEmpty: true });
+      this.persistAdvancedFilters({ logic: this.advancedLogic, filters: this.advancedFilters });
       this.applyFilters();
       this.updateAdvancedFilterButtonState();
+      this.updatePresetButtonState();
     }
 
     handleAdvancedLoadSaved() {
-      if (!this.savedAdvancedFilters || !this.savedAdvancedFilters.filters.length) {
+      if (!this.savedPresets.length || !this.advancedPresetSelect) {
         this.setAdvancedStatus(this.messages.advanced.noSaved, 'info');
         return;
       }
-      this.advancedFilters = cloneFilters(this.savedAdvancedFilters.filters);
-      this.advancedLogic = this.savedAdvancedFilters.logic;
+      const name = this.advancedPresetSelect.value;
+      if (!name) {
+        this.setAdvancedStatus(this.messages.advanced.savedPlaceholder, 'info');
+        return;
+      }
+      const preset = this.savedPresets.find((item) => item.name === name);
+      if (!preset) {
+        this.setAdvancedStatus(this.messages.advanced.noSaved, 'info');
+        return;
+      }
+      const payload = preset.payload || {};
+      const filters = Array.isArray(payload.filters) ? payload.filters : [];
+      this.advancedFilters = cloneFilters(filters);
+      this.advancedLogic = payload.logic === 'or' ? 'or' : 'and';
       this.renderAdvancedConditions();
       this.populateLogicOptions();
       this.setAdvancedStatus(this.messages.advanced.loadedSaved, 'success');
+      this.currentPresetName = name;
+      if (this.advancedSaveInput) {
+        this.advancedSaveInput.value = name;
+      }
+      this.persistAdvancedFilters({ logic: this.advancedLogic, filters: this.advancedFilters });
+      this.updateAdvancedFilterButtonState();
     }
 
-    handleAdvancedClearSaved() {
-      this.persistAdvancedFilters({ clear: true });
-      this.setAdvancedStatus(this.messages.advanced.clearedSaved, 'info');
+    async handleAdvancedSave() {
+      if (!this.filterEndpoint) {
+        this.setAdvancedStatus(this.messages.advanced.noSaved, 'info');
+        return;
+      }
+      const name = (this.advancedSaveInput ? this.advancedSaveInput.value : '').trim();
+      if (!name) {
+        this.setAdvancedStatus(this.messages.advanced.savePlaceholder, 'info');
+        return;
+      }
+      const { filters, logic, hasError } = this.collectConditionsFromUI();
+      if (hasError) {
+        this.setAdvancedStatus(this.messages.advanced.validationMissingValue, 'error');
+        return;
+      }
+      if (!filters.length) {
+        this.setAdvancedStatus(this.messages.advanced.saveRequiresFilters, 'error');
+        return;
+      }
+      const body = {
+        name,
+        payload: {
+          version: STORAGE_VERSION,
+          logic,
+          filters: cloneFilters(filters),
+          columns: this.getAdvancedFilterableColumns().map((column) => ({
+            index: column.column,
+            name: column.label,
+            type: column.type || 'text',
+          })),
+        },
+      };
+      if (this.filterContext) {
+        body.payload.context = this.filterContext;
+      }
+      const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+      const csrf = getCsrfToken();
+      if (csrf) {
+        headers['X-CSRFToken'] = csrf;
+      }
+      try {
+        const response = await fetch(this.filterEndpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          this.setAdvancedStatus(data.error || this.messages.advanced.saveError, 'error');
+          return;
+        }
+        if (Array.isArray(data.presets)) {
+          this.savedPresets = data.presets
+            .map((preset) => ({ name: preset.name, payload: preset.payload || {} }))
+            .filter((preset) => preset.name);
+        }
+        this.currentPresetName = name;
+        this.updateSavedUI();
+        if (this.advancedPresetSelect) {
+          this.advancedPresetSelect.value = name;
+        }
+        this.setAdvancedStatus(data.message || this.messages.advanced.saveSuccess, 'success');
+        this.persistAdvancedFilters({ logic: this.advancedLogic, filters: this.advancedFilters });
+      } catch (error) {
+        this.setAdvancedStatus(this.messages.advanced.saveError, 'error');
+      }
+    }
+
+    async handleAdvancedDeleteSaved() {
+      if (!this.filterEndpoint || !this.advancedPresetSelect) {
+        this.setAdvancedStatus(this.messages.advanced.noSaved, 'info');
+        return;
+      }
+      const name = this.advancedPresetSelect.value;
+      if (!name) {
+        this.setAdvancedStatus(this.messages.advanced.savedPlaceholder, 'info');
+        return;
+      }
+      const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+      const csrf = getCsrfToken();
+      if (csrf) {
+        headers['X-CSRFToken'] = csrf;
+      }
+      try {
+        const response = await fetch(this.filterEndpoint, {
+          method: 'DELETE',
+          headers,
+          body: JSON.stringify({ name }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          this.setAdvancedStatus(data.error || this.messages.advanced.deleteError, 'error');
+          return;
+        }
+        if (Array.isArray(data.presets)) {
+          this.savedPresets = data.presets
+            .map((preset) => ({ name: preset.name, payload: preset.payload || {} }))
+            .filter((preset) => preset.name);
+        } else {
+          this.savedPresets = this.savedPresets.filter((preset) => preset.name !== name);
+        }
+        if (this.currentPresetName === name) {
+          this.currentPresetName = null;
+          if (this.advancedSaveInput) {
+            this.advancedSaveInput.value = '';
+          }
+        }
+        if (this.advancedPresetSelect) {
+          this.advancedPresetSelect.value = '';
+        }
+        this.updateSavedUI();
+        this.updatePresetButtonState();
+        this.setAdvancedStatus(data.message || this.messages.advanced.deleteSuccess, 'success');
+        this.persistAdvancedFilters({ logic: this.advancedLogic, filters: this.advancedFilters });
+      } catch (error) {
+        this.setAdvancedStatus(this.messages.advanced.deleteError, 'error');
+      }
+    }
+
+    async refreshAdvancedPresets({ silent = false } = {}) {
+      if (!this.filterEndpoint) {
+        this.updateSavedUI();
+        if (!silent) {
+          this.setAdvancedStatus(this.messages.advanced.noSaved, 'info');
+        }
+        return;
+      }
+      try {
+        const response = await fetch(this.filterEndpoint, { headers: { Accept: 'application/json' } });
+        if (!response.ok) {
+          throw new Error('Failed to fetch presets');
+        }
+        const data = await response.json();
+        if (Array.isArray(data.presets)) {
+          this.savedPresets = data.presets
+            .map((preset) => ({ name: preset.name, payload: preset.payload || {} }))
+            .filter((preset) => preset.name);
+        } else {
+          this.savedPresets = [];
+        }
+        this.updateSavedUI();
+        if (!this.savedPresets.length && !silent) {
+          this.setAdvancedStatus(this.messages.advanced.noSaved, 'info');
+        }
+      } catch (error) {
+        if (!silent) {
+          this.setAdvancedStatus(this.messages.advanced.noSaved, 'info');
+        }
+      }
+    }
+
+    updatePresetButtonState() {
+      const hasSelection = Boolean(this.advancedPresetSelect && this.advancedPresetSelect.value);
+      if (this.advancedLoadButton) {
+        this.advancedLoadButton.disabled = !hasSelection;
+      }
+      if (this.advancedDeleteButton) {
+        this.advancedDeleteButton.disabled = !hasSelection;
+      }
     }
 
     updateAdvancedFilterButtonState() {
@@ -1329,34 +1566,28 @@
       }
     }
 
-    persistAdvancedFilters({ remember = false, clearWhenEmpty = false, clear = false } = {}) {
+    persistAdvancedFilters({ logic, filters } = {}) {
       if (!this.savedFiltersKey || typeof window === 'undefined' || !window.localStorage) {
         return;
       }
       try {
-        if (clear) {
-          window.localStorage.removeItem(this.savedFiltersKey);
-          this.savedAdvancedFilters = null;
-          this.updateSavedUI();
-          return;
-        }
-        if (remember && this.advancedFilters.length) {
-          const payload = {
-            logic: this.advancedLogic,
-            filters: cloneFilters(this.advancedFilters),
+        const payload = {
+          version: STORAGE_VERSION,
+          lastApplied: {
+            logic: logic === 'or' ? 'or' : 'and',
+            filters: cloneFilters(Array.isArray(filters) ? filters : this.advancedFilters),
+          },
+          currentPreset: this.currentPresetName || null,
+        };
+        window.localStorage.setItem(this.savedFiltersKey, JSON.stringify(payload));
+        if (payload.lastApplied.filters.length) {
+          this.savedAdvancedFilters = {
+            logic: payload.lastApplied.logic,
+            filters: cloneFilters(payload.lastApplied.filters),
           };
-          window.localStorage.setItem(this.savedFiltersKey, JSON.stringify(payload));
-          this.savedAdvancedFilters = { logic: payload.logic, filters: cloneFilters(this.advancedFilters) };
-          this.updateSavedUI();
-          return;
-        }
-        if (remember && !this.advancedFilters.length && clearWhenEmpty) {
-          window.localStorage.removeItem(this.savedFiltersKey);
+        } else {
           this.savedAdvancedFilters = null;
-          this.updateSavedUI();
-          return;
         }
-        this.updateSavedUI();
       } catch (error) {
         // Ignore storage errors
       }
@@ -1370,64 +1601,78 @@
         const stored = window.localStorage.getItem(this.savedFiltersKey);
         if (!stored) {
           this.savedAdvancedFilters = null;
+          this.currentPresetName = null;
           this.updateSavedUI();
           return;
         }
         const parsed = JSON.parse(stored);
-        if (!parsed || !Array.isArray(parsed.filters)) {
+        const lastApplied = parsed && parsed.lastApplied;
+        if (!lastApplied || !Array.isArray(lastApplied.filters)) {
           window.localStorage.removeItem(this.savedFiltersKey);
           this.savedAdvancedFilters = null;
+          this.currentPresetName = null;
           this.updateSavedUI();
           return;
         }
-        const validFilters = parsed.filters
+        const validFilters = lastApplied.filters
           .map((item) => ({
             column: Number(item.column),
             operator: item.operator,
-            values: Array.isArray(item.values) ? item.values : [],
+            values: Array.isArray(item.values)
+              ? item.values.map((value) => String(value))
+              : [],
             type: item.type || (this.columnMeta.get(Number(item.column))?.type || 'text'),
           }))
           .filter((item) => this.columnMeta.has(item.column));
-        if (!validFilters.length) {
+        const logicValue = lastApplied.logic === 'or' ? 'or' : 'and';
+        this.currentPresetName = parsed.currentPreset || null;
+        if (validFilters.length) {
+          this.savedAdvancedFilters = { logic: logicValue, filters: cloneFilters(validFilters) };
+          this.advancedFilters = cloneFilters(validFilters);
+          this.advancedLogic = logicValue;
+          if (apply) {
+            this.applyFilters();
+          }
+        } else {
           this.savedAdvancedFilters = null;
-          this.updateSavedUI();
-          return;
+          this.advancedFilters = [];
+          this.advancedLogic = 'and';
         }
-        this.savedAdvancedFilters = {
-          logic: parsed.logic === 'or' ? 'or' : 'and',
-          filters: cloneFilters(validFilters),
-        };
-        this.advancedFilters = cloneFilters(validFilters);
-        this.advancedLogic = this.savedAdvancedFilters.logic;
         this.updateSavedUI();
         this.updateAdvancedFilterButtonState();
-        if (apply) {
-          this.applyFilters();
-        }
       } catch (error) {
-        // Ignore storage errors
+        window.localStorage.removeItem(this.savedFiltersKey);
+        this.savedAdvancedFilters = null;
+        this.currentPresetName = null;
+        this.updateSavedUI();
       }
     }
 
     updateSavedUI() {
-      if (!this.advancedSavedSection) {
+      if (!this.advancedPresetSelect) {
         return;
       }
-      const hasSaved = Boolean(
-        this.savedAdvancedFilters && this.savedAdvancedFilters.filters && this.savedAdvancedFilters.filters.length
-      );
-      this.advancedSavedSection.hidden = false;
-      if (this.advancedSavedText) {
-        this.advancedSavedText.textContent = hasSaved
-          ? this.messages.advanced.savedInfo
-          : this.messages.advanced.noSaved;
+      const selectedName =
+        this.currentPresetName && this.savedPresets.some((preset) => preset.name === this.currentPresetName)
+          ? this.currentPresetName
+          : '';
+      this.advancedPresetSelect.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = this.messages.advanced.savedPlaceholder;
+      this.advancedPresetSelect.appendChild(placeholder);
+      this.savedPresets.forEach((preset) => {
+        const option = document.createElement('option');
+        option.value = preset.name;
+        option.textContent = preset.name;
+        this.advancedPresetSelect.appendChild(option);
+      });
+      this.advancedPresetSelect.value = selectedName;
+      this.currentPresetName = selectedName || null;
+      if (this.advancedPresetsContainer) {
+        this.advancedPresetsContainer.hidden = this.savedPresets.length === 0;
       }
-      if (this.advancedLoadButton) {
-        this.advancedLoadButton.disabled = !hasSaved;
-      }
-      if (this.advancedClearSavedButton) {
-        this.advancedClearSavedButton.disabled = !hasSaved;
-      }
+      this.updatePresetButtonState();
     }
   }
 

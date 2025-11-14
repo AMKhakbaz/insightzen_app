@@ -26,13 +26,17 @@ from django.db.models import Sum, Count, Q, F
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from django.utils import timezone
 import random
 import re
 import psycopg2
 from psycopg2 import sql  # type: ignore
 from django.conf import settings
+
+# Regular expression used to validate table identifiers passed from the client
+_TABLE_ID_PATTERN = re.compile(r'^[A-Za-z0-9_.:-]{1,128}$')
+
 
 from core.services.database_cache import (
     DatabaseCacheError,
@@ -72,6 +76,7 @@ from .models import (
     CallSample,
     DatabaseEntry,
     DatabaseEntryEditRequest,
+    TableFilterPreset,
 )
 
 
@@ -2071,3 +2076,171 @@ def qc_edit_link(request: HttpRequest, entry_id: int) -> JsonResponse:
     )
 
     return JsonResponse({'url': edit_url})
+
+
+def _localise_message(lang: str, english: str, persian: str) -> str:
+    """Return a message in the user's preferred language."""
+
+    return persian if lang == 'fa' else english
+
+
+def _serialise_filter_preset(preset: TableFilterPreset) -> Dict[str, Any]:
+    """Convert a ``TableFilterPreset`` into a JSON-safe dictionary."""
+
+    return {
+        'name': preset.name,
+        'table_id': preset.table_id,
+        'payload': preset.payload,
+        'created_at': preset.created_at.isoformat(),
+        'updated_at': preset.updated_at.isoformat(),
+    }
+
+
+@login_required
+@require_http_methods(["GET", "POST", "DELETE"])
+def table_filter_presets(request: HttpRequest, table_id: str) -> JsonResponse:
+    """Create, list or delete saved advanced-filter presets for a table."""
+
+    lang = request.session.get('lang', 'en')
+    table_id = (table_id or '').strip()
+    if not table_id or not _TABLE_ID_PATTERN.match(table_id):
+        message = _localise_message(
+            lang,
+            'Invalid table identifier.',
+            'شناسه جدول نامعتبر است.',
+        )
+        return JsonResponse({'error': message}, status=400)
+
+    if request.method == 'GET':
+        presets = TableFilterPreset.objects.filter(user=request.user, table_id=table_id).order_by('name')
+        return JsonResponse({'presets': [_serialise_filter_preset(p) for p in presets]})
+
+    try:
+        payload = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except json.JSONDecodeError:
+        message = _localise_message(
+            lang,
+            'Invalid JSON payload.',
+            'دادهٔ ارسال شده معتبر نیست.',
+        )
+        return JsonResponse({'error': message}, status=400)
+
+    name = str(payload.get('name') or '').strip()
+    if not name:
+        message = _localise_message(
+            lang,
+            'A name is required to save filters.',
+            'برای ذخیره فیلتر لازم است نامی وارد کنید.',
+        )
+        return JsonResponse({'error': message}, status=400)
+
+    preset_payload = payload.get('payload') or {}
+    logic = 'or' if preset_payload.get('logic') == 'or' else 'and'
+    raw_filters = preset_payload.get('filters') or []
+    if not isinstance(raw_filters, list):
+        raw_filters = []
+
+    normalised_filters: List[Dict[str, Any]] = []
+    for item in raw_filters:
+        try:
+            column = int(item.get('column'))
+        except (TypeError, ValueError):
+            continue
+        operator = str(item.get('operator') or '').strip()
+        if not operator:
+            continue
+        values = item.get('values') or []
+        if not isinstance(values, list):
+            values = []
+        normalised_values = [str(value) for value in values]
+        condition_type = str(item.get('type') or 'text').strip() or 'text'
+        normalised_filters.append(
+            {
+                'column': column,
+                'operator': operator,
+                'values': normalised_values,
+                'type': condition_type,
+            }
+        )
+
+    if request.method == 'DELETE':
+        deleted, _ = TableFilterPreset.objects.filter(
+            user=request.user,
+            table_id=table_id,
+            name=name,
+        ).delete()
+        if deleted:
+            message = _localise_message(
+                lang,
+                'Filter removed.',
+                'فیلتر حذف شد.',
+            )
+            remaining = TableFilterPreset.objects.filter(user=request.user, table_id=table_id).order_by('name')
+            return JsonResponse({'presets': [_serialise_filter_preset(p) for p in remaining], 'message': message})
+        message = _localise_message(
+            lang,
+            'Filter not found.',
+            'فیلتر مورد نظر یافت نشد.',
+        )
+        return JsonResponse({'error': message}, status=404)
+
+    if not normalised_filters:
+        message = _localise_message(
+            lang,
+            'At least one condition is required to save a preset.',
+            'برای ذخیره فیلتر باید حداقل یک شرط تعیین کنید.',
+        )
+        return JsonResponse({'error': message}, status=400)
+
+    version = preset_payload.get('version')
+    try:
+        version = int(version)
+    except (TypeError, ValueError):
+        version = 1
+
+    context_label = str(preset_payload.get('context') or '').strip()
+    if context_label:
+        context_label = context_label[:150]
+
+    columns_meta = []
+    raw_columns = preset_payload.get('columns')
+    if isinstance(raw_columns, list):
+        for column_meta in raw_columns:
+            try:
+                meta_index = int(column_meta.get('index'))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            meta_name = str(column_meta.get('name') or '').strip()
+            meta_type = str(column_meta.get('type') or '').strip() or 'text'
+            columns_meta.append({'index': meta_index, 'name': meta_name, 'type': meta_type})
+
+    normalised_payload = {
+        'version': version,
+        'logic': logic,
+        'filters': normalised_filters,
+    }
+    if context_label:
+        normalised_payload['context'] = context_label
+    if columns_meta:
+        normalised_payload['columns'] = columns_meta
+
+    preset, _ = TableFilterPreset.objects.update_or_create(
+        user=request.user,
+        table_id=table_id,
+        name=name,
+        defaults={'payload': normalised_payload},
+    )
+
+    message = _localise_message(
+        lang,
+        'Filter saved successfully.',
+        'فیلتر با موفقیت ذخیره شد.',
+    )
+    updated = TableFilterPreset.objects.filter(user=request.user, table_id=table_id).order_by('name')
+    return JsonResponse(
+        {
+            'preset': _serialise_filter_preset(preset),
+            'presets': [_serialise_filter_preset(p) for p in updated],
+            'message': message,
+        }
+    )

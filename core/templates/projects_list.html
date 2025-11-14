@@ -13,7 +13,7 @@
     </p>
     <a href="{% url 'project_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}پروژه جدید{% else %}Add Project{% endif %}</a>
     <div class="table-responsive">
-        <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}هیچ پروژه‌ای با این فیلتر یافت نشد.{% else %}No projects match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+        <table id="projects-table" class="table" data-table="interactive" data-filter-context="projects_list" data-empty-text="{% if lang == 'fa' %}هیچ پروژه‌ای با این فیلتر یافت نشد.{% else %}No projects match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
                     <th scope="col">

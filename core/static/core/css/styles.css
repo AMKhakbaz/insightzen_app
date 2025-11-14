@@ -1011,26 +1011,72 @@ body.rtl {
     font-size: var(--font-size-sm);
 }
 
-.table-advanced-filter__saved {
+.table-advanced-filter__presets {
     padding: 0.75rem 0.85rem;
     border-radius: 12px;
     background: rgba(76, 181, 195, 0.08);
     border: 1px solid rgba(76, 181, 195, 0.25);
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 0.75rem;
+    align-items: flex-end;
 }
 
-.table-advanced-filter__saved-text {
-    margin: 0;
+.table-advanced-filter__presets-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    flex: 1 1 220px;
     font-size: var(--font-size-sm);
     color: var(--color-text);
 }
 
-.table-advanced-filter__saved-actions {
+.table-advanced-filter__presets-label select {
+    border-radius: 10px;
+    border: 1px solid var(--color-border-soft);
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+    padding: 0.45rem 0.65rem;
+    font-size: var(--font-size-sm);
+}
+
+.table-advanced-filter__preset-actions {
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
+}
+
+.table-advanced-filter__save {
+    margin-top: 1rem;
+    padding: 0.85rem 0.9rem;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    display: grid;
+    gap: 0.65rem;
+}
+
+.table-advanced-filter__save-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+}
+
+.table-advanced-filter__save-label input {
+    border-radius: 10px;
+    border: 1px solid var(--color-border-soft);
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+    padding: 0.5rem 0.65rem;
+    font-size: var(--font-size-sm);
+}
+
+.table-advanced-filter__save-hint {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
 }
 
 .table-advanced-filter__status {
@@ -1122,18 +1168,6 @@ body.rtl {
 .table-advanced-filter__add:focus {
     border-color: var(--color-accent);
     color: var(--color-accent-strong);
-}
-
-.table-advanced-filter__remember {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-subtle);
-}
-
-.table-advanced-filter__remember input {
-    width: auto;
 }
 
 .table-advanced-filter__footer .btn-text {

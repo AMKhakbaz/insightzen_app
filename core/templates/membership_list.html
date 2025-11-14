@@ -16,7 +16,7 @@
     </p>
     <a href="{% url 'membership_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}افزودن کاربر به پروژه{% else %}Add User to Project{% endif %}</a>
     <div class="table-responsive">
-        <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}هیچ عضوی مطابق فیلتر نیست.{% else %}No members match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+        <table id="membership-table" class="table" data-table="interactive" data-filter-context="membership_list" data-empty-text="{% if lang == 'fa' %}هیچ عضوی مطابق فیلتر نیست.{% else %}No members match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
                     <th scope="col">

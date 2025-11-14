@@ -63,20 +63,27 @@
                             <select data-advanced-logic></select>
                         </label>
                     </div>
-                    <div class="table-advanced-filter__saved" data-advanced-saved hidden>
-                        <p class="table-advanced-filter__saved-text" data-i18n="savedInfo"></p>
-                        <div class="table-advanced-filter__saved-actions">
+                    <div class="table-advanced-filter__presets" data-advanced-presets hidden>
+                        <label class="table-advanced-filter__presets-label">
+                            <span data-i18n="savedLabel"></span>
+                            <select data-advanced-preset-select></select>
+                        </label>
+                        <div class="table-advanced-filter__preset-actions">
                             <button type="button" class="btn btn-sm btn-secondary" data-advanced-load></button>
-                            <button type="button" class="btn btn-sm btn-outline" data-advanced-clear-saved></button>
+                            <button type="button" class="btn btn-sm btn-outline" data-advanced-delete></button>
                         </div>
+                    </div>
+                    <div class="table-advanced-filter__save" data-advanced-save>
+                        <label class="table-advanced-filter__save-label">
+                            <span data-i18n="saveLabel"></span>
+                            <input type="text" data-advanced-save-name maxlength="150">
+                        </label>
+                        <button type="button" class="btn btn-sm btn-primary" data-advanced-save-button></button>
+                        <p class="table-advanced-filter__save-hint" data-i18n="saveHint"></p>
                     </div>
                     <div class="table-advanced-filter__status" data-advanced-status role="status" aria-live="polite"></div>
                     <div class="table-advanced-filter__conditions" data-advanced-conditions></div>
                     <button type="button" class="btn btn-sm table-advanced-filter__add" data-advanced-add></button>
-                    <label class="table-advanced-filter__remember">
-                        <input type="checkbox" data-advanced-remember>
-                        <span data-i18n="remember"></span>
-                    </label>
                 </div>
                 <footer class="table-advanced-filter__footer">
                     <button type="button" class="btn btn-primary" data-advanced-apply></button>

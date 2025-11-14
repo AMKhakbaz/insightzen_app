@@ -8,7 +8,7 @@
     </h1>
     {% if logs %}
     <div class="table-responsive">
-        <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}هیچ لاگی با این فیلتر نیست.{% else %}No log entries match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+        <table id="activity-logs-table" class="table" data-table="interactive" data-filter-context="activity_logs" data-empty-text="{% if lang == 'fa' %}هیچ لاگی با این فیلتر نیست.{% else %}No log entries match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
                     <th scope="col">

@@ -13,7 +13,7 @@
         </a>
     </div>
     <div class="table-responsive">
-        <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}هیچ پایگاه داده‌ای مطابق فیلتر نیست.{% else %}No databases match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+        <table id="database-table" class="table" data-table="interactive" data-filter-context="database_list" data-empty-text="{% if lang == 'fa' %}هیچ پایگاه داده‌ای مطابق فیلتر نیست.{% else %}No databases match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
                     <th scope="col">

@@ -48,7 +48,7 @@
 <div class="card" style="max-width:1100px;margin:2rem auto;">
     <h2 style="margin-bottom:1rem;">{% if lang == 'fa' %}جدول سهمیه برای{% else %}Quota Table for{% endif %} {{ selected_project.name }}</h2>
     <div class="table-responsive">
-        <table class="table" data-table="interactive" data-empty-text="{% if lang == 'fa' %}سهمیه‌ای مطابق فیلتر نیست.{% else %}No quota rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+        <table id="quota-table" class="table" data-table="interactive" data-filter-context="quota_management" data-empty-text="{% if lang == 'fa' %}سهمیه‌ای مطابق فیلتر نیست.{% else %}No quota rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
                     <th scope="col">
