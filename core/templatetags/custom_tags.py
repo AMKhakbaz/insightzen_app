@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any, Dict, List
+
 from django import template
+from django.urls import NoReverseMatch, reverse
 
 register = template.Library()
 
@@ -107,3 +110,282 @@ def panel_names(membership, panel_labels) -> str:
         return ', '.join(labels)
     except Exception:
         return ''
+
+
+def _resolve_url(name: str | None) -> str:
+    """Safely resolve a URL name to its absolute path."""
+
+    if not name:
+        return '#'
+    try:
+        return reverse(name)
+    except NoReverseMatch:
+        return '#'
+
+
+@register.inclusion_tag('partials/sidebar_menu.html', takes_context=True)
+def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Render the sidebar navigation using a consistent menu schema."""
+
+    user = context.get('user')
+    panels_enabled: Dict[str, bool] = context.get('panels_enabled', {}) or {}
+    lang = context.get('lang', 'en')
+    request = context.get('request')
+    current_path = getattr(request, 'path', '')
+
+    is_authenticated = bool(getattr(user, 'is_authenticated', False))
+    profile = getattr(user, 'profile', None)
+    has_org = bool(getattr(profile, 'organization', None)) if is_authenticated else False
+    is_superuser = bool(getattr(user, 'is_superuser', False))
+
+    def panel_active(key: str) -> bool:
+        return bool(panels_enabled.get(key, False))
+
+    def url_is_active(url: str | None) -> bool:
+        if not url or url == '#':
+            return False
+        if not current_path:
+            return False
+        if url == '/':
+            return current_path == '/'
+        normalized_target = url.rstrip('/')
+        normalized_current = current_path.rstrip('/')
+        return normalized_current.startswith(normalized_target)
+
+    sections: List[Dict[str, Any]] = [
+        {
+            'key': 'home',
+            'collapsible': False,
+            'visible': True,
+            'items': [
+                {
+                    'icon': 'home',
+                    'label': {'en': 'Home', 'fa': 'خانه'},
+                    'url': _resolve_url('home'),
+                    'disabled': False,
+                    'visible': True,
+                },
+            ],
+        },
+        {
+            'key': 'management',
+            'title': {'en': 'Management', 'fa': 'مدیریت'},
+            'icon': 'folder',
+            'collapsible': True,
+            'default_open': True,
+            'visible': True,
+            'items': [
+                {
+                    'icon': 'database',
+                    'label': {'en': 'Database Management', 'fa': 'مدیریت پایگاه داده'},
+                    'url': _resolve_url('database_list'),
+                    'disabled': not panel_active('database_management'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'briefcase',
+                    'label': {'en': 'Project Management', 'fa': 'مدیریت پروژه'},
+                    'url': _resolve_url('project_list'),
+                    'disabled': not has_org,
+                    'visible': True,
+                },
+                {
+                    'icon': 'sliders',
+                    'label': {'en': 'Quota Management', 'fa': 'مدیریت سهمیه'},
+                    'url': _resolve_url('quota_management'),
+                    'disabled': not panel_active('quota_management'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'users',
+                    'label': {'en': 'User Management', 'fa': 'مدیریت کاربران'},
+                    'url': _resolve_url('membership_list'),
+                    'disabled': not has_org,
+                    'visible': True,
+                },
+            ],
+        },
+        {
+            'key': 'collection',
+            'title': {'en': 'Collection', 'fa': 'گردآوری'},
+            'icon': 'package',
+            'collapsible': True,
+            'default_open': False,
+            'visible': True,
+            'items': [
+                {
+                    'icon': 'archive',
+                    'label': {'en': 'Collection Management', 'fa': 'مدیریت گردآوری'},
+                    'url': '#',
+                    'disabled': not panel_active('collection_management'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'bar-chart-2',
+                    'label': {'en': 'Collection Performance', 'fa': 'کارایی گردآوری'},
+                    'url': _resolve_url('collection_performance'),
+                    'disabled': not panel_active('collection_performance'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'phone-call',
+                    'label': {'en': 'Telephone Interviewer', 'fa': 'مصاحبه تلفنی'},
+                    'url': _resolve_url('telephone_interviewer'),
+                    'disabled': not panel_active('telephone_interviewer'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'map-pin',
+                    'label': {'en': 'Fieldwork Interviewer', 'fa': 'مصاحبه میدانی'},
+                    'url': '#',
+                    'disabled': not panel_active('fieldwork_interviewer'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'users',
+                    'label': {'en': 'Focus Group Panel', 'fa': 'گروه کانونی'},
+                    'url': '#',
+                    'disabled': not panel_active('focus_group_panel'),
+                    'visible': True,
+                },
+            ],
+        },
+        {
+            'key': 'quality-control',
+            'title': {'en': 'Quality Control', 'fa': 'کنترل کیفیت'},
+            'icon': 'check-circle',
+            'collapsible': True,
+            'default_open': False,
+            'visible': True,
+            'items': [
+                {
+                    'icon': 'settings',
+                    'label': {'en': 'QC Management', 'fa': 'مدیریت QC'},
+                    'url': '#',
+                    'disabled': not panel_active('qc_management'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'activity',
+                    'label': {'en': 'QC Performance', 'fa': 'کارایی QC'},
+                    'url': '#',
+                    'disabled': not panel_active('qc_performance'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'edit-3',
+                    'label': {'en': 'QC Edit', 'fa': 'ویرایش QC'},
+                    'url': _resolve_url('qc_edit'),
+                    'disabled': not (panel_active('qc_management') or panel_active('qc_performance')),
+                    'visible': True,
+                },
+                {
+                    'icon': 'volume-2',
+                    'label': {'en': 'Voice Review', 'fa': 'بازبینی صدا'},
+                    'url': '#',
+                    'disabled': not panel_active('voice_review'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'rotate-ccw',
+                    'label': {'en': 'Callback QC', 'fa': 'QC تماس برگشتی'},
+                    'url': '#',
+                    'disabled': not panel_active('callback_qc'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'code',
+                    'label': {'en': 'Coding', 'fa': 'کدگذاری'},
+                    'url': _resolve_url('coding'),
+                    'disabled': not panel_active('coding'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'thermometer',
+                    'label': {'en': 'Statistical Health Check', 'fa': 'بررسی سلامت آماری'},
+                    'url': '#',
+                    'disabled': not panel_active('statistical_health_check'),
+                    'visible': True,
+                },
+            ],
+        },
+        {
+            'key': 'mranalysis',
+            'title': {'en': 'MRAnalysis', 'fa': 'تحلیل تحقیقات بازار'},
+            'icon': 'pie-chart',
+            'collapsible': True,
+            'default_open': False,
+            'visible': True,
+            'items': [
+                {
+                    'icon': 'grid',
+                    'label': {'en': 'Tabulation', 'fa': 'جدول‌بندی'},
+                    'url': '#',
+                    'disabled': not panel_active('tabulation'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'trending-up',
+                    'label': {'en': 'Statistics', 'fa': 'آمار'},
+                    'url': '#',
+                    'disabled': not panel_active('statistics'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'filter',
+                    'label': {'en': 'Funnel Analysis', 'fa': 'تحلیل قیف'},
+                    'url': '#',
+                    'disabled': not panel_active('funnel_analysis'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'layers',
+                    'label': {'en': 'Conjoint Analysis', 'fa': 'تحلیل همگرایی'},
+                    'url': _resolve_url('conjoint'),
+                    'disabled': not panel_active('conjoint_analysis'),
+                    'visible': True,
+                },
+                {
+                    'icon': 'divide-square',
+                    'label': {'en': 'Segmentation Analysis', 'fa': 'تحلیل تقسیم‌بندی'},
+                    'url': '#',
+                    'disabled': not panel_active('segmentation_analysis'),
+                    'visible': True,
+                },
+            ],
+        },
+        {
+            'key': 'logs',
+            'title': {'en': 'Logs', 'fa': 'گزارش‌ها'},
+            'icon': 'file-text',
+            'collapsible': True,
+            'default_open': False,
+            'visible': is_superuser,
+            'items': [
+                {
+                    'icon': 'list',
+                    'label': {'en': 'Activity Logs', 'fa': 'لاگ فعالیت‌ها'},
+                    'url': _resolve_url('activity_logs'),
+                    'disabled': not has_org,
+                    'visible': True,
+                },
+            ],
+        },
+    ]
+
+    for section in sections:
+        items = section.get('items', [])
+        has_active = False
+        for item in items:
+            is_active = url_is_active(item.get('url'))
+            item['is_active'] = is_active
+            if is_active:
+                has_active = True
+        section['has_active'] = has_active
+        default_open = section.get('default_open', False)
+        section['is_open'] = has_active or default_open
+
+    return {
+        'sections': sections,
+        'lang': lang,
+    }

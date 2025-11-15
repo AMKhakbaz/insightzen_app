@@ -4,6 +4,9 @@
 {% block content %}
 <div class="card" style="max-width:1100px;margin:2rem auto;">
     <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}</h1>
+    <p class="card-intro">
+        {% if lang == 'fa' %}به‌محض اتمام ددلاین، فقط مالک پروژه می‌تواند سهمیه‌ها را مشاهده یا ویرایش کند.{% else %}Once the deadline passes, only the project owner can review or edit quotas.{% endif %}
+    </p>
     <form method="post" onsubmit="return prepareQuotaData();">
         {% csrf_token %}
         <div style="margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
@@ -15,28 +18,59 @@
                 {% endfor %}
             </select>
         </div>
-        <div style="margin-bottom:1rem;">
+        <div class="quota-toggle-row">
+            <label class="quota-toggle">
+                <input type="checkbox" id="enable-city" {% if dimension_state.city %}checked{% endif %}>
+                <span>{% if lang == 'fa' %}توزیع بر اساس شهر{% else %}Enable city distribution{% endif %}</span>
+            </label>
+            <label class="quota-toggle">
+                <input type="checkbox" id="enable-age" {% if dimension_state.age %}checked{% endif %}>
+                <span>{% if lang == 'fa' %}توزیع بر اساس سن{% else %}Enable age ranges{% endif %}</span>
+            </label>
+            <label class="quota-toggle">
+                <input type="checkbox" id="enable-gender" {% if dimension_state.gender %}checked{% endif %}>
+                <span>{% if lang == 'fa' %}سهمیه جنسیت{% else %}Enable gender quotas{% endif %}</span>
+            </label>
+        </div>
+        <div class="quota-dimension-panel" data-dimension-panel="city" {% if not dimension_state.city %}hidden{% endif %}>
             <label>{% if lang == 'fa' %}شهرها:{% else %}Cities:{% endif %}</label><br>
             <input type="text" id="city-search" placeholder="{% if lang == 'fa' %}جستجوی شهر{% else %}Search city{% endif %}" class="form-control" style="max-width:300px;margin-bottom:0.5rem;" oninput="filterCities()">
-            <div id="city-options" style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);padding:0.5rem;border-radius:6px;">
+            <div id="city-options" class="city-option-grid">
                 {% for city in cities %}
-                    <label style="display:block;margin-bottom:0.25rem;cursor:pointer;">
+                    <label class="city-option">
                         <input type="checkbox" name="city" value="{{ city }}" onchange="updateCityQuotas()">
-                        {{ city }}
+                        <span>{{ city }}</span>
                     </label>
                 {% endfor %}
             </div>
+            <div id="city-quotas-container" style="margin-top:0.5rem;"></div>
         </div>
-        <div id="city-quotas-container" style="margin-bottom:1rem;">
-            <!-- Dynamic city quota inputs will appear here -->
-        </div>
-        <div style="margin-bottom:1rem;">
+        <div class="quota-dimension-panel" data-dimension-panel="age" {% if not dimension_state.age %}hidden{% endif %}>
             <label>{% if lang == 'fa' %}رنج‌های سنی:{% else %}Age Ranges:{% endif %}</label>
             <div id="age-ranges-container"></div>
             <button type="button" class="btn btn-sm" onclick="addAgeRange()" style="margin-top:0.5rem;">{% if lang == 'fa' %}+ رنج سنی{% else %}+ Add Age Range{% endif %}</button>
         </div>
+        <div class="quota-dimension-panel" data-dimension-panel="gender" {% if not dimension_state.gender %}hidden{% endif %}>
+            <label>{% if lang == 'fa' %}جنسیت:{% else %}Gender:{% endif %}</label>
+            <p class="form-hint">{% if lang == 'fa' %}برای هر جنسیت سهم درصدی تعریف کنید تا جمع آن ۱۰۰٪ شود.{% else %}Assign percentage shares per gender so the total equals 100%.{% endif %}</p>
+            <div id="gender-options" class="gender-option-list">
+                {% for option in gender_options %}
+                    <div class="gender-option-row">
+                        <label>
+                            <input type="checkbox" value="{{ option.value }}" data-gender-checkbox>
+                            <span>{% if lang == 'fa' %}{{ option.label_fa }}{% else %}{{ option.label_en }}{% endif %}</span>
+                        </label>
+                        <input type="number" min="0" max="100" step="0.1" placeholder="%" data-gender-quota>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+        <input type="hidden" name="enable_city" id="city-enabled-field">
+        <input type="hidden" name="enable_age" id="age-enabled-field">
+        <input type="hidden" name="enable_gender" id="gender-enabled-field">
         <input type="hidden" name="city_data" id="city-data-field">
         <input type="hidden" name="age_data" id="age-data-field">
+        <input type="hidden" name="gender_data" id="gender-data-field">
         <button type="submit" class="btn">{% if lang == 'fa' %}ثبت سهمیه‌ها{% else %}Save Quotas{% endif %}</button>
     </form>
 </div>
@@ -44,21 +78,49 @@
 {% if selected_project and table_rows %}
 <div class="card" style="max-width:1100px;margin:2rem auto;">
     <h2 style="margin-bottom:1rem;">{% if lang == 'fa' %}جدول سهمیه برای{% else %}Quota Table for{% endif %} {{ selected_project.name }}</h2>
-    <div style="overflow-x:auto;">
-        <table class="table">
+    <div class="table-responsive">
+        <table id="quota-table" class="table" data-table="interactive" data-filter-context="quota_management" data-empty-text="{% if lang == 'fa' %}سهمیه‌ای مطابق فیلتر نیست.{% else %}No quota rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}" {% if selected_project %}data-export-endpoint="{% url 'table_export' %}" data-export-filename="quota-{{ selected_project.pk }}" data-export-param-project="{{ selected_project.pk }}"{% endif %}>
             <thead>
                 <tr>
-                    <th>{% if lang == 'fa' %}رنج سنی / شهر{% else %}Age Range / City{% endif %}</th>
-                    {% for city in city_headers %}<th>{{ city }}</th>{% endfor %}
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}شهر{% else %}City{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="1" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}رنج سنی{% else %}Age Range{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="2" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}جنسیت{% else %}Gender{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="3" data-sort-type="number">
+                            <span>{% if lang == 'fa' %}پیشرفت{% else %}Progress{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                </tr>
+                <tr class="table-filter-row">
+                    <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}فیلتر شهر{% else %}Filter city{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}فیلتر سن{% else %}Filter age{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="2" placeholder="{% if lang == 'fa' %}فیلتر جنسیت{% else %}Filter gender{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="3" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا >۵{% else %}Number or >5{% endif %}" autocomplete="off"></th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in table_rows %}
                     <tr>
-                        <th>{{ row.age_label }}</th>
-                        {% for count in row.counts %}
-                            <td{% if count.over %} class="table-danger"{% endif %}>{{ count.assigned }} / {{ count.target }}</td>
-                        {% endfor %}
+                        <td>{{ row.city }}</td>
+                        <td>{{ row.age_label }}</td>
+                        <td>{{ row.gender_label }}</td>
+                        <td{% if row.over %} class="table-danger"{% endif %} data-sort-value="{{ row.assigned }}">{{ row.assigned }} / {{ row.target }}</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -94,12 +156,17 @@ function filterCities() {
 // Update city quota inputs when selecting/deselecting cities
 function updateCityQuotas() {
     const container = document.getElementById('city-quotas-container');
+    if (!container) return;
     container.innerHTML = '';
+    const cityToggle = document.getElementById('enable-city');
+    if (cityToggle && !cityToggle.checked) {
+        return;
+    }
     const checkboxes = document.querySelectorAll('#city-options input[type=checkbox]:checked');
     checkboxes.forEach(cb => {
         const city = cb.value;
         const row = document.createElement('div');
-        row.style.marginBottom = '0.25rem';
+        row.className = 'city-quota-row';
         row.innerHTML = `<label>${city} (%): <input type="number" min="0" max="100" step="0.1" data-city="${city}" class="city-quota" style="width:80px;"></label>`;
         container.appendChild(row);
     });
@@ -122,78 +189,162 @@ function addAgeRange() {
 }
 // Prepare JSON data before submit
 function prepareQuotaData() {
+    const cityToggle = document.getElementById('enable-city');
+    const ageToggle = document.getElementById('enable-age');
+    const genderToggle = document.getElementById('enable-gender');
+    const cityEnabled = cityToggle ? cityToggle.checked : false;
+    const ageEnabled = ageToggle ? ageToggle.checked : false;
+    const genderEnabled = genderToggle ? genderToggle.checked : false;
+    document.getElementById('city-enabled-field').value = cityEnabled ? 'true' : 'false';
+    document.getElementById('age-enabled-field').value = ageEnabled ? 'true' : 'false';
+    document.getElementById('gender-enabled-field').value = genderEnabled ? 'true' : 'false';
+
     const cityInputs = document.querySelectorAll('.city-quota');
     const cityData = [];
     let cityTotal = 0;
-    cityInputs.forEach(inp => {
-        const city = inp.getAttribute('data-city');
-        const val = parseFloat(inp.value || '0');
-        cityTotal += val;
-        cityData.push({city: city, quota: val});
-    });
+    if (cityEnabled) {
+        cityInputs.forEach(inp => {
+            const city = inp.getAttribute('data-city');
+            const val = parseFloat(inp.value || '0');
+            cityTotal += val;
+            cityData.push({city: city, quota: val});
+        });
+        if (!cityData.length) {
+            alert('{% if lang == 'fa' %}برای شهرها درصد تعیین کنید.{% else %}Please assign percentages for the selected cities.{% endif %}');
+            return false;
+        }
+        if (Math.abs(cityTotal - 100) > 0.01) {
+            alert('{% if lang == 'fa' %}جمع درصد شهرها باید ۱۰۰ باشد.{% else %}City quotas must sum to 100%.{% endif %}');
+            return false;
+        }
+    }
+
     const ageRows = document.querySelectorAll('.age-range-row');
     const ageData = [];
     let ageTotal = 0;
     let valid = true;
     const ranges = [];
-    ageRows.forEach(row => {
-        const start = parseInt(row.querySelector('.age-start').value || '0');
-        const end = parseInt(row.querySelector('.age-end').value || '0');
-        const quota = parseFloat(row.querySelector('.age-quota').value || '0');
-        if (start >= end) {
-            alert('Age range start must be less than end.');
-            valid = false;
+    if (ageEnabled) {
+        ageRows.forEach(row => {
+            const start = parseInt(row.querySelector('.age-start').value || '0');
+            const end = parseInt(row.querySelector('.age-end').value || '0');
+            const quota = parseFloat(row.querySelector('.age-quota').value || '0');
+            if (start >= end) {
+                alert('{% if lang == 'fa' %}سن شروع باید کمتر از پایان باشد.{% else %}Age range start must be less than the end value.{% endif %}');
+                valid = false;
+            }
+            ranges.push({start, end});
+            ageTotal += quota;
+            ageData.push({start: start, end: end, quota: quota});
+        });
+        ranges.sort((a,b) => a.start - b.start);
+        for (let i=1; i<ranges.length; i++) {
+            if (ranges[i].start < ranges[i-1].end) {
+                alert('{% if lang == 'fa' %}رنج‌های سنی نباید هم‌پوشانی داشته باشند.{% else %}Age ranges must not overlap.{% endif %}');
+                valid = false;
+                break;
+            }
         }
-        ranges.push({start, end});
-        ageTotal += quota;
-        ageData.push({start: start, end: end, quota: quota});
-    });
-    ranges.sort((a,b) => a.start - b.start);
-    for (let i=1; i<ranges.length; i++) {
-        if (ranges[i].start < ranges[i-1].end) {
-            alert('Age ranges must not overlap.');
-            valid = false;
-            break;
+        if (Math.abs(ageTotal - 100) > 0.01) {
+            alert('{% if lang == 'fa' %}جمع درصد سن باید ۱۰۰ باشد.{% else %}Age quotas must sum to 100%.{% endif %}');
+            return false;
         }
     }
-    if (Math.abs(cityTotal - 100) > 0.01 || Math.abs(ageTotal - 100) > 0.01) {
-        alert('City quotas and age quotas must each sum to 100%.');
-        return false;
+
+    const genderRows = document.querySelectorAll('#gender-options .gender-option-row');
+    const genderData = [];
+    let genderTotal = 0;
+    if (genderEnabled) {
+        genderRows.forEach(row => {
+            const checkbox = row.querySelector('[data-gender-checkbox]');
+            const quotaInput = row.querySelector('[data-gender-quota]');
+            if (checkbox && checkbox.checked) {
+                const value = checkbox.value;
+                const quota = parseFloat(quotaInput.value || '0');
+                genderTotal += quota;
+                genderData.push({value: value, quota: quota});
+            }
+        });
+        if (!genderData.length) {
+            alert('{% if lang == 'fa' %}حداقل یک جنسیت را انتخاب کنید.{% else %}Select at least one gender to continue.{% endif %}');
+            return false;
+        }
+        if (Math.abs(genderTotal - 100) > 0.01) {
+            alert('{% if lang == 'fa' %}جمع درصد جنسیت باید ۱۰۰ باشد.{% else %}Gender quotas must sum to 100%.{% endif %}');
+            return false;
+        }
     }
+
     if (!valid) return false;
-    document.getElementById('city-data-field').value = JSON.stringify(cityData);
-    document.getElementById('age-data-field').value = JSON.stringify(ageData);
+    document.getElementById('city-data-field').value = JSON.stringify(cityEnabled ? cityData : []);
+    document.getElementById('age-data-field').value = JSON.stringify(ageEnabled ? ageData : []);
+    document.getElementById('gender-data-field').value = JSON.stringify(genderEnabled ? genderData : []);
     return true;
 }
 // Prefill existing quota values into the form
 {% if prefill_json %}
 const PREFILL = {{ prefill_json|safe }};
 document.addEventListener('DOMContentLoaded', function() {
-    // Select cities that have quotas
+    ['city','age','gender'].forEach(function(key) {
+        const toggle = document.getElementById(`enable-${key}`);
+        const panel = document.querySelector(`[data-dimension-panel="${key}"]`);
+        if (toggle && panel) {
+            if (typeof PREFILL[`${key}_enabled`] !== 'undefined') {
+                toggle.checked = Boolean(PREFILL[`${key}_enabled`]);
+            }
+            panel.hidden = !toggle.checked;
+            toggle.addEventListener('change', () => {
+                panel.hidden = !toggle.checked;
+                if (key === 'city') {
+                    updateCityQuotas();
+                }
+            });
+        }
+    });
+
+    const cityMap = PREFILL.cities || {};
     document.querySelectorAll('#city-options input[type=checkbox]').forEach(cb => {
-        if (PREFILL.cities.hasOwnProperty(cb.value)) {
+        if (cityMap.hasOwnProperty(cb.value)) {
             cb.checked = true;
         }
     });
     updateCityQuotas();
-    // Fill in city percentages
     document.querySelectorAll('.city-quota').forEach(inp => {
         const city = inp.getAttribute('data-city');
-        if (PREFILL.cities.hasOwnProperty(city)) {
-            inp.value = PREFILL.cities[city];
+        if (cityMap.hasOwnProperty(city)) {
+            inp.value = cityMap[city];
         }
     });
-    // Fill in age ranges
+
     const container = document.getElementById('age-ranges-container');
-    container.innerHTML = '';
-    PREFILL.ages.forEach(function(r) {
-        addAgeRange();
-        const rows = container.querySelectorAll('.age-range-row');
-        const row = rows[rows.length - 1];
-        row.querySelector('.age-start').value = r.start;
-        row.querySelector('.age-end').value = r.end;
-        row.querySelector('.age-quota').value = r.quota;
-    });
+    if (container) {
+        container.innerHTML = '';
+        const agePrefill = PREFILL.ages || [];
+        if (agePrefill.length) {
+            agePrefill.forEach(function(r) {
+                addAgeRange();
+                const rows = container.querySelectorAll('.age-range-row');
+                const row = rows[rows.length - 1];
+                row.querySelector('.age-start').value = r.start;
+                row.querySelector('.age-end').value = r.end;
+                row.querySelector('.age-quota').value = r.quota;
+            });
+        } else if (PREFILL.age_enabled) {
+            addAgeRange();
+        }
+    }
+
+    const genderPrefill = PREFILL.genders || [];
+    if (genderPrefill.length) {
+        genderPrefill.forEach(function(entry) {
+            const checkbox = document.querySelector(`[data-gender-checkbox][value="${entry.value}"]`);
+            const quotaInput = checkbox ? checkbox.closest('.gender-option-row').querySelector('[data-gender-quota]') : null;
+            if (checkbox && quotaInput) {
+                checkbox.checked = true;
+                quotaInput.value = entry.quota;
+            }
+        });
+    }
 });
 {% endif %}
 </script>

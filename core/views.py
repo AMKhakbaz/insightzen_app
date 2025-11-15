@@ -13,18 +13,25 @@ separately.
 from __future__ import annotations
 
 import json
-from datetime import datetime
-from typing import Any, Dict, List, Tuple, Optional
+import csv
+from datetime import datetime, timedelta
+from functools import cmp_to_key
+from io import BytesIO, StringIO
+from collections import defaultdict
+from math import ceil
+from typing import Any, Dict, Iterable, List, Tuple, Optional
+from types import SimpleNamespace
 
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.db.models import Sum, Count, Q, F
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from django.utils import timezone
 import random
 import re
@@ -32,18 +39,31 @@ import psycopg2
 from psycopg2 import sql  # type: ignore
 from django.conf import settings
 
-# Import ETL helpers.  These are used to perform an immediate data sync
-# after a new database entry is created or updated.  The module is
-# optional; if it cannot be imported (e.g. missing), the sync step
-# will simply be skipped.  See ``sync_database_entries`` management
-# command for scheduled synchronisation.
-import os  # needed for setting PG_* environment variables
-try:
-    from surveyzen_etl_generic import run_once, FormSpec, sanitize_identifier  # type: ignore
-except Exception:
-    run_once = None  # type: ignore
-    FormSpec = None  # type: ignore
-    sanitize_identifier = None  # type: ignore
+# Regular expression used to validate table identifiers passed from the client
+_TABLE_ID_PATTERN = re.compile(r'^[A-Za-z0-9_.:-]{1,128}$')
+
+
+from core.services.database_cache import (
+    DatabaseCacheError,
+    EnketoLinkError,
+    delete_entry_cache,
+    infer_columns,
+    load_entry_snapshot,
+    refresh_entry_cache,
+    request_enketo_edit_url,
+)
+from core.services.persian_dates import calculate_age_from_birth_info
+from core.services.notifications import (
+    ensure_project_deadline_notifications,
+    localised_message,
+    mark_notifications_read,
+    notify_custom_message,
+    notify_event_invite,
+    notify_event_reminder,
+    notify_event_update,
+    notify_membership_added,
+    notify_project_started,
+)
 try:
     # Optional import for Excel export; if the library is missing the export view
     # will inform the user appropriately.
@@ -51,6 +71,24 @@ try:
     from openpyxl.chart import BarChart, Reference  # type: ignore
 except Exception:
     openpyxl = None  # type: ignore
+
+from core.services.sample_uploads import (
+    SAMPLE_REQUIRED_HEADERS,
+    SampleUploadError,
+    ingest_project_sample_upload,
+)
+from core.services.call_results import (
+    CALL_RESULT_REQUIRED_HEADERS,
+    CallResultUploadError,
+    clear_project_call_results,
+    ingest_project_call_result_upload,
+    resolve_call_result_definitions,
+)
+from core.services.gender_utils import (
+    normalize_gender_value,
+    gender_value_from_boolean,
+    boolean_from_gender_value,
+)
 
 from .forms import (
     LoginForm,
@@ -70,8 +108,56 @@ from .models import (
     Quota,
     ActivityLog,
     CallSample,
+    UploadedSampleEntry,
     DatabaseEntry,
+    DatabaseEntryEditRequest,
+    TableFilterPreset,
+    Notification,
+    CalendarEvent,
 )
+
+
+MEMBERSHIP_PANEL_FIELDS: List[str] = [
+    'database_management',
+    'quota_management',
+    'collection_management',
+    'collection_performance',
+    'telephone_interviewer',
+    'fieldwork_interviewer',
+    'focus_group_panel',
+    'qc_management',
+    'qc_performance',
+    'voice_review',
+    'callback_qc',
+    'coding',
+    'statistical_health_check',
+    'tabulation',
+    'statistics',
+    'funnel_analysis',
+    'conjoint_analysis',
+    'segmentation_analysis',
+]
+
+MEMBERSHIP_PANEL_LABELS: Dict[str, str] = {
+    'database_management': 'Database Management',
+    'quota_management': 'Quota Management',
+    'collection_management': 'Collection Management',
+    'collection_performance': 'Collection Performance',
+    'telephone_interviewer': 'Telephone Interviewer',
+    'fieldwork_interviewer': 'Fieldwork Interviewer',
+    'focus_group_panel': 'Focus Group Panel',
+    'qc_management': 'QC Management',
+    'qc_performance': 'QC Performance',
+    'voice_review': 'Voice Review',
+    'callback_qc': 'Callback QC',
+    'coding': 'Coding',
+    'statistical_health_check': 'Statistical Health Check',
+    'tabulation': 'Tabulation',
+    'statistics': 'Statistics',
+    'funnel_analysis': 'Funnel Analysis',
+    'conjoint_analysis': 'Conjoint Analysis',
+    'segmentation_analysis': 'Segmentation Analysis',
+}
 
 
 def register(request: HttpRequest) -> HttpResponse:
@@ -176,14 +262,57 @@ def _user_is_organisation(user: User) -> bool:
     return bool(profile and profile.organization)
 
 
-def _user_has_panel(user: User, panel: str) -> bool:
-    """Check whether a non‑organisation user has access to a panel.
+def _localise_text(lang: str, english: str, persian: str) -> str:
+    """Return the appropriate string for the provided language code."""
 
-    Organisation users automatically have access to all panels.
-    """
-    if _user_is_organisation(user):
+    return persian if lang == 'fa' else english
+
+
+def _project_deadline_locked_for_user(project: Project, user: User) -> bool:
+    """Return True when the project's deadline has passed for this user."""
+
+    today = timezone.now().date()
+    if today <= project.deadline:
+        return False
+    ensure_project_deadline_notifications(project)
+    return not Membership.objects.filter(project=project, user=user, is_owner=True).exists()
+
+
+def _user_has_panel(user: User, panel: str) -> bool:
+    """Check whether the user has access to a panel respecting deadlines."""
+
+    memberships = Membership.objects.filter(user=user)
+    if not memberships.exists() and _user_is_organisation(user):
         return True
-    return any(getattr(m, panel) for m in user.memberships.all())
+    panel_filter = {panel: True}
+    return memberships.filter(**panel_filter).exists()
+
+
+def _ensure_project_deadline_access(request: HttpRequest, project: Project) -> bool:
+    """Ensure the current user may access the project after its deadline."""
+
+    if not _project_deadline_locked_for_user(project, request.user):
+        return True
+    messages.error(
+        request,
+        f'Access denied: "{project.name}" is locked because the deadline has passed. Only the owner may use this panel.',
+    )
+    return False
+
+
+def _get_locked_projects(user: User, panel: str | None = None) -> List[Project]:
+    """Return projects that are locked for the user because the deadline passed."""
+
+    today = timezone.now().date()
+    memberships = Membership.objects.filter(
+        user=user,
+        project__deadline__lt=today,
+        is_owner=False,
+    )
+    if panel:
+        memberships = memberships.filter(**{panel: True})
+    projects = {m.project for m in memberships.select_related('project')}
+    return list(projects)
 
 
 # Helper function to log user actions
@@ -223,6 +352,861 @@ def _sanitize_identifier(name: str) -> str:
     return cleaned[:63]
 
 
+def _normalise_record_value(value: Any) -> str:
+    """Render record values as strings for filtering and display."""
+
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    if value is None:
+        return ''
+    return str(value)
+
+
+def _coerce_numeric(value: str) -> Optional[float]:
+    """Attempt to coerce a string value to a float, handling localised digits."""
+
+    normalised = value.strip()
+    if not normalised:
+        return None
+    translate_table = str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')
+    normalised = normalised.translate(translate_table)
+    normalised = normalised.replace('٬', '').replace(',', '').replace('٫', '.').replace('%', '')
+    try:
+        return float(normalised)
+    except ValueError:
+        return None
+
+
+def _matches_filter_value(cell_text: str, filter_text: str) -> bool:
+    """Evaluate whether a table cell matches the provided filter string."""
+
+    if not filter_text:
+        return True
+    candidate = filter_text.strip()
+    if not candidate:
+        return True
+    range_match = re.match(r'^\s*(-?\d+(?:[.,]\d+)?)\s*[-–]\s*(-?\d+(?:[.,]\d+)?)\s*$', candidate)
+    cell_number = _coerce_numeric(cell_text)
+    if range_match and cell_number is not None:
+        min_val = _coerce_numeric(range_match.group(1))
+        max_val = _coerce_numeric(range_match.group(2))
+        if min_val is None or max_val is None:
+            return False
+        low, high = sorted((min_val, max_val))
+        return low <= cell_number <= high
+    comparator_match = re.match(r'^\s*(<=|>=|<|>|=)\s*(-?\d+(?:[.,]\d+)?)\s*$', candidate)
+    if comparator_match and cell_number is not None:
+        comparator = comparator_match.group(1)
+        compare_value = _coerce_numeric(comparator_match.group(2))
+        if compare_value is None:
+            return False
+        if comparator == '<':
+            return cell_number < compare_value
+        if comparator == '<=':
+            return cell_number <= compare_value
+        if comparator == '>':
+            return cell_number > compare_value
+        if comparator == '>=':
+            return cell_number >= compare_value
+        return cell_number == compare_value
+    direct_number = _coerce_numeric(candidate)
+    if direct_number is not None and cell_number is not None:
+        return cell_number == direct_number
+    return candidate.lower() in cell_text.lower()
+
+
+def _extract_submission_id(record: Dict[str, Any]) -> str:
+    """Return the best identifier for a record."""
+
+    for key in ('_id', '_uuid', 'uuid'):
+        value = record.get(key)
+        if value is not None:
+            return str(value)
+    return ''
+
+
+def _detect_sort_type(records: Iterable[Dict[str, Any]], column: str) -> str:
+    """Guess the sort type for a given column."""
+
+    for record in records:
+        value = record.get(column)
+        if isinstance(value, (int, float)):
+            return 'numeric'
+        if isinstance(value, str) and _coerce_numeric(value) is not None:
+            return 'numeric'
+    return 'text'
+
+
+################################################################################
+# Table export helpers
+################################################################################
+
+def _normalise_table_value(value: Any) -> str:
+    return _normalise_record_value(value)
+
+
+def _evaluate_text_condition(cell_text: str, operator: str, values: List[str]) -> bool:
+    candidate = cell_text.lower()
+    first = (values[0] if values else '') or ''
+    query = first.lower()
+    if operator == 'eq':
+        return candidate == query
+    if operator == 'neq':
+        return candidate != query
+    if operator == 'notContains':
+        return query not in candidate
+    if operator == 'startsWith':
+        return candidate.startswith(query)
+    if operator == 'endsWith':
+        return candidate.endswith(query)
+    if operator == 'empty':
+        return candidate == ''
+    if operator == 'notEmpty':
+        return candidate != ''
+    return query in candidate
+
+
+def _evaluate_number_condition(cell_text: str, operator: str, values: List[str]) -> bool:
+    number = _coerce_numeric(cell_text)
+    if operator == 'empty':
+        return number is None
+    if operator == 'notEmpty':
+        return number is not None
+    first_value = _coerce_numeric(values[0]) if values else None
+    second_value = _coerce_numeric(values[1]) if len(values) > 1 else None
+    if operator == 'between' and first_value is not None and second_value is not None:
+        if number is None:
+            return False
+        low, high = sorted((first_value, second_value))
+        return low <= number <= high
+    if number is None or first_value is None:
+        return False
+    if operator == 'gt':
+        return number > first_value
+    if operator == 'gte':
+        return number >= first_value
+    if operator == 'lt':
+        return number < first_value
+    if operator == 'lte':
+        return number <= first_value
+    if operator == 'neq':
+        return number != first_value
+    return number == first_value
+
+
+def _evaluate_advanced_condition(
+    row: Dict[str, Any],
+    column_meta: Dict[str, Any],
+    condition: Dict[str, Any],
+) -> bool:
+    field = column_meta.get('field')
+    if not field:
+        return False
+    operator = condition.get('operator') or 'contains'
+    cell_text = _normalise_table_value(row.get(field, ''))
+    cond_type = condition.get('type') or column_meta.get('type') or 'text'
+    values = condition.get('values') if isinstance(condition.get('values'), list) else []
+    if operator == 'empty':
+        return cell_text == ''
+    if operator == 'notEmpty':
+        return cell_text != ''
+    if cond_type == 'number':
+        return _evaluate_number_condition(cell_text, operator, values)
+    return _evaluate_text_condition(cell_text, operator, values)
+
+
+def _evaluate_advanced_filters(
+    row: Dict[str, Any],
+    column_map: Dict[int, Dict[str, Any]],
+    advanced_spec: Dict[str, Any],
+) -> bool:
+    filters = advanced_spec.get('filters')
+    if not isinstance(filters, list) or not filters:
+        return True
+    results: List[bool] = []
+    for condition in filters:
+        try:
+            column_index = int(condition.get('column'))
+        except (TypeError, ValueError):
+            results.append(False)
+            continue
+        column_meta = column_map.get(column_index)
+        if not column_meta:
+            results.append(False)
+            continue
+        results.append(_evaluate_advanced_condition(row, column_meta, condition))
+    logic = advanced_spec.get('logic')
+    if logic == 'or':
+        return any(results)
+    return all(results)
+
+
+def _filter_table_rows(
+    rows: List[Dict[str, Any]],
+    columns: List[Dict[str, Any]],
+    filters: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    if not rows or not filters:
+        return rows
+    column_map: Dict[int, Dict[str, Any]] = {
+        index: column for index, column in enumerate(columns)
+    }
+    global_term = str(filters.get('global') or '').strip().lower()
+    column_filters = filters.get('columnFilters') if isinstance(filters.get('columnFilters'), list) else []
+    advanced_spec = filters.get('advanced') if isinstance(filters.get('advanced'), dict) else {}
+    filtered: List[Dict[str, Any]] = []
+    for row in rows:
+        if global_term:
+            found = False
+            for column in column_map.values():
+                field = column.get('field')
+                if not field:
+                    continue
+                if global_term in _normalise_table_value(row.get(field, '')).lower():
+                    found = True
+                    break
+            if not found:
+                continue
+        matches_basic = True
+        for filter_spec in column_filters:
+            try:
+                column_index = int(filter_spec.get('column'))
+            except (TypeError, ValueError):
+                continue
+            column_meta = column_map.get(column_index)
+            if not column_meta or not column_meta.get('field'):
+                continue
+            value_text = _normalise_table_value(row.get(column_meta['field'], ''))
+            if filter_spec.get('type') == 'number':
+                if not _matches_filter_value(value_text, filter_spec.get('value', '')):
+                    matches_basic = False
+                    break
+            else:
+                candidate = (filter_spec.get('valueLower') or filter_spec.get('value') or '').strip().lower()
+                if candidate and candidate not in value_text.lower():
+                    matches_basic = False
+                    break
+        if not matches_basic:
+            continue
+        if advanced_spec and not _evaluate_advanced_filters(row, column_map, advanced_spec):
+            continue
+        filtered.append(row)
+    sort_spec = filters.get('sort') if isinstance(filters.get('sort'), dict) else None
+    if sort_spec and sort_spec.get('column') is not None:
+        return _sort_filtered_rows(filtered, column_map, sort_spec)
+    return filtered
+
+
+def _sort_filtered_rows(
+    rows: List[Dict[str, Any]],
+    column_map: Dict[int, Dict[str, Any]],
+    sort_spec: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    try:
+        column_index = int(sort_spec.get('column'))
+    except (TypeError, ValueError):
+        return rows
+    column_meta = column_map.get(column_index)
+    if not column_meta or not column_meta.get('field'):
+        return rows
+    direction = -1 if sort_spec.get('direction') == 'desc' else 1
+    field = column_meta['field']
+
+    def comparator(left: Tuple[int, Dict[str, Any]], right: Tuple[int, Dict[str, Any]]) -> int:
+        idx_a, row_a = left
+        idx_b, row_b = right
+        value_a = _normalise_table_value(row_a.get(field, ''))
+        value_b = _normalise_table_value(row_b.get(field, ''))
+        if column_meta.get('type') == 'number':
+            num_a = _coerce_numeric(value_a)
+            num_b = _coerce_numeric(value_b)
+            if num_a is None and num_b is None:
+                return idx_a - idx_b
+            if num_a is None:
+                return 1 * direction
+            if num_b is None:
+                return -1 * direction
+            if num_a == num_b:
+                return idx_a - idx_b
+            return direction if num_a > num_b else -direction
+        text_a = value_a.lower()
+        text_b = value_b.lower()
+        if text_a == text_b:
+            return idx_a - idx_b
+        return direction if text_a > text_b else -direction
+
+    decorated = list(enumerate(rows))
+    decorated.sort(key=cmp_to_key(comparator))
+    return [row for _, row in decorated]
+
+
+def _format_membership_panels(membership: Membership) -> str:
+    labels: List[str] = []
+    for field in MEMBERSHIP_PANEL_FIELDS:
+        if getattr(membership, field, False):
+            label = MEMBERSHIP_PANEL_LABELS.get(field)
+            if label:
+                labels.append(label)
+    return ', '.join(labels)
+
+
+def _build_membership_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    lang = request.session.get('lang', 'en')
+    if not _user_is_organisation(user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    projects = _get_accessible_projects(user)
+    if not projects:
+        raise PermissionError(
+            _localise_text(lang, 'No projects available for export.', 'پروژه‌ای برای خروجی در دسترس نیست.')
+        )
+    memberships = (
+        Membership.objects.filter(project__in=projects)
+        .select_related('user__profile', 'project')
+        .order_by('project__name', 'user__username')
+    )
+    columns = [
+        {'field': '__selection__', 'label': 'Select', 'type': 'text', 'export': False},
+        {'field': 'email', 'label': 'Email', 'type': 'text', 'export': True},
+        {'field': 'full_name', 'label': 'Full Name', 'type': 'text', 'export': True},
+        {'field': 'phone', 'label': 'Phone', 'type': 'text', 'export': True},
+        {'field': 'project', 'label': 'Project', 'type': 'text', 'export': True},
+        {'field': 'start_work', 'label': 'Start Work', 'type': 'text', 'export': True},
+        {'field': 'owner', 'label': 'Owner', 'type': 'text', 'export': True},
+        {'field': 'panels', 'label': 'Panels', 'type': 'text', 'export': True},
+        {'field': '__actions__', 'label': 'Actions', 'type': 'text', 'export': False},
+    ]
+    owner_label = _localise_text(lang, 'Owner', 'مالک')
+    member_label = _localise_text(lang, 'Member', 'عضو')
+    rows: List[Dict[str, Any]] = []
+    for membership in memberships:
+        user_obj = membership.user
+        full_name = user_obj.get_full_name().strip() if user_obj.get_full_name() else user_obj.first_name
+        profile = getattr(user_obj, 'profile', None)
+        rows.append(
+            {
+                '__selection__': '',
+                'email': user_obj.username,
+                'full_name': full_name or user_obj.username,
+                'phone': getattr(profile, 'phone', ''),
+                'project': membership.project.name,
+                'start_work': membership.start_work,
+                'owner': owner_label if membership.is_owner else member_label,
+                'panels': _format_membership_panels(membership) or '-',
+                '__actions__': '',
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'memberships'}
+
+
+def _build_projects_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_is_organisation(user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    projects = _get_accessible_projects(user)
+    columns = [
+        {'field': 'name', 'label': 'Name', 'type': 'text', 'export': True},
+        {'field': 'status', 'label': 'Status', 'type': 'text', 'export': True},
+        {'field': 'type', 'label': 'Type', 'type': 'text', 'export': True},
+        {'field': 'start_date', 'label': 'Start Date', 'type': 'text', 'export': True},
+        {'field': 'deadline', 'label': 'Deadline', 'type': 'text', 'export': True},
+        {'field': 'sample_size', 'label': 'Sample Size', 'type': 'number', 'export': True},
+        {'field': 'filled_samples', 'label': 'Filled Samples', 'type': 'number', 'export': True},
+        {'field': '__actions__', 'label': 'Actions', 'type': 'text', 'export': False},
+    ]
+    rows = []
+    for project in projects:
+        rows.append(
+            {
+                'name': project.name,
+                'status': _localise_text(lang, 'Active', 'فعال') if project.status else _localise_text(lang, 'Inactive', 'غیرفعال'),
+                'type': project.type,
+                'start_date': project.start_date,
+                'deadline': project.deadline,
+                'sample_size': project.sample_size,
+                'filled_samples': project.filled_samples,
+                '__actions__': '',
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'projects'}
+
+
+def _build_database_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'database_management'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    projects = _get_accessible_projects(user, panel='database_management')
+    entries = DatabaseEntry.objects.filter(project__in=projects).select_related('project')
+    columns = [
+        {'field': 'project', 'label': 'Project', 'type': 'text', 'export': True},
+        {'field': 'db_name', 'label': 'DB Name', 'type': 'text', 'export': True},
+        {'field': 'token', 'label': 'Token', 'type': 'text', 'export': True},
+        {'field': 'asset_id', 'label': 'Asset ID', 'type': 'text', 'export': True},
+        {'field': 'status', 'label': 'Status', 'type': 'text', 'export': True},
+        {'field': '__actions__', 'label': 'Actions', 'type': 'text', 'export': False},
+    ]
+    rows = []
+    for entry in entries:
+        status_label = _localise_text(lang, 'Synced', 'همگام شده') if entry.status else _localise_text(lang, 'Pending', 'در انتظار')
+        rows.append(
+            {
+                'project': entry.project.name,
+                'db_name': entry.db_name,
+                'token': entry.token,
+                'asset_id': entry.asset_id,
+                'status': status_label,
+                '__actions__': '',
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'databases'}
+
+
+def _build_activity_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    if not _user_is_organisation(request.user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    logs = ActivityLog.objects.select_related('user').all()[:500]
+    columns = [
+        {'field': 'timestamp', 'label': 'Timestamp', 'type': 'text', 'export': True},
+        {'field': 'user', 'label': 'User', 'type': 'text', 'export': True},
+        {'field': 'action', 'label': 'Action', 'type': 'text', 'export': True},
+        {'field': 'details', 'label': 'Details', 'type': 'text', 'export': True},
+    ]
+    rows = []
+    for log in logs:
+        rows.append(
+            {
+                'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                'user': log.user.username if log.user else '—',
+                'action': log.action,
+                'details': log.details,
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'activity-logs'}
+
+
+def _resolve_entry_param(params: Dict[str, Any], key_variants: Iterable[str]) -> int:
+    for key in key_variants:
+        value = params.get(key)
+        if value in (None, '', 'null'):
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise ValueError('Invalid entry identifier provided.')
+    raise ValueError('A database entry identifier is required for export.')
+
+
+def _resolve_project_param(params: Dict[str, Any], key_variants: Iterable[str]) -> int:
+    for key in key_variants:
+        value = params.get(key)
+        if value in (None, '', 'null'):
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise ValueError('Invalid project identifier provided.')
+    raise ValueError('A project identifier is required for export.')
+
+
+def _extract_param_values(raw: Any) -> List[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple, set)):
+        values: List[str] = []
+        for item in raw:
+            values.extend(_extract_param_values(item))
+        return values
+    return [str(raw)]
+
+
+def _parse_int_param_list(raw: Any) -> List[int]:
+    values: List[int] = []
+    for chunk in _extract_param_values(raw):
+        parts = [part.strip() for part in chunk.split(',')]
+        for part in parts:
+            if not part:
+                continue
+            try:
+                number = int(part)
+            except (TypeError, ValueError):
+                continue
+            if number not in values:
+                values.append(number)
+    return values
+
+
+def _parse_iso_datetime_param(raw: Any) -> Optional[datetime]:
+    if raw in (None, '', 'null'):
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        candidate = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if timezone.is_naive(candidate):
+        candidate = timezone.make_aware(candidate, timezone.get_current_timezone())
+    return candidate
+
+
+def _build_database_view_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'database_management'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    entry_id = _resolve_entry_param(params, ('entry', 'entryId'))
+    entry = get_object_or_404(DatabaseEntry, pk=entry_id)
+    projects = _get_accessible_projects(user, panel='database_management')
+    if entry.project not in projects or _project_deadline_locked_for_user(entry.project, user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    snapshot = load_entry_snapshot(entry)
+    records = snapshot.records
+    columns = [
+        {'field': column, 'label': column, 'type': 'text', 'export': True}
+        for column in infer_columns(records)
+    ]
+    rows = []
+    for record in records:
+        rows.append({column['field']: record.get(column['field'], '') for column in columns})
+    filename = _sanitize_identifier(entry.db_name or 'database')
+    return {'columns': columns, 'rows': rows, 'filename': filename or 'database'}
+
+
+def _build_qc_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not (_user_has_panel(user, 'qc_management') or _user_has_panel(user, 'qc_performance')):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    entry_id = _resolve_entry_param(params, ('entry', 'entryId'))
+    entry = get_object_or_404(DatabaseEntry, pk=entry_id)
+    if _project_deadline_locked_for_user(entry.project, user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    snapshot = load_entry_snapshot(entry)
+    records = snapshot.records
+    column_names = infer_columns(records)
+    columns = [
+        {'field': column, 'label': column, 'type': 'text', 'export': True}
+        for column in column_names
+    ]
+    rows = []
+    for record in records:
+        rows.append({column: _normalise_record_value(record.get(column, '')) for column in column_names})
+    filename = f"qc-entry-{entry.pk}"
+    return {'columns': columns, 'rows': rows, 'filename': filename}
+
+
+def _build_quota_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'quota_management'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    project_id = _resolve_project_param(params, ('project', 'projectId', 'project_id'))
+    project = get_object_or_404(Project, pk=project_id)
+    accessible = _get_accessible_projects(user, panel='quota_management')
+    if project not in accessible or _project_deadline_locked_for_user(project, user):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    quotas = list(Quota.objects.filter(project=project))
+    city_label = _localise_text(lang, 'City', 'شهر')
+    age_label = _localise_text(lang, 'Age Range', 'رنج سنی')
+    gender_label = _localise_text(lang, 'Gender', 'جنسیت')
+    assigned_label = _localise_text(lang, 'Assigned', 'انجام‌شده')
+    target_label = _localise_text(lang, 'Target', 'هدف')
+    any_city_label = _localise_text(lang, 'All cities', 'همه شهرها')
+    any_age_label = _localise_text(lang, 'All ages', 'تمام سنین')
+    any_gender_label = _localise_text(lang, 'Any gender', 'همه جنسیت‌ها')
+
+    columns: List[Dict[str, Any]] = [
+        {'field': 'city', 'label': city_label, 'type': 'text', 'export': True},
+        {'field': 'age_range', 'label': age_label, 'type': 'text', 'export': True},
+        {'field': 'gender', 'label': gender_label, 'type': 'text', 'export': True},
+        {'field': 'assigned', 'label': assigned_label, 'type': 'number', 'export': True},
+        {'field': 'target', 'label': target_label, 'type': 'number', 'export': True},
+    ]
+    if not quotas:
+        return {'columns': columns, 'rows': [], 'filename': f'quota-{project.pk}'}
+
+    success_counts: Dict[int, int] = defaultdict(int)
+    interviews = Interview.objects.filter(project=project, status=True).select_related('person')
+    for interview in interviews:
+        city_name, age_value, gender_value = _resolve_interview_demographics(interview)
+        for quota in quotas:
+            if quota.matches(city_name, age_value, gender_value):
+                success_counts[quota.pk] += 1
+                break
+
+    rows: List[Dict[str, Any]] = []
+    for quota in quotas:
+        rows.append(
+            {
+                'city': quota.city or any_city_label,
+                'age_range': quota.age_label() if quota.age_start is not None else any_age_label,
+                'gender': (_localise_text(lang, 'Male', 'مرد') if quota.gender == 'male' else (
+                    _localise_text(lang, 'Female', 'زن') if quota.gender == 'female' else any_gender_label
+                )),
+                'assigned': success_counts.get(quota.pk, 0),
+                'target': quota.target_count,
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': f'quota-{project.pk}'}
+
+
+def _build_collection_raw_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'collection_performance'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    accessible_projects = _get_accessible_projects(user, panel='collection_performance')
+    if not accessible_projects:
+        raise ValueError(_localise_text(lang, 'No projects available for export.', 'پروژه‌ای برای خروجی در دسترس نیست.'))
+    accessible_ids = {project.pk for project in accessible_projects}
+    project_ids = _parse_int_param_list(
+        params.get('projects') or params.get('project') or params.get('projectId')
+    )
+    if project_ids:
+        invalid = [pk for pk in project_ids if pk not in accessible_ids]
+        if invalid:
+            raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    else:
+        project_ids = list(accessible_ids)
+    user_ids = _parse_int_param_list(
+        params.get('users') or params.get('user') or params.get('userId')
+    )
+    start_dt = _parse_iso_datetime_param(params.get('startDate') or params.get('start_date'))
+    end_dt = _parse_iso_datetime_param(params.get('endDate') or params.get('end_date'))
+    queryset = Interview.objects.select_related('project', 'user').filter(project__in=accessible_projects)
+    if project_ids:
+        queryset = queryset.filter(project__id__in=project_ids)
+    if start_dt:
+        queryset = queryset.filter(created_at__gte=start_dt)
+    if end_dt:
+        queryset = queryset.filter(created_at__lte=end_dt)
+    if not _user_is_organisation(user):
+        queryset = queryset.filter(user=user)
+    elif user_ids:
+        queryset = queryset.filter(user__id__in=user_ids)
+    queryset = queryset.order_by('-created_at')
+
+    project_label = _localise_text(lang, 'Project', 'پروژه')
+    user_label = _localise_text(lang, 'User', 'کاربر')
+    code_label = _localise_text(lang, 'Code', 'کد')
+    status_label = _localise_text(lang, 'Status', 'وضعیت')
+    start_label = _localise_text(lang, 'Form Started', 'شروع فرم')
+    end_label = _localise_text(lang, 'Form Submitted', 'پایان فرم')
+    created_label = _localise_text(lang, 'Logged', 'زمان ثبت')
+
+    success_text = _localise_text(lang, 'Successful', 'موفق')
+    failure_text = _localise_text(lang, 'Unsuccessful', 'ناموفق')
+    unknown_text = _localise_text(lang, 'Unknown', 'نامشخص')
+
+    def _format_timestamp(value: Optional[datetime]) -> str:
+        if not value:
+            return ''
+        local_value = timezone.localtime(value)
+        return local_value.strftime('%Y-%m-%d %H:%M')
+
+    columns = [
+        {'field': 'project', 'label': project_label, 'type': 'text', 'export': True},
+        {'field': 'user', 'label': user_label, 'type': 'text', 'export': True},
+        {'field': 'code', 'label': code_label, 'type': 'number', 'export': True},
+        {'field': 'status', 'label': status_label, 'type': 'text', 'export': True},
+        {'field': 'start_form', 'label': start_label, 'type': 'text', 'export': True},
+        {'field': 'end_form', 'label': end_label, 'type': 'text', 'export': True},
+        {'field': 'created_at', 'label': created_label, 'type': 'text', 'export': True},
+    ]
+    rows: List[Dict[str, Any]] = []
+    for interview in queryset:
+        if interview.status is True:
+            status_value = success_text
+        elif interview.status is False:
+            status_value = failure_text
+        else:
+            status_value = unknown_text
+        rows.append(
+            {
+                'project': interview.project.name if interview.project else '',
+                'user': interview.user.first_name or interview.user.get_username(),
+                'code': interview.code if interview.code is not None else '',
+                'status': status_value,
+                'start_form': _format_timestamp(interview.start_form),
+                'end_form': _format_timestamp(interview.end_form),
+                'created_at': _format_timestamp(interview.created_at),
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'collection-raw'}
+
+
+def _build_collection_top_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'collection_performance'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    accessible_projects = _get_accessible_projects(user, panel='collection_performance')
+    if not accessible_projects:
+        raise ValueError(_localise_text(lang, 'No projects available for export.', 'پروژه‌ای برای خروجی در دسترس نیست.'))
+    accessible_ids = {project.pk for project in accessible_projects}
+    project_ids = _parse_int_param_list(
+        params.get('projects') or params.get('project') or params.get('projectId')
+    )
+    if project_ids:
+        invalid = [pk for pk in project_ids if pk not in accessible_ids]
+        if invalid:
+            raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    else:
+        project_ids = list(accessible_ids)
+    user_ids = _parse_int_param_list(
+        params.get('users') or params.get('user') or params.get('userId')
+    )
+    start_dt = _parse_iso_datetime_param(params.get('startDate') or params.get('start_date'))
+    end_dt = _parse_iso_datetime_param(params.get('endDate') or params.get('end_date'))
+    limit_raw = params.get('limit') or params.get('topLimit')
+    try:
+        limit = int(limit_raw)
+    except (TypeError, ValueError):
+        limit = 5
+    if limit <= 0:
+        limit = 5
+    limit = min(limit, 200)
+    queryset = Interview.objects.select_related('project', 'user').filter(project__in=accessible_projects)
+    if project_ids:
+        queryset = queryset.filter(project__id__in=project_ids)
+    if start_dt:
+        queryset = queryset.filter(created_at__gte=start_dt)
+    if end_dt:
+        queryset = queryset.filter(created_at__lte=end_dt)
+    if not _user_is_organisation(user):
+        queryset = queryset.filter(user=user)
+    elif user_ids:
+        queryset = queryset.filter(user__id__in=user_ids)
+    ranking = (
+        queryset.values('project__name', 'user__id', 'user__first_name')
+        .annotate(total=Count('id'), success=Count('id', filter=Q(status=True)))
+        .order_by('-total', 'project__name', 'user__first_name')
+    )
+    project_label = _localise_text(lang, 'Project', 'پروژه')
+    user_label = _localise_text(lang, 'User', 'کاربر')
+    total_label = _localise_text(lang, 'Total Calls', 'کل تماس‌ها')
+    success_label = _localise_text(lang, 'Successful Calls', 'تماس‌های موفق')
+    rate_label = _localise_text(lang, 'Success Rate', 'نرخ موفقیت')
+    columns = [
+        {'field': 'project', 'label': project_label, 'type': 'text', 'export': True},
+        {'field': 'user', 'label': user_label, 'type': 'text', 'export': True},
+        {'field': 'total_calls', 'label': total_label, 'type': 'number', 'export': True},
+        {'field': 'successful_calls', 'label': success_label, 'type': 'number', 'export': True},
+        {'field': 'success_rate', 'label': rate_label, 'type': 'number', 'export': True},
+    ]
+    rows: List[Dict[str, Any]] = []
+    for row in ranking[:limit]:
+        total_calls = row['total'] or 0
+        successful_calls = row['success'] or 0
+        rate = round((successful_calls / total_calls) * 100, 2) if total_calls else 0
+        rows.append(
+            {
+                'project': row['project__name'] or '',
+                'user': row['user__first_name'] or str(row['user__id']),
+                'total_calls': total_calls,
+                'successful_calls': successful_calls,
+                'success_rate': rate,
+            }
+        )
+    return {'columns': columns, 'rows': rows, 'filename': 'collection-top'}
+
+
+TABLE_EXPORT_BUILDERS: Dict[str, Any] = {
+    'membership_list': _build_membership_export_dataset,
+    'projects_list': _build_projects_export_dataset,
+    'database_list': _build_database_export_dataset,
+    'activity_logs': _build_activity_export_dataset,
+    'database_view': _build_database_view_export_dataset,
+    'qc_edit': _build_qc_export_dataset,
+    'quota_management': _build_quota_export_dataset,
+    'collection_performance_raw': _build_collection_raw_export_dataset,
+    'collection_performance_top': _build_collection_top_export_dataset,
+}
+
+
+@login_required
+@require_http_methods(["POST"])
+def table_export(request: HttpRequest) -> HttpResponse:
+    """Return a CSV or Excel export for supported interactive tables."""
+
+    lang = request.session.get('lang', 'en')
+    try:
+        payload = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except json.JSONDecodeError:
+        message = _localise_text(lang, 'Invalid export payload.', 'داده ارسال شده نامعتبر است.')
+        return JsonResponse({'error': message}, status=400)
+    context_name = payload.get('context')
+    if not context_name:
+        message = _localise_text(lang, 'Table context is required.', 'انتخاب جدول برای خروجی لازم است.')
+        return JsonResponse({'error': message}, status=400)
+    builder = TABLE_EXPORT_BUILDERS.get(context_name)
+    if not builder:
+        message = _localise_text(lang, 'This table cannot be exported yet.', 'امکان خروجی گرفتن از این جدول وجود ندارد.')
+        return JsonResponse({'error': message}, status=400)
+    export_format = (payload.get('format') or 'csv').lower()
+    params = payload.get('params') if isinstance(payload.get('params'), dict) else {}
+    filters = payload.get('filters') if isinstance(payload.get('filters'), dict) else {}
+    try:
+        dataset = builder(request, params)
+    except PermissionError as exc:
+        message = str(exc) or _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.')
+        return JsonResponse({'error': message}, status=403)
+    except (DatabaseCacheError, ValueError) as exc:
+        message = str(exc) or _localise_text(lang, 'Unable to prepare export.', 'امکان تهیه خروجی نیست.')
+        return JsonResponse({'error': message}, status=400)
+    columns: List[Dict[str, Any]] = dataset.get('columns') or []
+    rows: List[Dict[str, Any]] = dataset.get('rows') or []
+    filtered_rows = _filter_table_rows(rows, columns, filters)
+    export_columns = [column for column in columns if column.get('export', True)] or columns
+    filename = dataset.get('filename') or 'table-data'
+    safe_name = _sanitize_identifier(filename) or 'table_data'
+    timestamp = timezone.now().strftime('%Y%m%d-%H%M%S')
+    base_name = f"{safe_name}-{timestamp}"
+    headers = [column.get('label') or column.get('field', '') for column in export_columns]
+    field_names = [column.get('field') for column in export_columns]
+
+    if export_format == 'xlsx':
+        if openpyxl is None:
+            message = _localise_text(lang, 'Excel export is not available on this server.', 'امکان تهیه فایل اکسل وجود ندارد.')
+            return JsonResponse({'error': message}, status=400)
+        workbook = openpyxl.Workbook()
+        worksheet = workbook.active
+        worksheet.title = 'Export'
+        worksheet.append(headers)
+        for row in filtered_rows:
+            worksheet.append([
+                _normalise_record_value(row.get(field, ''))
+                for field in field_names
+            ])
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        response = HttpResponse(
+            stream.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{base_name}.xlsx"'
+        return response
+
+    output = StringIO()
+    writer = csv.writer(output, lineterminator='\n')
+    writer.writerow(headers)
+    for row in filtered_rows:
+        writer.writerow([
+            _normalise_record_value(row.get(field, ''))
+            for field in field_names
+        ])
+    content = '\ufeff' + output.getvalue()
+    response = HttpResponse(content, content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{base_name}.csv"'
+    return response
+
+
 def generate_call_samples(project: Project, replenish: bool = False) -> None:
     """
     Generate call samples for a project based on its quotas.
@@ -246,10 +1230,21 @@ def generate_call_samples(project: Project, replenish: bool = False) -> None:
         replenish: If True, only top up shortage; if False, rebuild
             all samples from scratch.
     """
+    if project.sample_source != Project.SampleSource.DATABASE:
+        return
+
     quotas = Quota.objects.filter(project=project).order_by('city', 'age_start', 'age_end')
-    if not replenish:
+    if replenish:
+        open_map = {
+            row['quota_id']: row['total']
+            for row in CallSample.objects.filter(project=project, completed=False)
+            .values('quota_id')
+            .annotate(total=Count('id'))
+        }
+    else:
         # Clear existing samples when regenerating from scratch
         CallSample.objects.filter(project=project).delete()
+        open_map: Dict[int, int] = {}
     # Keep track of numbers already assigned or interviewed for this project
     assigned_mobiles = set(
         CallSample.objects.filter(project=project).values_list('mobile__mobile', flat=True)
@@ -262,54 +1257,60 @@ def generate_call_samples(project: Project, replenish: bool = False) -> None:
     current_year = timezone.now().year
 
     for q in quotas:
-        desired = max(int(q.target_count) * 3, 0)
-        existing_open = CallSample.objects.filter(project=project, quota=q, completed=False).count()
+        remaining_gap = int(q.target_count) - int(q.assigned_count)
+        if remaining_gap < 0:
+            remaining_gap = 0
+        desired_total = remaining_gap * 3
+        existing_open = open_map.get(q.pk, 0)
         if replenish:
-            to_create = max(desired - existing_open, 0)
+            to_create = max(desired_total - existing_open, 0)
         else:
-            to_create = desired
+            to_create = desired_total
         if to_create <= 0:
             continue
-        # compute birth year range from age range
-        birth_min = current_year - int(q.age_end)
-        birth_max = current_year - int(q.age_start)
-        # Primary candidate set: matching city and age range
-        base_qs = (
-            Person.objects.filter(
-                city_name=q.city,
-                birth_year__gte=birth_min,
-                birth_year__lte=birth_max,
-                mobiles__isnull=False,
-            )
-            .exclude(mobiles__mobile__in=exclude_mobiles)
-            .distinct()
-        )
-        candidates: List[str] = list(base_qs.values_list('national_code', flat=True)[: to_create * 8])
-        # Fallback 1: same city without age filtering
-        if len(candidates) < to_create:
-            fb1 = (
-                Person.objects.filter(city_name=q.city, mobiles__isnull=False)
-                .exclude(mobiles__mobile__in=exclude_mobiles)
-                .exclude(national_code__in=candidates)
+        filters: List[Tuple[Optional[str], Optional[Tuple[int, int]], Optional[str]]] = []
+        age_tuple: Optional[Tuple[int, int]] = None
+        if q.age_start is not None and q.age_end is not None:
+            age_tuple = (int(q.age_start), int(q.age_end))
+        filters.append((q.city, age_tuple, q.gender))
+        if age_tuple:
+            filters.append((q.city, None, q.gender))
+        if q.city:
+            filters.append((None, age_tuple, q.gender))
+        if q.gender:
+            filters.append((q.city, age_tuple, None))
+        filters.append((None, None, None))
+
+        candidates: List[str] = []
+        seen_candidates: set[str] = set()
+        for city_filter, age_filter, gender_filter in filters:
+            qs = Person.objects.filter(mobiles__isnull=False)
+            if city_filter:
+                qs = qs.filter(city_name=city_filter)
+            if gender_filter:
+                qs = qs.filter(gender=gender_filter)
+            if age_filter:
+                birth_min = current_year - int(age_filter[1])
+                birth_max = current_year - int(age_filter[0])
+                qs = qs.filter(birth_year__gte=birth_min, birth_year__lte=birth_max)
+            qs = (
+                qs.exclude(mobiles__mobile__in=exclude_mobiles)
+                .exclude(national_code__in=seen_candidates)
                 .distinct()
-                .values_list('national_code', flat=True)[: (to_create * 8)]
             )
-            candidates = list(set(candidates) | set(fb1))
-        # Fallback 2: any city and any age
-        if len(candidates) < to_create:
-            fb2 = (
-                Person.objects.filter(mobiles__isnull=False)
-                .exclude(mobiles__mobile__in=exclude_mobiles)
-                .exclude(national_code__in=candidates)
-                .distinct()
-                .values_list('national_code', flat=True)[: (to_create * 8)]
-            )
-            candidates = list(set(candidates) | set(fb2))
+            batch = list(qs.values_list('national_code', flat=True)[: (to_create * 8)])
+            for code in batch:
+                if code not in seen_candidates:
+                    seen_candidates.add(code)
+                    candidates.append(code)
+            if len(candidates) >= to_create:
+                break
         if not candidates:
             continue
         random.shuffle(candidates)
         selected_ids = candidates[:to_create]
         persons = Person.objects.filter(national_code__in=selected_ids).prefetch_related('mobiles')
+        created = 0
         for person in persons:
             mob = person.mobiles.first()
             if not mob:
@@ -325,6 +1326,31 @@ def generate_call_samples(project: Project, replenish: bool = False) -> None:
                 completed_at=None,
             )
             exclude_mobiles.add(mob.mobile)
+            created += 1
+        if created:
+            open_map[q.pk] = existing_open + created
+
+
+def _assign_uploaded_sample(project: Project, user: User) -> Optional[UploadedSampleEntry]:
+    """Return an uploaded sample assigned to the user or grab a new one."""
+
+    sample = (
+        UploadedSampleEntry.objects.filter(project=project, assigned_to=user, completed=False)
+        .order_by('assigned_at', 'pk')
+        .first()
+    )
+    if sample:
+        return sample
+    sample = (
+        UploadedSampleEntry.objects.filter(project=project, assigned_to__isnull=True, completed=False)
+        .order_by('pk')
+        .first()
+    )
+    if sample:
+        sample.assigned_to = user
+        sample.assigned_at = timezone.now()
+        sample.save(update_fields=['assigned_to', 'assigned_at'])
+    return sample
 
 
 def _get_accessible_projects(user: User, panel: str | None = None) -> List[Project]:
@@ -335,12 +1361,73 @@ def _get_accessible_projects(user: User, panel: str | None = None) -> List[Proje
     which they have a membership (typically all that they created).
     """
     qs = Project.objects.filter(memberships__user=user)
-    # If a specific panel permission is requested, filter projects by memberships where that flag is True.
     if panel:
         filter_kwargs = {f"memberships__{panel}": True}
         qs = qs.filter(**filter_kwargs)
-    # For organisations, return distinct projects; for individuals, the same applies but they will have only their memberships
-    return list(qs.distinct())
+    projects: List[Project] = []
+    for project in qs.distinct():
+        if _project_deadline_locked_for_user(project, user):
+            continue
+        projects.append(project)
+    return projects
+
+
+def _resolve_interview_demographics(interview: Interview) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+    """Return the city, age, and gender data points for an interview."""
+
+    city_name = interview.city or (interview.person.city_name if interview.person else None)
+    if city_name:
+        city_name = city_name.strip()
+
+    age_value: Optional[int] = interview.age
+    if age_value is None:
+        birth_year_source = interview.birth_year
+        if birth_year_source is None and interview.person and interview.person.birth_year:
+            birth_year_source = interview.person.birth_year
+        derived_age = calculate_age_from_birth_info(birth_year_source, None)
+        if derived_age is not None:
+            age_value = derived_age
+
+    gender_value = gender_value_from_boolean(interview.gender)
+    if not gender_value and interview.person:
+        gender_value = normalize_gender_value(interview.person.gender)
+
+    return city_name, age_value, gender_value
+
+
+def _is_truthy(value: Any) -> bool:
+    """Return True when a POSTed checkbox-like value is affirmative."""
+
+    if value is None:
+        return False
+    return str(value).strip().lower() in {'1', 'true', 'on', 'yes'}
+
+
+def _serialise_project_types_value(form: ProjectForm) -> str:
+    """Return a comma-separated string of project types for the form."""
+
+    value = form['types'].value()
+    if isinstance(value, (list, tuple)):
+        return ', '.join(value)
+    if isinstance(value, str):
+        return value
+    instance_types = getattr(form.instance, 'types', None) or []
+    if instance_types:
+        return ', '.join(instance_types)
+    return ''
+
+
+def _project_form_context(form: ProjectForm, title: str) -> Dict[str, Any]:
+    """Build the template context for the project create/edit form."""
+
+    return {
+        'form': form,
+        'title': title,
+        'required_headers': SAMPLE_REQUIRED_HEADERS,
+        'call_result_headers': CALL_RESULT_REQUIRED_HEADERS,
+        'project': form.instance,
+        'types_initial': _serialise_project_types_value(form),
+    }
 
 
 @login_required
@@ -351,7 +1438,46 @@ def project_list(request: HttpRequest) -> HttpResponse:
         messages.warning(request, 'Access denied: only organisation accounts can manage projects.')
         return redirect('home')
     projects = _get_accessible_projects(user)
-    return render(request, 'projects_list.html', {'projects': projects})
+    member_map: Dict[int, List[int]] = defaultdict(list)
+    if projects:
+        membership_pairs = (
+            Membership.objects.filter(project__in=projects)
+            .values_list('project_id', 'user_id')
+        )
+        for project_id, user_id in membership_pairs:
+            member_map[project_id].append(user_id)
+
+    available_qs = (
+        User.objects.filter(memberships__project__memberships__user=user)
+        .distinct()
+        .select_related('profile')
+    )
+    if not available_qs.exists():
+        available_qs = User.objects.exclude(pk=user.pk).select_related('profile')
+    available_qs = available_qs.order_by('first_name', 'username')
+
+    user_options: List[Dict[str, str]] = []
+    for candidate in available_qs:
+        profile = getattr(candidate, 'profile', None)
+        if profile and getattr(profile, 'organization', False):
+            continue
+        full_name = candidate.get_full_name().strip() if candidate.get_full_name() else ''
+        display_label = full_name or candidate.first_name or ''
+        label = display_label.strip() or candidate.username
+        user_options.append(
+            {
+                'id': candidate.pk,
+                'label': label,
+                'email': candidate.username,
+            }
+        )
+
+    context = {
+        'projects': projects,
+        'available_user_options': user_options,
+        'project_member_map': dict(member_map),
+    }
+    return render(request, 'projects_list.html', context)
 
 
 @login_required
@@ -362,41 +1488,56 @@ def project_add(request: HttpRequest) -> HttpResponse:
         messages.warning(request, 'Access denied: only organisation accounts can create projects.')
         return redirect('home')
     if request.method == 'POST':
-        form = ProjectForm(request.POST)
+        form = ProjectForm(request.POST, request.FILES)
+        new_upload = bool(request.FILES.get('sample_upload'))
+        new_call_upload = bool(request.FILES.get('call_result_upload'))
         if form.is_valid():
-            project = form.save(commit=False)
-            project.filled_samples = 0
-            project.save()
-            # assign membership to creator with all panels enabled (for convenience)
-            mem = Membership.objects.create(
-                user=user,
-                project=project,
-                database_management=True,
-                quota_management=True,
-                collection_management=True,
-                collection_performance=True,
-                telephone_interviewer=True,
-                fieldwork_interviewer=True,
-                focus_group_panel=True,
-                qc_management=True,
-                qc_performance=True,
-                voice_review=True,
-                callback_qc=True,
-                coding=True,
-                statistical_health_check=True,
-                tabulation=True,
-                statistics=True,
-                funnel_analysis=True,
-                conjoint_analysis=True,
-                segmentation_analysis=True,
-            )
-            messages.success(request, 'Project created successfully.')
-            # log activity
-            log_activity(user, 'Created project', f"Project {project.pk}: {project.name}")
-            return redirect('project_list')
+            try:
+                with transaction.atomic():
+                    project = form.save(commit=False)
+                    project.filled_samples = 0
+                    project.save()
+                    if new_upload:
+                        ingest_project_sample_upload(project)
+                    if project.call_result_source == Project.CallResultSource.DEFAULT:
+                        clear_project_call_results(project)
+                    elif new_call_upload:
+                        ingest_project_call_result_upload(project)
+            except SampleUploadError as exc:
+                form.add_error('sample_upload', str(exc))
+            except CallResultUploadError as exc:
+                form.add_error('call_result_upload', str(exc))
+            else:
+                Membership.objects.create(
+                    user=user,
+                    project=project,
+                    is_owner=True,
+                    database_management=True,
+                    quota_management=True,
+                    collection_management=True,
+                    collection_performance=True,
+                    telephone_interviewer=True,
+                    fieldwork_interviewer=True,
+                    focus_group_panel=True,
+                    qc_management=True,
+                    qc_performance=True,
+                    voice_review=True,
+                    callback_qc=True,
+                    coding=True,
+                    statistical_health_check=True,
+                    tabulation=True,
+                    statistics=True,
+                    funnel_analysis=True,
+                    conjoint_analysis=True,
+                    segmentation_analysis=True,
+                )
+                messages.success(request, 'Project created successfully.')
+                log_activity(user, 'Created project', f"Project {project.pk}: {project.name}")
+                notify_project_started(project, initiator=user)
+                return redirect('project_list')
     else:
         form = ProjectForm()
-    return render(request, 'project_form.html', {'form': form, 'title': 'Add Project'})
+    return render(request, 'project_form.html', _project_form_context(form, 'Add Project'))
 
 
 @login_required
@@ -412,16 +1553,30 @@ def project_edit(request: HttpRequest, project_id: int) -> HttpResponse:
         messages.error(request, 'You do not have permission to edit this project.')
         return redirect('project_list')
     if request.method == 'POST':
-        form = ProjectForm(request.POST, instance=project)
+        form = ProjectForm(request.POST, request.FILES, instance=project)
+        new_upload = bool(request.FILES.get('sample_upload'))
+        new_call_upload = bool(request.FILES.get('call_result_upload'))
         if form.is_valid():
-            form.save()
-            messages.success(request, 'Project updated successfully.')
-            # log activity
-            log_activity(user, 'Updated project', f"Project {project.pk}: {project.name}")
-            return redirect('project_list')
+            try:
+                with transaction.atomic():
+                    project = form.save()
+                    if new_upload:
+                        ingest_project_sample_upload(project)
+                    if project.call_result_source == Project.CallResultSource.DEFAULT:
+                        clear_project_call_results(project)
+                    elif new_call_upload:
+                        ingest_project_call_result_upload(project)
+            except SampleUploadError as exc:
+                form.add_error('sample_upload', str(exc))
+            except CallResultUploadError as exc:
+                form.add_error('call_result_upload', str(exc))
+            else:
+                messages.success(request, 'Project updated successfully.')
+                log_activity(user, 'Updated project', f"Project {project.pk}: {project.name}")
+                return redirect('project_list')
     else:
         form = ProjectForm(instance=project)
-    return render(request, 'project_form.html', {'form': form, 'title': 'Edit Project'})
+    return render(request, 'project_form.html', _project_form_context(form, 'Edit Project'))
 
 
 @login_required
@@ -451,30 +1606,29 @@ def membership_list(request: HttpRequest) -> HttpResponse:
     if not _user_is_organisation(user):
         messages.warning(request, 'Access denied: only organisation accounts can manage memberships.')
         return redirect('home')
+    accessible_projects = _get_accessible_projects(user)
+    if not accessible_projects:
+        locked = _get_locked_projects(user)
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can view memberships.',
+            )
+        else:
+            messages.error(request, 'Access denied: there are no projects available to display memberships.')
+        return redirect('home')
     # list all memberships for projects of this organisation
-    memberships = Membership.objects.filter(project__memberships__user=user).distinct()
+    memberships = Membership.objects.filter(project__in=accessible_projects).distinct()
     # map field names to human readable labels for display
-    panel_labels = {
-        'database_management': 'Database Management',
-        'quota_management': 'Quota Management',
-        'collection_management': 'Collection Management',
-        'collection_performance': 'Collection Performance',
-        'telephone_interviewer': 'Telephone Interviewer',
-        'fieldwork_interviewer': 'Fieldwork Interviewer',
-        'focus_group_panel': 'Focus Group Panel',
-        'qc_management': 'QC Management',
-        'qc_performance': 'QC Performance',
-        'voice_review': 'Voice Review',
-        'callback_qc': 'Callback QC',
-        'coding': 'Coding',
-        'statistical_health_check': 'Statistical Health Check',
-        'tabulation': 'Tabulation',
-        'statistics': 'Statistics',
-        'funnel_analysis': 'Funnel Analysis',
-        'conjoint_analysis': 'Conjoint Analysis',
-        'segmentation_analysis': 'Segmentation Analysis',
-    }
-    return render(request, 'membership_list.html', {'memberships': memberships, 'panel_labels': panel_labels})
+    return render(
+        request,
+        'membership_list.html',
+        {
+            'memberships': memberships,
+            'panel_labels': MEMBERSHIP_PANEL_LABELS,
+        },
+    )
 
 
 @login_required
@@ -486,6 +1640,17 @@ def membership_add(request: HttpRequest) -> HttpResponse:
         return redirect('home')
     # projects the organisation can assign users to
     accessible_projects = _get_accessible_projects(user)
+    if not accessible_projects:
+        locked = _get_locked_projects(user)
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to manage memberships.',
+            )
+        else:
+            messages.error(request, 'Access denied: there are no projects available for membership changes.')
+        return redirect('home')
     if request.method == 'POST':
         form = UserToProjectForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in accessible_projects])
@@ -505,17 +1670,177 @@ def membership_add(request: HttpRequest) -> HttpResponse:
             # create membership with selected panels and title
             mem_kwargs = {}
             for field in form.fields:
-                if field not in ('email', 'project'):
-                    mem_kwargs[field] = form.cleaned_data[field]
+                if field in ('email', 'project', 'title_custom'):
+                    continue
+                mem_kwargs[field] = form.cleaned_data[field]
+            if mem_kwargs.get('is_owner'):
+                Membership.objects.filter(project=project, is_owner=True).update(is_owner=False)
+            elif not Membership.objects.filter(project=project, is_owner=True).exists():
+                mem_kwargs['is_owner'] = True
             membership = Membership.objects.create(user=target_user, project=project, **mem_kwargs)
             messages.success(request, 'User assigned to project.')
             # log activity
             log_activity(user, 'Added membership', f"User {target_user.username} to Project {project.pk}")
+            notify_membership_added(membership, actor=user)
             return redirect('membership_list')
     else:
         form = UserToProjectForm()
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in accessible_projects])
     return render(request, 'membership_form.html', {'form': form, 'title': 'Add User'})
+
+
+@login_required
+@require_http_methods(["POST"])
+def membership_bulk_add(request: HttpRequest, project_id: int) -> JsonResponse:
+    """Assign multiple users to a project in a single request."""
+
+    user = request.user
+    if not _user_is_organisation(user):
+        return JsonResponse({'ok': False, 'message': 'Only organisation accounts may assign members.'}, status=403)
+
+    project = get_object_or_404(Project, pk=project_id, memberships__user=user)
+    if _project_deadline_locked_for_user(project, user):
+        return JsonResponse(
+            {
+                'ok': False,
+                'message': 'The project deadline has passed. Only the owner may assign members.',
+            },
+            status=403,
+        )
+
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'ok': False, 'message': 'Invalid request payload.'}, status=400)
+
+    user_ids = payload.get('user_ids')
+    if not isinstance(user_ids, list) or not user_ids:
+        return JsonResponse({'ok': False, 'message': 'Select at least one user to add.'}, status=400)
+
+    panel_flags = payload.get('panels', {})
+    if not isinstance(panel_flags, dict):
+        panel_flags = {}
+
+    added: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+
+    for raw_id in user_ids:
+        try:
+            target_id = int(raw_id)
+        except (TypeError, ValueError):
+            skipped.append({'id': raw_id, 'reason': 'invalid'})
+            continue
+
+        try:
+            target_user = User.objects.select_related('profile').get(pk=target_id)
+        except User.DoesNotExist:
+            skipped.append({'id': target_id, 'reason': 'missing'})
+            continue
+
+        profile = getattr(target_user, 'profile', None)
+        if profile and getattr(profile, 'organization', False):
+            skipped.append({'id': target_id, 'email': target_user.username, 'reason': 'organization'})
+            continue
+
+        if Membership.objects.filter(user=target_user, project=project).exists():
+            skipped.append({'id': target_id, 'email': target_user.username, 'reason': 'duplicate'})
+            continue
+
+        membership_kwargs = {field: bool(panel_flags.get(field, False)) for field in MEMBERSHIP_PANEL_FIELDS}
+        membership_kwargs['is_owner'] = False
+
+        membership = Membership.objects.create(user=target_user, project=project, **membership_kwargs)
+        notify_membership_added(membership, actor=user)
+        added.append({'id': target_id, 'email': target_user.username})
+
+    if added:
+        summary = ', '.join(item['email'] for item in added)
+        log_activity(user, 'Bulk added memberships', f"Project {project.pk}: {summary}")
+
+    status_code = 200 if added else 400
+    response = {
+        'ok': bool(added),
+        'created': added,
+        'skipped': skipped,
+        'partial': bool(added and skipped),
+    }
+    if skipped and not added:
+        response['message'] = 'No users were added.'
+    elif skipped:
+        response['message'] = 'Some users could not be added.'
+    else:
+        response['message'] = 'Users added successfully.'
+
+    return JsonResponse(response, status=status_code)
+
+
+
+@login_required
+@require_http_methods(["POST"])
+def membership_message_send(request: HttpRequest) -> JsonResponse:
+    """Send a custom notification to selected project members."""
+
+    user = request.user
+    if not _user_is_organisation(user):
+        return JsonResponse({'ok': False, 'message': 'Access denied.'}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'ok': False, 'message': 'Invalid payload.'}, status=400)
+
+    raw_message = str(payload.get('message') or '').strip()
+    if not raw_message:
+        return JsonResponse({'ok': False, 'message': 'Message is required.'}, status=400)
+    if len(raw_message) > 500:
+        return JsonResponse({'ok': False, 'message': 'Messages are limited to 500 characters.'}, status=400)
+
+    user_ids = payload.get('user_ids')
+    if not isinstance(user_ids, list):
+        return JsonResponse({'ok': False, 'message': 'No recipients selected.'}, status=400)
+    try:
+        id_set = {int(value) for value in user_ids}
+    except (TypeError, ValueError):
+        return JsonResponse({'ok': False, 'message': 'Invalid recipient identifiers.'}, status=400)
+    if not id_set:
+        return JsonResponse({'ok': False, 'message': 'No recipients selected.'}, status=400)
+
+    projects = _get_accessible_projects(user)
+    if not projects:
+        return JsonResponse({'ok': False, 'message': 'No accessible projects available.'}, status=400)
+
+    memberships = (
+        Membership.objects.filter(project__in=projects, user_id__in=id_set)
+        .select_related('user')
+        .order_by('user_id')
+    )
+    recipients: List[User] = []
+    seen: set[int] = set()
+    for membership in memberships:
+        if membership.user_id in seen:
+            continue
+        seen.add(membership.user_id)
+        recipients.append(membership.user)
+
+    if not recipients:
+        return JsonResponse({'ok': False, 'message': 'No valid recipients found.'}, status=400)
+
+    notifications = notify_custom_message(
+        recipients,
+        message_en=raw_message,
+        message_fa=raw_message,
+        actor=user,
+    )
+    log_activity(user, 'Sent custom membership message', f"Recipients: {len(notifications)}")
+
+    skipped = list(sorted(id_set.difference(seen)))
+    return JsonResponse(
+        {
+            'ok': True,
+            'created': len(notifications),
+            'skipped': skipped,
+        }
+    )
 
 
 @login_required
@@ -530,7 +1855,15 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
     if not Membership.objects.filter(project=membership.project, user=user).exists():
         messages.error(request, 'You do not have permission to edit this membership.')
         return redirect('membership_list')
-    panel_fields = [f for f in UserToProjectForm().fields if f not in ('email', 'project')]
+    if _project_deadline_locked_for_user(membership.project, user):
+        messages.error(
+            request,
+            'Access denied: the project deadline has passed and only the owner may update memberships.',
+        )
+        return redirect('membership_list')
+    panel_fields = [
+        f for f in UserToProjectForm().fields if f not in ('email', 'project', 'title_custom', 'is_owner')
+    ]
     if request.method == 'POST':
         form = UserToProjectForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk=membership.project.pk)
@@ -538,7 +1871,24 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
         if form.is_valid():
             for field in panel_fields:
                 setattr(membership, field, form.cleaned_data[field])
+            membership.is_owner = form.cleaned_data['is_owner']
             membership.save()
+            if membership.is_owner:
+                Membership.objects.filter(project=membership.project).exclude(pk=membership.pk).update(is_owner=False)
+            else:
+                if not Membership.objects.filter(project=membership.project, is_owner=True).exclude(pk=membership.pk).exists():
+                    replacement = (
+                        Membership.objects.filter(project=membership.project)
+                        .exclude(pk=membership.pk)
+                        .order_by('start_work', 'pk')
+                        .first()
+                    )
+                    if replacement:
+                        replacement.is_owner = True
+                        replacement.save(update_fields=['is_owner'])
+                    else:
+                        membership.is_owner = True
+                        membership.save(update_fields=['is_owner'])
             messages.success(request, 'Membership updated successfully.')
             # log activity
             log_activity(user, 'Updated membership', f"Membership {membership_id}")
@@ -547,6 +1897,7 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
         initial = {'email': membership.user.email, 'project': membership.project, 'title': membership.title}
         for field in panel_fields:
             initial[field] = getattr(membership, field)
+        initial['is_owner'] = membership.is_owner
         form = UserToProjectForm(initial=initial)
         form.fields['project'].queryset = Project.objects.filter(pk=membership.project.pk)
         form.fields['email'].widget = forms.HiddenInput()  # type: ignore
@@ -567,9 +1918,25 @@ def membership_delete(request: HttpRequest, pk: int) -> HttpResponse:
     if not Membership.objects.filter(project=membership.project, user=user).exists():
         messages.error(request, 'You do not have permission to remove this membership.')
         return redirect('membership_list')
+    if _project_deadline_locked_for_user(membership.project, user):
+        messages.error(
+            request,
+            'Access denied: the project deadline has passed and only the owner may update memberships.',
+        )
+        return redirect('membership_list')
     membership_user = membership.user.username
     project_id = membership.project.pk
+    was_owner = membership.is_owner
     membership.delete()
+    if was_owner:
+        replacement = (
+            Membership.objects.filter(project_id=project_id)
+            .order_by('start_work', 'pk')
+            .first()
+        )
+        if replacement:
+            replacement.is_owner = True
+            replacement.save(update_fields=['is_owner'])
     messages.success(request, 'Membership removed.')
     # log activity
     log_activity(user, 'Removed membership', f"User {membership_user} from Project {project_id}")
@@ -598,6 +1965,17 @@ def quota_management(request: HttpRequest) -> HttpResponse:
         messages.error(request, 'Access denied: you do not have quota management permissions.')
         return redirect('home')
     projects = _get_accessible_projects(user, 'quota_management')
+    if not projects:
+        locked = _get_locked_projects(user, panel='quota_management')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to manage quotas.',
+            )
+        else:
+            messages.error(request, 'Access denied: there are no projects available for quota management.')
+        return redirect('home')
 
     # Determine selected project from query param or session
     project_param = request.GET.get('project') or request.session.get('quota_project')
@@ -605,23 +1983,41 @@ def quota_management(request: HttpRequest) -> HttpResponse:
     if project_param:
         try:
             selected_project = Project.objects.get(pk=project_param)
-            request.session['quota_project'] = selected_project.pk
         except Project.DoesNotExist:
             selected_project = None
+        else:
+            if _project_deadline_locked_for_user(selected_project, user):
+                messages.error(
+                    request,
+                    'Access denied: the project deadline has passed and only the owner may manage quotas.',
+                )
+                selected_project = None
+            else:
+                request.session['quota_project'] = selected_project.pk
 
     if request.method == 'POST':
         project_id = request.POST.get('project')
-        city_data_json = request.POST.get('city_data')
-        age_data_json = request.POST.get('age_data')
-        if not project_id or not city_data_json or not age_data_json:
+        city_data_json = request.POST.get('city_data') or '[]'
+        age_data_json = request.POST.get('age_data') or '[]'
+        gender_data_json = request.POST.get('gender_data') or '[]'
+        city_enabled = _is_truthy(request.POST.get('enable_city'))
+        age_enabled = _is_truthy(request.POST.get('enable_age'))
+        gender_enabled = _is_truthy(request.POST.get('enable_gender'))
+        if not project_id:
             messages.error(request, 'Invalid form submission.')
             return redirect('quota_management')
         try:
             project = Project.objects.get(pk=project_id)
-            request.session['quota_project'] = project.pk
         except Project.DoesNotExist:
             messages.error(request, 'Project not found.')
             return redirect('quota_management')
+        if _project_deadline_locked_for_user(project, user):
+            messages.error(
+                request,
+                'Access denied: the project deadline has passed and only the owner may manage quotas.',
+            )
+            return redirect('quota_management')
+        request.session['quota_project'] = project.pk
         # ensure user has membership or organisation rights
         if not _user_is_organisation(user) and not Membership.objects.filter(project=project, user=user, quota_management=True).exists():
             messages.error(request, 'You do not have quota permissions for this project.')
@@ -629,101 +2025,260 @@ def quota_management(request: HttpRequest) -> HttpResponse:
         try:
             city_data: List[Dict[str, Any]] = json.loads(city_data_json)
             age_data: List[Dict[str, Any]] = json.loads(age_data_json)
+            gender_data: List[Dict[str, Any]] = json.loads(gender_data_json)
         except json.JSONDecodeError:
             messages.error(request, 'Invalid quota data.')
             return redirect('quota_management')
-        # ensure percentages sum to 100 with tolerance
-        total_city = sum(float(item.get('quota', 0)) for item in city_data)
-        total_age = sum(float(item.get('quota', 0)) for item in age_data)
-        if abs(total_city - 100.0) > 0.01 or abs(total_age - 100.0) > 0.01:
-            messages.error(request, 'City and age quotas must each sum to 100%.')
+
+        def _parse_city_entries() -> List[Dict[str, Any]]:
+            if not city_enabled:
+                return [{'value': None, 'quota': 100.0}]
+            entries: List[Dict[str, Any]] = []
+            total = 0.0
+            for item in city_data:
+                name = str(item.get('city') or '').strip()
+                if not name:
+                    continue
+                quota_pct = float(item.get('quota') or 0)
+                total += quota_pct
+                entries.append({'value': name, 'quota': quota_pct})
+            if not entries:
+                raise ValueError('City quotas are required when the city dimension is enabled.')
+            if abs(total - 100.0) > 0.01:
+                raise ValueError('City quotas must sum to 100%.')
+            return entries
+
+        def _parse_age_entries() -> List[Dict[str, Any]]:
+            if not age_enabled:
+                return [{'start': None, 'end': None, 'quota': 100.0}]
+            entries: List[Dict[str, Any]] = []
+            total = 0.0
+            ranges: List[Tuple[int, int]] = []
+            for item in age_data:
+                start = int(item.get('start'))
+                end = int(item.get('end'))
+                if start >= end:
+                    raise ValueError('Age range start must be less than end.')
+                quota_pct = float(item.get('quota') or 0)
+                total += quota_pct
+                entries.append({'start': start, 'end': end, 'quota': quota_pct})
+                ranges.append((start, end))
+            if not entries:
+                raise ValueError('At least one age range is required when the age dimension is enabled.')
+            ranges.sort(key=lambda rng: rng[0])
+            for idx in range(1, len(ranges)):
+                if ranges[idx][0] < ranges[idx - 1][1]:
+                    raise ValueError('Age ranges must not overlap.')
+            if abs(total - 100.0) > 0.01:
+                raise ValueError('Age quotas must sum to 100%.')
+            return entries
+
+        def _parse_gender_entries() -> List[Dict[str, Any]]:
+            if not gender_enabled:
+                return [{'value': None, 'quota': 100.0}]
+            entries: List[Dict[str, Any]] = []
+            total = 0.0
+            for item in gender_data:
+                normalized = normalize_gender_value(item.get('value'))
+                if not normalized:
+                    continue
+                quota_pct = float(item.get('quota') or 0)
+                total += quota_pct
+                entries.append({'value': normalized, 'quota': quota_pct})
+            if not entries:
+                raise ValueError('Select at least one gender when the gender dimension is enabled.')
+            if abs(total - 100.0) > 0.01:
+                raise ValueError('Gender quotas must sum to 100%.')
+            return entries
+
+        try:
+            city_entries = _parse_city_entries()
+            age_entries = _parse_age_entries()
+            gender_entries = _parse_gender_entries()
+        except ValueError as exc:
+            messages.error(request, str(exc))
             return redirect('quota_management')
-        # delete old quotas and build new ones
+
         Quota.objects.filter(project=project).delete()
         sample_size = int(project.sample_size)
-        quota_cells: List[Tuple[str, int, int, int]] = []
-        for c in city_data:
-            city = str(c['city'])
-            city_pct = float(c['quota']) / 100.0
-            for a in age_data:
-                age_start = int(a['start'])
-                age_end = int(a['end'])
-                age_pct = float(a['quota']) / 100.0
-                target_count = int(round(sample_size * city_pct * age_pct))
-                quota_cells.append((city, age_start, age_end, target_count))
-        # adjust rounding difference to match sample_size
-        diff = sample_size - sum(cell[3] for cell in quota_cells)
+        quota_cells: List[Tuple[Optional[str], Optional[int], Optional[int], Optional[str], int]] = []
+        for city_entry in city_entries:
+            city_name = city_entry['value']
+            city_pct = float(city_entry['quota']) / 100.0
+            for age_entry in age_entries:
+                age_start = age_entry.get('start')
+                age_end = age_entry.get('end')
+                age_pct = float(age_entry['quota']) / 100.0
+                for gender_entry in gender_entries:
+                    gender_value = gender_entry['value']
+                    gender_pct = float(gender_entry['quota']) / 100.0
+                    target_count = int(round(sample_size * city_pct * age_pct * gender_pct))
+                    quota_cells.append((city_name, age_start, age_end, gender_value, target_count))
+
+        diff = sample_size - sum(cell[4] for cell in quota_cells)
         if quota_cells and diff != 0:
-            city, age_start, age_end, count = quota_cells[0]
-            quota_cells[0] = (city, age_start, age_end, max(count + diff, 0))
-        for city, age_start, age_end, count in quota_cells:
+            city_name, age_start, age_end, gender_value, count = quota_cells[0]
+            quota_cells[0] = (city_name, age_start, age_end, gender_value, max(count + diff, 0))
+
+        for city_name, age_start, age_end, gender_value, count in quota_cells:
             Quota.objects.create(
                 project=project,
-                city=city,
+                city=city_name or None,
                 age_start=age_start,
                 age_end=age_end,
+                gender=gender_value,
                 target_count=count,
                 assigned_count=0,
             )
         log_activity(user, 'Saved quotas', f"Project {project.pk}")
-        try:
-            generate_call_samples(project, replenish=False)
-        except Exception:
-            pass
+        if project.sample_source == Project.SampleSource.DATABASE:
+            try:
+                generate_call_samples(project, replenish=False)
+            except Exception:
+                pass
         messages.success(request, 'Quotas saved successfully.')
         return redirect(f"{reverse('quota_management')}?project={project.pk}")
 
     # Build context for GET requests
     # union of all cities present in database and selected project's quotas
-    db_cities = set(Person.objects.values_list('city_name', flat=True))
+    db_cities = {
+        value
+        for value in Person.objects.values_list('city_name', flat=True)
+        if value
+    }
     if selected_project:
-        quota_cities = set(Quota.objects.filter(project=selected_project).values_list('city', flat=True))
+        quota_cities = {
+            value
+            for value in Quota.objects.filter(project=selected_project).values_list('city', flat=True)
+            if value
+        }
     else:
         quota_cities = set()
     cities = sorted(db_cities | quota_cities)
+    gender_options = [
+        {'value': 'male', 'label_en': 'Male', 'label_fa': 'مرد'},
+        {'value': 'female', 'label_en': 'Female', 'label_fa': 'زن'},
+    ]
+    dimension_state = {'city': True, 'age': True, 'gender': False}
+    prefill_payload: Dict[str, Any] = {
+        'city_enabled': dimension_state['city'],
+        'age_enabled': dimension_state['age'],
+        'gender_enabled': dimension_state['gender'],
+        'cities': {},
+        'ages': [],
+        'genders': [],
+    }
     context: Dict[str, Any] = {
         'projects': projects,
         'cities': cities,
         'selected_project': selected_project,
+        'gender_options': gender_options,
+        'dimension_state': dimension_state,
+        'prefill_json': json.dumps(prefill_payload, ensure_ascii=False),
     }
     if selected_project:
         quotas = list(Quota.objects.filter(project=selected_project))
         if quotas:
-            city_headers = sorted({q.city for q in quotas})
-            age_ranges = sorted({(q.age_start, q.age_end) for q in quotas}, key=lambda x: x[0])
+            dimension_state = {
+                'city': any(q.city for q in quotas),
+                'age': any(q.age_start is not None for q in quotas),
+                'gender': any(q.gender for q in quotas),
+            }
+        else:
+            dimension_state = context['dimension_state']
+        context['dimension_state'] = dimension_state
+
+        prefill_payload = {
+            'city_enabled': dimension_state['city'],
+            'age_enabled': dimension_state['age'],
+            'gender_enabled': dimension_state['gender'],
+            'cities': {},
+            'ages': [],
+            'genders': [],
+        }
+
+        if quotas:
+            success_counts: Dict[int, int] = defaultdict(int)
+            successful_interviews = (
+                Interview.objects.filter(project=selected_project, status=True)
+                .select_related('person')
+            )
+            for interview in successful_interviews:
+                city_name, age_value, gender_value = _resolve_interview_demographics(interview)
+                for quota in quotas:
+                    if quota.matches(city_name, age_value, gender_value):
+                        success_counts[quota.pk] += 1
+                        break
+
+            to_update: List[Quota] = []
+            for quota in quotas:
+                computed = success_counts.get(quota.pk, 0)
+                if quota.assigned_count != computed:
+                    quota.assigned_count = computed
+                    to_update.append(quota)
+            if to_update:
+                Quota.objects.bulk_update(to_update, ['assigned_count'])
+
+            any_city_label = _localise_text(lang, 'All cities', 'همه شهرها')
+            any_age_label = _localise_text(lang, 'All ages', 'تمام سنین')
+            any_gender_label = _localise_text(lang, 'Any gender', 'همه جنسیت‌ها')
             table_rows: List[Dict[str, Any]] = []
-            for (start, end) in age_ranges:
-                row_counts: List[Dict[str, Any]] = []
-                for city in city_headers:
-                    q_match = next((q for q in quotas if q.city == city and q.age_start == start and q.age_end == end), None)
-                    if q_match:
-                        row_counts.append({
-                            'target': q_match.target_count,
-                            'assigned': q_match.assigned_count,
-                            'over': q_match.assigned_count > q_match.target_count,
-                        })
-                    else:
-                        row_counts.append({'target': 0, 'assigned': 0, 'over': False})
-                table_rows.append({'age_label': f"{start}-{end}", 'counts': row_counts})
-            # Prefill data for city and age percentages
+            for quota in quotas:
+                assigned_value = success_counts.get(quota.pk, 0)
+                table_rows.append(
+                    {
+                        'city': quota.city or any_city_label,
+                        'age_label': quota.age_label() if quota.age_start is not None else any_age_label,
+                        'gender_label': (_localise_text(lang, 'Male', 'مرد') if quota.gender == 'male' else (
+                            _localise_text(lang, 'Female', 'زن') if quota.gender == 'female' else any_gender_label
+                        )),
+                        'target': quota.target_count,
+                        'assigned': assigned_value,
+                        'over': assigned_value > quota.target_count,
+                    }
+                )
+
             total = max(int(selected_project.sample_size), 1)
-            city_pct_map: Dict[str, float] = {}
-            for c in city_headers:
-                s = sum(q.target_count for q in quotas if q.city == c)
-                city_pct_map[c] = round((s * 100.0) / total, 2)
-            age_prefill: List[Dict[str, Any]] = []
-            for (start, end) in age_ranges:
-                s = sum(q.target_count for q in quotas if q.age_start == start and q.age_end == end)
-                age_prefill.append({
-                    'start': start,
-                    'end': end,
-                    'quota': round((s * 100.0) / total, 2),
-                })
+            if dimension_state['city']:
+                city_totals: Dict[str, int] = defaultdict(int)
+                for q in quotas:
+                    if q.city:
+                        city_totals[q.city] += q.target_count
+                prefill_payload['cities'] = {
+                    city: round((count * 100.0) / total, 2)
+                    for city, count in city_totals.items()
+                }
+            if dimension_state['age']:
+                age_totals: Dict[Tuple[int, int], int] = defaultdict(int)
+                for q in quotas:
+                    if q.age_start is not None and q.age_end is not None:
+                        age_totals[(q.age_start, q.age_end)] += q.target_count
+                prefill_payload['ages'] = [
+                    {
+                        'start': start,
+                        'end': end,
+                        'quota': round((count * 100.0) / total, 2),
+                    }
+                    for (start, end), count in sorted(age_totals.items(), key=lambda item: item[0][0])
+                ]
+            if dimension_state['gender']:
+                gender_totals: Dict[str, int] = defaultdict(int)
+                for q in quotas:
+                    if q.gender:
+                        gender_totals[q.gender] += q.target_count
+                prefill_payload['genders'] = [
+                    {
+                        'value': gender_key,
+                        'quota': round((count * 100.0) / total, 2),
+                    }
+                    for gender_key, count in gender_totals.items()
+                ]
+
             context.update({
-                'city_headers': city_headers,
                 'table_rows': table_rows,
-                'prefill_json': json.dumps({'cities': city_pct_map, 'ages': age_prefill}, ensure_ascii=False),
             })
+
+        context['prefill_json'] = json.dumps(prefill_payload, ensure_ascii=False)
     return render(request, 'quota_management.html', context)
 
 
@@ -744,6 +2299,17 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
         return redirect('home')
     # determine accessible projects for telephone interviewer
     projects = _get_accessible_projects(user, 'telephone_interviewer')
+    if not projects:
+        locked = _get_locked_projects(user, panel='telephone_interviewer')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to use the telephone interviewer panel.',
+            )
+        else:
+            messages.error(request, 'Access denied: there are no projects available for telephone interviewing.')
+        return redirect('home')
     # selected project id from GET or session
     selected_project_id = request.GET.get('project') or request.session.get('telephone_project')
     selected_project = None
@@ -751,25 +2317,50 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
     person_mobile = None
     quota_cell = None
     call_sample_obj = None
+    uploaded_sample_obj = None
+    prefill_age: Optional[int] = None
+    prefill_birth_year: Optional[int] = None
+    prefill_city: Optional[str] = None
+    prefill_gender: Optional[str] = None
+    quota_remaining: Dict[int, int] = {}
+    sample_metadata: Dict[str, Any] = {}
+    call_result_defs = resolve_call_result_definitions(None, lang)
+    success_map = call_result_defs.success_map
+    call_result_source_state = Project.CallResultSource.DEFAULT
     if selected_project_id:
         try:
             selected_project = Project.objects.get(pk=selected_project_id)
         except Project.DoesNotExist:
             selected_project = None
         else:
+            if selected_project not in projects or _project_deadline_locked_for_user(selected_project, user):
+                messages.error(
+                    request,
+                    'Access denied: the project deadline has passed and only the owner may use the telephone interviewer panel.',
+                )
+                return redirect('telephone_interviewer')
             # store selection in session for convenience
             request.session['telephone_project'] = selected_project_id
+            call_result_defs = resolve_call_result_definitions(selected_project, lang)
+            success_map = call_result_defs.success_map
+            call_result_source_state = selected_project.call_result_source
+            quota_remaining = {
+                row['id']: int(row['target_count']) - int(row['assigned_count'])
+                for row in Quota.objects.filter(project=selected_project).values(
+                    'id', 'target_count', 'assigned_count'
+                )
+            }
+            sample_metadata = selected_project.sample_upload_metadata or {}
             # handle POST submissions: record interview and mark sample as completed
             if request.method == 'POST':
                 call_sample_id = request.POST.get('call_sample_id')
+                uploaded_sample_id = request.POST.get('uploaded_sample_id')
                 code_str = request.POST.get('code')
                 code = int(code_str) if code_str else None
-                status = True if code == 1 else False
+                status = success_map.get(code, False) if code is not None else False
                 # parse optional fields
                 gender_val = request.POST.get('gender')
-                gender = None
-                if gender_val:
-                    gender = True if gender_val == 'male' else False
+                gender = boolean_from_gender_value(gender_val)
                 age_input = request.POST.get('age')
                 age = int(age_input) if age_input else None
                 birth_year_input = request.POST.get('birth_year')
@@ -786,13 +2377,29 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
                             start_form_dt = timezone.make_aware(start_form_dt)
                     except Exception:
                         start_form_dt = None
+                sample_source_mode = selected_project.sample_source
                 call_sample = None
-                if call_sample_id:
-                    try:
-                        call_sample = CallSample.objects.get(pk=call_sample_id)
-                    except CallSample.DoesNotExist:
-                        call_sample = None
+                posted_upload = None
+                if sample_source_mode == Project.SampleSource.UPLOAD:
+                    if uploaded_sample_id:
+                        try:
+                            posted_upload = UploadedSampleEntry.objects.get(
+                                pk=uploaded_sample_id, project=selected_project
+                            )
+                        except UploadedSampleEntry.DoesNotExist:
+                            posted_upload = None
+                else:
+                    if call_sample_id:
+                        try:
+                            call_sample = CallSample.objects.get(pk=call_sample_id)
+                        except CallSample.DoesNotExist:
+                            call_sample = None
+
                 person = call_sample.person if call_sample else None
+                if not city_name and posted_upload and posted_upload.city:
+                    city_name = posted_upload.city
+                if age is None and posted_upload and posted_upload.age is not None:
+                    age = posted_upload.age
                 # create interview record
                 interview = Interview.objects.create(
                     project=selected_project,
@@ -808,96 +2415,141 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
                     end_form=timezone.now(),
                 )
                 # log activity
-                log_activity(user, 'Recorded interview', f"Project {selected_project.pk}, code {code}, call_sample_id {call_sample_id or ''}")
+                sample_ref = call_sample_id or (uploaded_sample_id or '')
+                log_activity(
+                    user,
+                    'Recorded interview',
+                    f"Project {selected_project.pk}, code {code}, sample {sample_ref}",
+                )
                 # update quota assigned count and mark sample completed
                 if call_sample:
-                    quota_obj = call_sample.quota
-                    quota_obj.assigned_count = quota_obj.assigned_count + 1
-                    quota_obj.save()
+                    if status:
+                        quota_obj = call_sample.quota
+                        Quota.objects.filter(pk=quota_obj.pk).update(assigned_count=F('assigned_count') + 1)
                     call_sample.completed = True
                     call_sample.completed_at = timezone.now()
                     call_sample.save()
+                elif posted_upload:
+                    posted_upload.completed = True
+                    posted_upload.completed_at = timezone.now()
+                    posted_upload.save(update_fields=['completed', 'completed_at'])
                 # update project's filled_samples as number of completed interviews
                 selected_project.filled_samples = Interview.objects.filter(project=selected_project, status=True).count()
                 selected_project.save()
                 messages.success(request, 'Interview recorded.')
                 # redirect back to same project to fetch next sample
                 return redirect(f"{reverse('telephone_interviewer')}?project={selected_project.pk}")
-            # GET: assign or fetch a call sample for the user
-            # First, see if the user already has a pending sample
-            call_sample = CallSample.objects.filter(
-                project=selected_project, assigned_to=user, completed=False
-            ).first()
-            if not call_sample:
-                # Assign the next unassigned sample
-                call_sample = CallSample.objects.filter(
-                    project=selected_project, assigned_to__isnull=True, completed=False
-                ).first()
+            # GET: source-specific assignment logic
+            if selected_project.sample_source == Project.SampleSource.UPLOAD:
+                uploaded = _assign_uploaded_sample(selected_project, user)
+                if uploaded:
+                    uploaded_sample_obj = uploaded
+                    display_name = uploaded.full_name or uploaded.phone
+                    person_to_call = SimpleNamespace(full_name=display_name)
+                    person_mobile = uploaded.phone
+                    if uploaded.city:
+                        prefill_city = uploaded.city
+                    if uploaded.age is not None:
+                        prefill_age = uploaded.age
+                    if uploaded.gender:
+                        prefill_gender = normalize_gender_value(uploaded.gender) or prefill_gender
+            else:
+                # First, see if the user already has a pending sample
+                call_sample = (
+                    CallSample.objects.filter(
+                        project=selected_project, assigned_to=user, completed=False
+                    )
+                    .annotate(quota_remaining=F('quota__target_count') - F('quota__assigned_count'))
+                    .order_by('-quota_remaining', 'assigned_at', 'pk')
+                    .first()
+                )
+                if not call_sample:
+                    call_sample = (
+                        CallSample.objects.filter(
+                            project=selected_project, assigned_to__isnull=True, completed=False
+                        )
+                        .annotate(quota_remaining=F('quota__target_count') - F('quota__assigned_count'))
+                        .order_by('-quota_remaining', 'pk')
+                        .first()
+                    )
+                    if call_sample:
+                        call_sample.assigned_to = user
+                        call_sample.assigned_at = timezone.now()
+                        call_sample.save()
+                if not call_sample:
+                    try:
+                        generate_call_samples(selected_project, replenish=True)
+                    except Exception:
+                        pass
+                    call_sample = (
+                        CallSample.objects.filter(
+                            project=selected_project, assigned_to__isnull=True, completed=False
+                        )
+                        .annotate(quota_remaining=F('quota__target_count') - F('quota__assigned_count'))
+                        .order_by('-quota_remaining', 'pk')
+                        .first()
+                    )
+                    if call_sample:
+                        call_sample.assigned_to = user
+                        call_sample.assigned_at = timezone.now()
+                        call_sample.save()
+                if not call_sample:
+                    try:
+                        generate_call_samples(selected_project, replenish=False)
+                    except Exception:
+                        pass
+                    call_sample = (
+                        CallSample.objects.filter(
+                            project=selected_project, assigned_to__isnull=True, completed=False
+                        )
+                        .annotate(quota_remaining=F('quota__target_count') - F('quota__assigned_count'))
+                        .order_by('-quota_remaining', 'pk')
+                        .first()
+                    )
+                    if call_sample:
+                        call_sample.assigned_to = user
+                        call_sample.assigned_at = timezone.now()
+                        call_sample.save()
                 if call_sample:
-                    call_sample.assigned_to = user
-                    call_sample.assigned_at = timezone.now()
-                    call_sample.save()
-            if not call_sample:
-                # No free samples: try to replenish (top up) existing quotas
-                try:
-                    generate_call_samples(selected_project, replenish=True)
-                except Exception:
-                    pass
-                call_sample = CallSample.objects.filter(
-                    project=selected_project, assigned_to__isnull=True, completed=False
-                ).first()
-                if call_sample:
-                    call_sample.assigned_to = user
-                    call_sample.assigned_at = timezone.now()
-                    call_sample.save()
-            if not call_sample:
-                # Still no samples: regenerate entire pool from scratch
-                try:
-                    generate_call_samples(selected_project, replenish=False)
-                except Exception:
-                    pass
-                call_sample = CallSample.objects.filter(
-                    project=selected_project, assigned_to__isnull=True, completed=False
-                ).first()
-                if call_sample:
-                    call_sample.assigned_to = user
-                    call_sample.assigned_at = timezone.now()
-                    call_sample.save()
-            if call_sample:
-                call_sample_obj = call_sample
-                person_to_call = call_sample.person
-                person_mobile = call_sample.mobile.mobile if call_sample.mobile else None
-                quota_cell = call_sample.quota
-    # status codes mapping for display in template
-    status_codes = {
-        1: 'مصاحبه موفق' if request.session.get('lang', 'en') == 'fa' else 'Successful Interview',
-        2: 'پیغام گیر (صندوق صوتی)' if request.session.get('lang', 'en') == 'fa' else 'Voicemail',
-        3: 'بعدا تماس بگیرید (با تعیین زمان)' if request.session.get('lang', 'en') == 'fa' else 'Call later (with time)',
-        4: 'بعدا تماس بگیرید (بدون تعیین زمان)' if request.session.get('lang', 'en') == 'fa' else 'Call later',
-        5: 'اشغال است' if request.session.get('lang', 'en') == 'fa' else 'Busy',
-        6: 'جواب نمی‌دهد' if request.session.get('lang', 'en') == 'fa' else 'No answer',
-        7: 'مصاحبه ناقص (باید تکمیل شود)' if request.session.get('lang', 'en') == 'fa' else 'Incomplete interview (to be completed)',
-        8: 'مصاحبه ناقص (تمایلی به ادامه ندارد)' if request.session.get('lang', 'en') == 'fa' else 'Incomplete (respondent unwilling)',
-        9: 'شماره در شبکه موجود نیست' if request.session.get('lang', 'en') == 'fa' else 'Number not in network',
-        10: 'مشکل زبان' if request.session.get('lang', 'en') == 'fa' else 'Language barrier',
-        11: 'پاسخگو در مدت فیلد در دسترس نیست' if request.session.get('lang', 'en') == 'fa' else 'Respondent unavailable during fieldwork',
-        12: 'خاموش است' if request.session.get('lang', 'en') == 'fa' else 'Powered off',
-        13: 'عدم همکاری' if request.session.get('lang', 'en') == 'fa' else 'Non‑cooperative',
-        14: 'دیگر تماس نگیرید (پاسخگوی عصبانی)' if request.session.get('lang', 'en') == 'fa' else 'Do not call again (angry)',
-        15: 'پاسخگوی غیر واجد شرایط' if request.session.get('lang', 'en') == 'fa' else 'Not eligible',
-        16: 'بیش از سهمیه' if request.session.get('lang', 'en') == 'fa' else 'Quota exceeded',
-        17: 'در دسترس نیست' if request.session.get('lang', 'en') == 'fa' else 'Unavailable',
-        18: 'برقراری تماس مقدور نیست' if request.session.get('lang', 'en') == 'fa' else 'Cannot connect',
-        19: 'خارج از سرویس' if request.session.get('lang', 'en') == 'fa' else 'Out of service',
-        20: 'سایر' if request.session.get('lang', 'en') == 'fa' else 'Other',
-        21: 'مصاحبه سوخته' if request.session.get('lang', 'en') == 'fa' else 'Burned interview',
-    }
+                    call_sample_obj = call_sample
+                    person_to_call = call_sample.person
+                    person_mobile = call_sample.mobile.mobile if call_sample.mobile else None
+                    quota_cell = call_sample.quota
+                    person_record = call_sample.person or (call_sample.mobile.person if call_sample.mobile else None)
+                    if person_record:
+                        if person_record.birth_year is not None:
+                            prefill_birth_year = person_record.birth_year
+                        if person_record.gender:
+                            prefill_gender = normalize_gender_value(person_record.gender) or prefill_gender
+                    if person_record and person_record.city_name:
+                        prefill_city = person_record.city_name
+                    elif call_sample.mobile and call_sample.mobile.person and call_sample.mobile.person.city_name:
+                        prefill_city = call_sample.mobile.person.city_name
+                    latest_interview = None
+                    if person_record:
+                        latest_interview = (
+                            Interview.objects.filter(project=selected_project, person=person_record)
+                            .order_by('-created_at')
+                            .first()
+                        )
+                    if latest_interview:
+                        if prefill_birth_year is None and latest_interview.birth_year is not None:
+                            prefill_birth_year = latest_interview.birth_year
+                        if prefill_city is None and latest_interview.city:
+                            prefill_city = latest_interview.city
+                        if latest_interview.age is not None:
+                            prefill_age = latest_interview.age
+                        if prefill_gender is None:
+                            prefill_gender = gender_value_from_boolean(latest_interview.gender)
+                    calculated_age = calculate_age_from_birth_info(prefill_birth_year, None)
+                    if calculated_age is not None:
+                        prefill_age = calculated_age
     # Determine start time for the interview form: if a call sample is
     # presented, record the current server time in ISO format so that the
     # template can include it as a hidden field.  This timestamp will be
     # saved to the Interview.start_form field when the form is submitted.
     start_iso = None
-    if call_sample_obj:
+    if call_sample_obj or uploaded_sample_obj:
         start_iso = timezone.now().isoformat()
     context = {
         'projects': projects,
@@ -906,174 +2558,49 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
         'mobile': person_mobile,
         'quota_cell': quota_cell,
         'call_sample': call_sample_obj,
-        'status_codes': status_codes,
+        'uploaded_sample': uploaded_sample_obj,
+        'quota_remaining': quota_remaining,
+        'status_codes': call_result_defs.labels,
         'start_form': start_iso,
+        'prefill_age': prefill_age,
+        'prefill_birth_year': prefill_birth_year,
+        'prefill_city': prefill_city,
+        'prefill_gender': prefill_gender,
+        'sample_source': selected_project.sample_source if selected_project else Project.SampleSource.DATABASE,
+        'sample_metadata': sample_metadata,
+        'required_headers': SAMPLE_REQUIRED_HEADERS,
+        'call_result_headers': CALL_RESULT_REQUIRED_HEADERS,
+        'call_result_mode': call_result_defs.source,
+        'call_result_selection': call_result_source_state,
     }
     return render(request, 'telephone_interviewer.html', context)
 
 
 @login_required
 def collection_performance(request: HttpRequest) -> HttpResponse:
-    """Collection performance dashboard.
+    """Delegate to the enhanced dashboard implementation."""
 
-    Renders a page containing a Chart.js bar chart that displays, for
-    each user, the total number of interviews they have conducted and
-    the number of successful interviews (code == 1).  The chart data is
-    provided by an AJAX endpoint and updated every five seconds.
-    """
-    user = request.user
-    if not _user_has_panel(user, 'collection_performance'):
-        messages.error(request, 'Access denied: you do not have collection performance permissions.')
-        return redirect('home')
-    # fetch accessible users (those who share projects with current user)
-    # For simplicity we allow an organisation to view all their users.
-    # Non‑organisation users only see themselves.
-    if _user_is_organisation(user):
-        users = User.objects.filter(memberships__project__memberships__user=user).distinct()
-    else:
-        users = User.objects.filter(pk=user.pk)
-    context = {
-        'users': users,
-    }
-    return render(request, 'collection_performance.html', context)
+    from . import views_performance as perf
+
+    return perf.collection_performance(request)
 
 
 @login_required
 def collection_performance_data(request: HttpRequest) -> JsonResponse:
-    """Return interview counts per user for the collection performance chart.
+    """Delegate to the enhanced JSON endpoint for chart payloads."""
 
-    Accepts optional query parameters ``start_date``, ``end_date`` (ISO
-    format) and ``users`` (comma separated user IDs) to filter the
-    results.  Returns a JSON response with arrays of user names,
-    total interview counts and success counts.
-    """
-    user = request.user
-    if not _user_has_panel(user, 'collection_performance'):
-        return JsonResponse({'error': 'forbidden'}, status=403)
-    start_date_str = request.GET.get('start_date')
-    end_date_str = request.GET.get('end_date')
-    user_ids = request.GET.get('users')
-    qs = Interview.objects.all()
-    # filter by time range
-    if start_date_str:
-        try:
-            start_dt = datetime.fromisoformat(start_date_str)
-            qs = qs.filter(created_at__gte=start_dt)
-        except ValueError:
-            pass
-    if end_date_str:
-        try:
-            end_dt = datetime.fromisoformat(end_date_str)
-            qs = qs.filter(created_at__lte=end_dt)
-        except ValueError:
-            pass
-    # filter by users accessible
-    if not _user_is_organisation(user):
-        qs = qs.filter(user=user)
-    elif user_ids:
-        try:
-            ids = [int(i) for i in user_ids.split(',') if i.strip()]
-            qs = qs.filter(user__id__in=ids)
-        except ValueError:
-            pass
-    # aggregate counts
-    agg = qs.values('user__first_name').annotate(
-        total=Count('id'),
-        success=Count('id', filter=Q(code=1))
-    )
-    labels: List[str] = []
-    totals: List[int] = []
-    successes: List[int] = []
-    for row in agg:
-        labels.append(row['user__first_name'] or str(row['user__first_name']))
-        totals.append(row['total'])
-        successes.append(row['success'])
-    return JsonResponse({'labels': labels, 'totals': totals, 'successes': successes})
+    from . import views_performance as perf
+
+    return perf.collection_performance_data(request)
 
 
 @login_required
 def collection_performance_export(request: HttpRequest) -> HttpResponse:
-    """Export collection performance data to an Excel workbook with charts.
+    """Delegate to the enhanced export implementation."""
 
-    This view generates an Excel file summarising the number of interviews
-    conducted by each user and the number of successful interviews (code
-    equal to 1).  It uses ``openpyxl`` to create a workbook with both
-    data and a bar chart.  If the ``openpyxl`` library is unavailable,
-    a 501 response is returned.
+    from . import views_performance as perf
 
-    The optional query parameters ``start_date``, ``end_date`` and
-    ``users`` mirror those accepted by the JSON data endpoint.  Only
-    users with the ``collection_performance`` panel permission may
-    access this endpoint.
-    """
-    user = request.user
-    if not _user_has_panel(user, 'collection_performance'):
-        messages.error(request, 'Access denied: you do not have collection performance permissions.')
-        return redirect('home')
-    if openpyxl is None:
-        return JsonResponse({'error': 'Excel export is not available on this server.'}, status=501)
-    # replicate filtering logic from collection_performance_data
-    start_date_str = request.GET.get('start_date')
-    end_date_str = request.GET.get('end_date')
-    user_ids = request.GET.get('users')
-    qs = Interview.objects.all()
-    if start_date_str:
-        try:
-            start_dt = datetime.fromisoformat(start_date_str)
-            qs = qs.filter(created_at__gte=start_dt)
-        except ValueError:
-            pass
-    if end_date_str:
-        try:
-            end_dt = datetime.fromisoformat(end_date_str)
-            qs = qs.filter(created_at__lte=end_dt)
-        except ValueError:
-            pass
-    if not _user_is_organisation(user):
-        qs = qs.filter(user=user)
-    elif user_ids:
-        try:
-            ids = [int(i) for i in user_ids.split(',') if i.strip()]
-            qs = qs.filter(user__id__in=ids)
-        except ValueError:
-            pass
-    agg = qs.values('user__first_name').annotate(
-        total=Count('id'),
-        success=Count('id', filter=Q(code=1))
-    )
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = 'Performance Data'
-    ws.append(['User', 'Total Interviews', 'Successful Interviews'])
-    for row in agg:
-        ws.append([
-            row['user__first_name'] or '',
-            row['total'],
-            row['success'],
-        ])
-    # build bar chart
-    chart = BarChart()
-    chart.title = 'Interview Performance'
-    chart.x_axis.title = 'User'
-    chart.y_axis.title = 'Count'
-    data_ref = Reference(ws, min_col=2, min_row=1, max_col=3, max_row=ws.max_row)
-    cat_ref = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
-    chart.add_data(data_ref, titles_from_data=True)
-    chart.set_categories(cat_ref)
-    chart.width = 20
-    chart.height = 10
-    ws.add_chart(chart, 'E2')
-    # write to buffer
-    from io import BytesIO
-    buffer = BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-    response = HttpResponse(
-        buffer.read(),
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
-    response['Content-Disposition'] = 'attachment; filename=collection_performance.xlsx'
-    return response
+    return perf.collection_performance_export(request)
 
 # -----------------------------------------------------------------------------
 # Conjoint analysis placeholder
@@ -1192,6 +2719,15 @@ def database_list(request: HttpRequest) -> HttpResponse:
         return redirect('home')
     # Determine which projects the user can manage
     projects = _get_accessible_projects(user, panel='database_management')
+    if not projects:
+        locked = _get_locked_projects(user, panel='database_management')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to use the database panel.',
+            )
+            return redirect('home')
     entries = DatabaseEntry.objects.filter(project__in=projects).select_related('project')
     return render(request, 'database_list.html', {'entries': entries})
 
@@ -1211,41 +2747,47 @@ def database_add(request: HttpRequest) -> HttpResponse:
         messages.error(request, 'Access denied: you do not have permission to add databases.')
         return redirect('home')
     projects = _get_accessible_projects(user, panel='database_management')
+    if not projects:
+        locked = _get_locked_projects(user, panel='database_management')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                f'Access denied: project deadlines have passed ({locked_names}). Only the owner can continue to use the database panel.',
+            )
+        else:
+            messages.error(request, 'Access denied: you do not have a project available for database management.')
+        return redirect('home')
     if request.method == 'POST':
-        # Pass uploaded files to the form for handling the XLSForm upload
-        form = DatabaseEntryForm(request.POST, request.FILES)
+        form = DatabaseEntryForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
         if form.is_valid():
             entry: DatabaseEntry = form.save(commit=False)
-            # Default status to False; will be updated by background ETL.
-            # Also clear last_sync and last_error so they reflect the state of a new entry.
             entry.status = False
             entry.last_sync = None
             entry.last_error = ''
             entry.save()
-            # Immediately attempt a single ETL sync using the uploaded XLSForm.
-            # This gives feedback to the user without waiting for the scheduled sync.
-            if run_once and FormSpec and sanitize_identifier:
-                try:
-                    # Set PG_* env vars from Django settings so the ETL writes into our DB
-                    db_conf = settings.DATABASES.get('default', {})
-                    os.environ['PG_HOST'] = db_conf.get('HOST', '') or '127.0.0.1'
-                    os.environ['PG_PORT'] = str(db_conf.get('PORT', 5432))
-                    os.environ['PG_DBNAME'] = db_conf.get('NAME', '')
-                    os.environ['PG_USER'] = db_conf.get('USER', '')
-                    os.environ['PG_PASSWORD'] = db_conf.get('PASSWORD', '') or db_conf.get('PGPASSWORD', '') or ''
-                    # Build a safe table name and run one sync
-                    table_name = sanitize_identifier(entry.asset_id)
-                    form_spec = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, xls_path=entry.xlsform.path, main_table=table_name)
-                    inserted_main, inserted_rep = run_once(form_spec)
-                    entry.status = True
-                    entry.last_error = ''
-                except Exception as e:
-                    entry.status = False
-                    entry.last_error = str(e)
-                entry.last_sync = timezone.now()
-                entry.save()
-            messages.success(request, 'Database entry created successfully.')
+            entry.last_update_requested = timezone.now()
+            entry.save(update_fields=['last_update_requested'])
+            sync_message = ''
+            try:
+                result = refresh_entry_cache(entry)
+                entry.status = True
+                entry.last_error = ''
+                sync_message = f" Cached {result.total} records."
+            except DatabaseCacheError as exc:
+                entry.status = False
+                entry.last_error = str(exc)
+                messages.warning(request, f'Initial sync failed: {exc}')
+            now = timezone.now()
+            entry.last_sync = now
+            if entry.status:
+                entry.last_manual_update = now
+            entry.save(update_fields=['status', 'last_error', 'last_sync', 'last_manual_update'])
+            success_message = 'Database entry created successfully.'
+            if sync_message:
+                success_message += sync_message
+            messages.success(request, success_message)
             # Trigger background sync here if desired (e.g. Celery, management command)
             log_activity(user, 'Added database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
             return redirect('database_list')
@@ -1273,33 +2815,34 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
     if entry.project not in projects:
         messages.error(request, 'You do not have permission to edit this database.')
         return redirect('database_list')
+    if not _ensure_project_deadline_access(request, entry.project):
+        return redirect('database_list')
     if request.method == 'POST':
-        # Accept uploaded XLSForm files when editing.  ``request.FILES``
-        # must be passed to the form constructor to handle file inputs.
-        form = DatabaseEntryForm(request.POST, request.FILES, instance=entry)
+        form = DatabaseEntryForm(request.POST, instance=entry)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
         if form.is_valid():
             entry = form.save()
-            # Immediately attempt to re-synchronise this entry after edit.
-            if run_once and FormSpec and sanitize_identifier:
-                try:
-                    db_conf = settings.DATABASES.get('default', {})
-                    os.environ['PG_HOST'] = db_conf.get('HOST', '') or '127.0.0.1'
-                    os.environ['PG_PORT'] = str(db_conf.get('PORT', 5432))
-                    os.environ['PG_DBNAME'] = db_conf.get('NAME', '')
-                    os.environ['PG_USER'] = db_conf.get('USER', '')
-                    os.environ['PG_PASSWORD'] = db_conf.get('PASSWORD', '') or db_conf.get('PGPASSWORD', '') or ''
-                    table_name = sanitize_identifier(entry.asset_id)
-                    form_spec = FormSpec(api_token=entry.token, asset_uid=entry.asset_id, xls_path=entry.xlsform.path, main_table=table_name)
-                    inserted_main, inserted_rep = run_once(form_spec)
-                    entry.status = True
-                    entry.last_error = ''
-                except Exception as e:
-                    entry.status = False
-                    entry.last_error = str(e)
-                entry.last_sync = timezone.now()
-                entry.save()
-            messages.success(request, 'Database entry updated successfully.')
+            entry.last_update_requested = timezone.now()
+            entry.save(update_fields=['last_update_requested'])
+            sync_message = ''
+            try:
+                result = refresh_entry_cache(entry)
+                entry.status = True
+                entry.last_error = ''
+                sync_message = f" Cached {result.total} records."
+            except DatabaseCacheError as exc:
+                entry.status = False
+                entry.last_error = str(exc)
+                messages.warning(request, f'Sync failed after update: {exc}')
+            now = timezone.now()
+            entry.last_sync = now
+            if entry.status:
+                entry.last_manual_update = now
+            entry.save(update_fields=['status', 'last_error', 'last_sync', 'last_manual_update'])
+            success_message = 'Database entry updated successfully.'
+            if sync_message:
+                success_message += sync_message
+            messages.success(request, success_message)
             log_activity(user, 'Edited database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
             return redirect('database_list')
     else:
@@ -1327,6 +2870,8 @@ def database_delete(request: HttpRequest, pk: int) -> HttpResponse:
     if entry.project not in projects:
         messages.error(request, 'You do not have permission to delete this database.')
         return redirect('database_list')
+    if not _ensure_project_deadline_access(request, entry.project):
+        return redirect('database_list')
     # Attempt to drop the table corresponding to this entry
     try:
         # Build a connection to the default database configured in settings
@@ -1346,6 +2891,7 @@ def database_delete(request: HttpRequest, pk: int) -> HttpResponse:
     except Exception:
         # Fail silently; deletion of the Django record should still proceed
         pass
+    delete_entry_cache(entry)
     entry.delete()
     messages.success(request, 'Database entry deleted successfully.')
     log_activity(user, 'Deleted database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
@@ -1353,14 +2899,93 @@ def database_delete(request: HttpRequest, pk: int) -> HttpResponse:
 
 
 @login_required
-def database_view(request: HttpRequest, pk: int) -> HttpResponse:
-    """View data from the table synchronised for a database entry.
+@require_POST
+def database_update(request: HttpRequest, pk: int) -> HttpResponse:
+    """Trigger an incremental cache refresh for a ``DatabaseEntry``.
 
-    This view queries the first 100 rows of the table corresponding to
-    the given ``DatabaseEntry`` (named after its asset_id) and
-    displays them in a simple table.  Only users with the
-    ``database_management`` permission for the associated project may
-    view the data.
+    Users may invoke this action from the database list to fetch new Kobo
+    submissions.  To prevent abuse, each entry is limited to ten manual
+    refreshes within a rolling 90 minute window.
+    """
+
+    user = request.user
+    if not _user_has_panel(user, 'database_management'):
+        messages.error(request, 'Access denied: you do not have permission to update databases.')
+        return redirect('home')
+
+    entry = get_object_or_404(DatabaseEntry, pk=pk)
+    projects = _get_accessible_projects(user, panel='database_management')
+    if entry.project not in projects:
+        messages.error(request, 'You do not have permission to update this database.')
+        return redirect('database_list')
+    if not _ensure_project_deadline_access(request, entry.project):
+        return redirect('database_list')
+
+    now = timezone.now()
+    window_start = entry.update_window_start
+    if window_start is None or now - window_start >= timedelta(minutes=90):
+        entry.update_window_start = now
+        entry.update_attempt_count = 0
+    elif entry.update_attempt_count >= 10:
+        retry_at = entry.update_window_start + timedelta(minutes=90)
+        wait_seconds = max(int((retry_at - now).total_seconds()), 0)
+        wait_minutes = (wait_seconds + 59) // 60
+        if wait_minutes <= 0:
+            wait_message = 'Update limit reached. Please try again shortly.'
+        else:
+            wait_message = (
+                'Update limit reached. Please try again in about '
+                f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''}."
+            )
+        messages.warning(request, wait_message)
+        return redirect('database_list')
+
+    entry.update_attempt_count += 1
+    entry.last_update_requested = now
+    entry.save(update_fields=['update_window_start', 'update_attempt_count', 'last_update_requested'])
+
+    tracked_window_start = timezone.now() - timedelta(days=30)
+    tracked_qs = list(DatabaseEntryEditRequest.objects.filter(entry=entry, requested_at__gte=tracked_window_start))
+    tracked_ids = [req.submission_id for req in tracked_qs]
+
+    try:
+        result = refresh_entry_cache(entry, refresh_ids=tracked_ids)
+        entry.status = True
+        entry.last_error = ''
+        entry.last_manual_update = now
+        entry.last_sync = now
+        entry.save(update_fields=['status', 'last_error', 'last_manual_update', 'last_sync'])
+        messages.success(
+            request,
+            (
+                'Database updated successfully. '
+                f"Added {result.added} and updated {result.updated} submissions (total {result.total})."
+            ),
+        )
+        # Remove any tracked edit requests outside the rolling window to keep the
+        # cache tidy once their refreshed versions have been downloaded.
+        DatabaseEntryEditRequest.objects.filter(entry=entry, requested_at__lt=tracked_window_start).delete()
+        log_activity(user, 'Manually updated database entry', f"DB {entry.db_name} for Project {entry.project.pk}")
+    except DatabaseCacheError as exc:
+        entry.status = False
+        entry.last_error = str(exc)
+        entry.last_sync = now
+        entry.save(update_fields=['status', 'last_error', 'last_sync'])
+        messages.error(request, f'Failed to update database: {exc}')
+        log_activity(user, 'Failed database update', f"DB {entry.db_name} for Project {entry.project.pk}")
+
+    return redirect('database_list')
+
+
+@login_required
+def database_view(request: HttpRequest, pk: int) -> HttpResponse:
+    """Display cached Kobo submissions for a database entry.
+
+    This view reads the JSON snapshot produced during synchronisation for
+    the given ``DatabaseEntry`` and paginates the cached submissions so
+    operators can browse the payload in manageable slices. Only users with
+    the ``database_management`` permission for the associated project may
+    view the cached data.
     """
     user = request.user
     if not _user_has_panel(user, 'database_management'):
@@ -1371,206 +2996,677 @@ def database_view(request: HttpRequest, pk: int) -> HttpResponse:
     if entry.project not in projects:
         messages.error(request, 'You do not have permission to view this database.')
         return redirect('database_list')
-    columns: List[str] = []
-    rows: List[Tuple[Any, ...]] = []
-    # Use the ETL sanitiser if available to match the table name created
-    # during import. Fallback to the local sanitiser otherwise.
-    if sanitize_identifier:
-        table_name = sanitize_identifier(entry.asset_id)  # type: ignore
-    else:
-        table_name = _sanitize_identifier(entry.asset_id)
+    if not _ensure_project_deadline_access(request, entry.project):
+        return redirect('database_list')
+    snapshot = load_entry_snapshot(entry)
+    all_records = snapshot.records
+    # NOTE: For very large payloads we may need to stream or cache slices client-side
+    # to avoid loading the full JSON into memory during rendering.
+    total_records = len(all_records)
+    page_sizes = [30, 50, 200]
+    default_page_size = page_sizes[1]
     try:
-        db_conf = settings.DATABASES.get('default', {})
-        conn = psycopg2.connect(
-            host=db_conf.get('HOST', '127.0.0.1'),
-            port=db_conf.get('PORT', 5432),
-            dbname=db_conf.get('NAME'),
-            user=db_conf.get('USER'),
-            password=db_conf.get('PASSWORD'),
-        )
-        with conn.cursor() as cur:
-            # Fetch column names
-            cur.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = %s
-                ORDER BY ordinal_position
-                """,
-                (table_name,),
-            )
-            columns = [r[0] for r in cur.fetchall()]
-            # Fetch first 100 rows
-            if columns:
-                cur.execute(sql.SQL("SELECT * FROM {} LIMIT 100;").format(sql.Identifier(table_name)))
-                rows = cur.fetchall()
-        conn.close()
-    except Exception:
-        # leave columns/rows empty on failure
-        columns = []
-        rows = []
+        requested_size = int(request.GET.get('page_size', default_page_size))
+    except (TypeError, ValueError):
+        requested_size = default_page_size
+    page_size = requested_size if requested_size in page_sizes else default_page_size
+    total_pages = max(1, ceil(total_records / page_size))
+    try:
+        requested_page = int(request.GET.get('page', 1))
+    except (TypeError, ValueError):
+        requested_page = 1
+    page = min(max(1, requested_page), total_pages)
+    start = (page - 1) * page_size
+    end = start + page_size
+    records = all_records[start:end]
+    columns = infer_columns(all_records)
+    rows: List[List[Any]] = []
+    for record in records:
+        row: List[Any] = []
+        for column in columns:
+            value = record.get(column)
+            if isinstance(value, (dict, list)):
+                row.append(json.dumps(value, ensure_ascii=False))
+            elif value is None:
+                row.append('')
+            else:
+                row.append(value)
+        rows.append(row)
     return render(request, 'database_view.html', {
         'entry': entry,
         'columns': columns,
         'rows': rows,
+        'snapshot': snapshot,
+        'page': page,
+        'page_size': page_size,
+        'page_sizes': page_sizes,
+        'total_pages': total_pages,
+        'total_records': total_records,
+        'start_index': start + 1 if total_records else 0,
+        'end_index': min(end, total_records),
+        'has_previous': page > 1,
+        'has_next': page < total_pages,
     })
 
 
 @login_required
 def qc_edit(request: HttpRequest) -> HttpResponse:
-    """
-    Data quality control panel for editing imported survey data.
+    """Data quality control dashboard backed by cached Kobo submissions."""
 
-    Users with ``qc_management`` or ``qc_performance`` permissions can
-    select a project and then choose from the database entries defined
-    in the Database Management panel.  The data from the selected
-    external form (stored in PostgreSQL via the ETL) is displayed as
-    an editable table.  Each row can be submitted to update the
-    underlying record.  Only the first 100 rows are shown for
-    performance reasons.  Edits take effect immediately upon
-    submission of a row form.
-    """
     user = request.user
-    # Ensure the user has QC permissions on at least one project
+    lang = request.session.get('lang', 'en')
     if not (_user_has_panel(user, 'qc_management') or _user_has_panel(user, 'qc_performance')):
         messages.error(request, 'Access denied: you do not have quality control permissions.')
         return redirect('home')
-    # Determine projects accessible for QC
-    memberships = Membership.objects.filter(user=user)
-    project_ids: List[int] = []
-    for mem in memberships:
-        if mem.qc_management or mem.qc_performance or _user_is_organisation(user):
-            project_ids.append(mem.project_id)
-    accessible_projects = Project.objects.filter(pk__in=project_ids).distinct()
-    # Initialise context
+
+    project_qs = Project.objects.filter(memberships__user=user)
+    if not _user_is_organisation(user):
+        project_qs = project_qs.filter(Q(memberships__qc_management=True) | Q(memberships__qc_performance=True))
+    accessible_projects = list(project_qs.distinct().order_by('name'))
+
     selected_project: Optional[Project] = None
     selected_entry: Optional[DatabaseEntry] = None
-    table_columns: List[str] = []
-    table_rows: List[Dict[str, Any]] = []
-    row_error: Optional[str] = None
-    # Handle POST (row update)
-    if request.method == 'POST':
-        project_id = request.POST.get('project_id')
-        entry_id = request.POST.get('entry_id')
-        row_id = request.POST.get('row_id')
-        if not project_id or not entry_id or not row_id:
-            messages.error(request, 'Invalid submission.')
-            return redirect('qc_edit')
-        try:
-            selected_project = Project.objects.get(pk=project_id)
-            selected_entry = DatabaseEntry.objects.get(pk=entry_id, project=selected_project)
-        except Project.DoesNotExist:
-            messages.error(request, 'Project not found.')
-            return redirect('qc_edit')
-        except DatabaseEntry.DoesNotExist:
-            messages.error(request, 'Database entry not found.')
-            return redirect('qc_edit')
-        # Use ETL sanitiser if available for consistent table naming
-        if sanitize_identifier:
-            table_name = sanitize_identifier(selected_entry.asset_id)  # type: ignore
-        else:
-            table_name = _sanitize_identifier(selected_entry.asset_id)
-        updates: Dict[str, Any] = {}
-        for key, val in request.POST.items():
-            if key.startswith('col__'):
-                col = key[len('col__'):]
-                updates[col] = val
-        try:
-            db_conf = settings.DATABASES.get('default', {})
-            conn = psycopg2.connect(
-                host=db_conf.get('HOST', ''),
-                port=db_conf.get('PORT', 5432),
-                dbname=db_conf.get('NAME', ''),
-                user=db_conf.get('USER', ''),
-                password=db_conf.get('PASSWORD', '')
-            )
-            with conn.cursor() as cur:
-                set_clauses = []
-                values: List[Any] = []
-                for col, val in updates.items():
-                    set_clauses.append(sql.SQL('{} = %s').format(sql.Identifier(col)))
-                    values.append(val)
-                if set_clauses:
-                    values.append(int(row_id))
-                    query = sql.SQL('UPDATE {} SET {} WHERE _id = %s').format(
-                        sql.Identifier(table_name), sql.SQL(', ').join(set_clauses)
-                    )
-                    cur.execute(query, values)
-                    conn.commit()
-                    messages.success(request, 'Row updated successfully.')
-        except Exception as e:
-            row_error = str(e)
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-        return redirect(f"{reverse('qc_edit')}?project={selected_project.pk}&entry={selected_entry.pk}")
-    # Process GET parameters
-    project_param = request.GET.get('project')
-    entry_param = request.GET.get('entry')
-    if project_param:
-        try:
-            selected_project = accessible_projects.get(pk=project_param)
-        except Project.DoesNotExist:
-            selected_project = None
-    if selected_project and entry_param:
-        try:
-            selected_entry = DatabaseEntry.objects.get(pk=entry_param, project=selected_project)
-        except DatabaseEntry.DoesNotExist:
-            selected_entry = None
-    # Fetch data
-    if selected_project and selected_entry:
-        # Compute table name using ETL sanitiser if available
-        if sanitize_identifier:
-            table_name = sanitize_identifier(selected_entry.asset_id)  # type: ignore
-        else:
-            table_name = _sanitize_identifier(selected_entry.asset_id)
-        try:
-            db_conf = settings.DATABASES.get('default', {})
-            conn = psycopg2.connect(
-                host=db_conf.get('HOST', ''),
-                port=db_conf.get('PORT', 5432),
-                dbname=db_conf.get('NAME', ''),
-                user=db_conf.get('USER', ''),
-                password=db_conf.get('PASSWORD', '')
-            )
-            with conn.cursor() as cur:
-                cur.execute(
-                    """SELECT column_name FROM information_schema.columns
-                           WHERE table_schema='public' AND table_name=%s
-                           ORDER BY ordinal_position""",
-                    (table_name,),
-                )
-                table_columns = [r[0] for r in cur.fetchall()]
-                if table_columns:
-                    cur.execute(sql.SQL('SELECT * FROM {} ORDER BY _id ASC LIMIT 100').format(sql.Identifier(table_name)))
-                    raw_rows = cur.fetchall()
-                    # Convert raw rows into list of dicts and expose row_id separately
-                    table_rows = []
-                    for row in raw_rows:
-                        row_dict = dict(zip(table_columns, row))
-                        # Expose the primary key (_id) via a non-underscore key for safe template access
-                        if '_id' in row_dict:
-                            row_dict['row_id'] = row_dict['_id']
-                        table_rows.append(row_dict)
-        except Exception as e:
-            row_error = str(e)
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    # Fetch database entries for the selected project
     entries_for_project: List[DatabaseEntry] = []
+    snapshot = None
+    columns: List[str] = []
+    column_meta: List[Dict[str, Any]] = []
+    filter_values: List[Dict[str, Any]] = []
+    table_rows: List[Dict[str, Any]] = []
+    tracked_requests: List[DatabaseEntryEditRequest] = []
+
+    project_param = request.GET.get('project')
+    if project_param:
+        for project in accessible_projects:
+            if str(project.pk) == project_param:
+                selected_project = project
+                break
+
     if selected_project:
-        entries_for_project = list(DatabaseEntry.objects.filter(project=selected_project))
+        entries_for_project = list(DatabaseEntry.objects.filter(project=selected_project).order_by('db_name'))
+        entry_param = request.GET.get('entry')
+        if entry_param:
+            for entry in entries_for_project:
+                if str(entry.pk) == entry_param:
+                    selected_entry = entry
+                    break
+
+    search_term = (request.GET.get('search') or '').strip()
+    column_filters: Dict[str, str] = {}
+    page_sizes = [30, 50, 200]
+    default_page_size = 50
+    page_size = default_page_size
+    page = 1
+    total_pages = 1
+    total_records = 0
+    start_index = 0
+    end_index = 0
+    has_previous = False
+    has_next = False
+
+    if selected_entry:
+        snapshot = load_entry_snapshot(selected_entry)
+        records = snapshot.records
+        columns = infer_columns(records)
+        for idx, column in enumerate(columns):
+            value = (request.GET.get(f'filter_{idx}') or '').strip()
+            filter_values.append({'index': idx, 'name': column, 'value': value})
+            if value:
+                column_filters[column] = value
+            column_meta.append({'index': idx, 'name': column, 'sort_type': _detect_sort_type(records, column)})
+
+        search_terms = [term for term in search_term.lower().split() if term]
+        filtered_records: List[Tuple[Dict[str, Any], Dict[str, str]]] = []
+        for record in records:
+            value_map = {col: _normalise_record_value(record.get(col)) for col in columns}
+            combined_text = ' '.join(value_map.values()).lower()
+            if search_terms and not all(term in combined_text for term in search_terms):
+                continue
+            matches = True
+            for col, filter_text in column_filters.items():
+                if not _matches_filter_value(value_map[col], filter_text):
+                    matches = False
+                    break
+            if matches:
+                filtered_records.append((record, value_map))
+
+        total_records = len(filtered_records)
+        try:
+            requested_size = int(request.GET.get('page_size', default_page_size))
+        except (TypeError, ValueError):
+            requested_size = default_page_size
+        if requested_size in page_sizes:
+            page_size = requested_size
+        total_pages = max(1, ceil(total_records / page_size))
+        try:
+            requested_page = int(request.GET.get('page', 1))
+        except (TypeError, ValueError):
+            requested_page = 1
+        page = min(max(1, requested_page), total_pages)
+        start_index = (page - 1) * page_size
+        end_index = min(start_index + page_size, total_records)
+        has_previous = page > 1
+        has_next = page < total_pages
+        page_slice = filtered_records[start_index:end_index]
+
+        tracked_since = timezone.now() - timedelta(days=30)
+        tracked_requests = list(
+            DatabaseEntryEditRequest.objects.filter(entry=selected_entry, requested_at__gte=tracked_since)
+        )
+        tracked_ids = {req.submission_id for req in tracked_requests}
+
+        for record, value_map in page_slice:
+            submission_id = _extract_submission_id(record)
+            table_rows.append({
+                'values': [value_map[col] for col in columns],
+                'submission_id': submission_id,
+                'is_tracked': submission_id in tracked_ids,
+            })
+
     context = {
         'projects': accessible_projects,
         'selected_project': selected_project,
         'entries': entries_for_project,
         'selected_entry': selected_entry,
-        'table_columns': table_columns,
+        'snapshot': snapshot,
+        'columns': columns,
+        'column_meta': column_meta,
+        'filter_values': filter_values,
         'table_rows': table_rows,
-        'row_error': row_error,
+        'search_term': search_term,
+        'page': page,
+        'page_size': page_size,
+        'page_sizes': page_sizes,
+        'total_pages': total_pages,
+        'total_records': total_records,
+        'start_index': start_index + 1 if total_records else 0,
+        'end_index': end_index,
+        'has_previous': has_previous,
+        'has_next': has_next,
+        'tracked_requests': tracked_requests,
+        'lang': lang,
     }
     return render(request, 'qc_edit.html', context)
+
+
+@login_required
+@require_POST
+def qc_edit_link(request: HttpRequest, entry_id: int) -> JsonResponse:
+    """Return an Enketo edit link for a given submission."""
+
+    user = request.user
+    entry = get_object_or_404(DatabaseEntry, pk=entry_id)
+    project = entry.project
+    lang = request.session.get('lang', 'en')
+    if not (_user_is_organisation(user) or Membership.objects.filter(
+        user=user,
+        project=project,
+    ).filter(Q(qc_management=True) | Q(qc_performance=True)).exists()):
+        message = 'Access denied.' if lang != 'fa' else 'دسترسی مجاز نیست.'
+        return JsonResponse({'error': message}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except json.JSONDecodeError:
+        payload = {}
+    submission_id = str(payload.get('submission_id') or request.POST.get('submission_id') or '').strip()
+    if not submission_id:
+        message = 'Submission id is required.' if lang != 'fa' else 'شناسه ارسال لازم است.'
+        return JsonResponse({'error': message}, status=400)
+
+    tracked_window_start = timezone.now() - timedelta(days=30)
+    DatabaseEntryEditRequest.objects.filter(entry=entry, requested_at__lt=tracked_window_start).delete()
+
+    return_url = request.build_absolute_uri(
+        f"{reverse('qc_edit')}?project={project.pk}&entry={entry.pk}"
+    )
+    try:
+        edit_url = request_enketo_edit_url(entry, submission_id, return_url=return_url)
+    except EnketoLinkError as exc:
+        return JsonResponse({'error': str(exc)}, status=502)
+
+    DatabaseEntryEditRequest.objects.update_or_create(
+        entry=entry,
+        submission_id=submission_id,
+        defaults={'requested_at': timezone.now()},
+    )
+
+    return JsonResponse({'url': edit_url})
+
+
+def _localise_message(lang: str, english: str, persian: str) -> str:
+    """Return a message in the user's preferred language."""
+
+    return persian if lang == 'fa' else english
+
+
+def _serialise_filter_preset(preset: TableFilterPreset) -> Dict[str, Any]:
+    """Convert a ``TableFilterPreset`` into a JSON-safe dictionary."""
+
+    return {
+        'name': preset.name,
+        'table_id': preset.table_id,
+        'payload': preset.payload,
+        'created_at': preset.created_at.isoformat(),
+        'updated_at': preset.updated_at.isoformat(),
+    }
+
+
+@login_required
+@require_http_methods(["GET", "POST", "DELETE"])
+def table_filter_presets(request: HttpRequest, table_id: str) -> JsonResponse:
+    """Create, list or delete saved advanced-filter presets for a table."""
+
+    lang = request.session.get('lang', 'en')
+    table_id = (table_id or '').strip()
+    if not table_id or not _TABLE_ID_PATTERN.match(table_id):
+        message = _localise_message(
+            lang,
+            'Invalid table identifier.',
+            'شناسه جدول نامعتبر است.',
+        )
+        return JsonResponse({'error': message}, status=400)
+
+    if request.method == 'GET':
+        presets = TableFilterPreset.objects.filter(user=request.user, table_id=table_id).order_by('name')
+        return JsonResponse({'presets': [_serialise_filter_preset(p) for p in presets]})
+
+    try:
+        payload = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except json.JSONDecodeError:
+        message = _localise_message(
+            lang,
+            'Invalid JSON payload.',
+            'دادهٔ ارسال شده معتبر نیست.',
+        )
+        return JsonResponse({'error': message}, status=400)
+
+    name = str(payload.get('name') or '').strip()
+    if not name:
+        message = _localise_message(
+            lang,
+            'A name is required to save filters.',
+            'برای ذخیره فیلتر لازم است نامی وارد کنید.',
+        )
+        return JsonResponse({'error': message}, status=400)
+
+    preset_payload = payload.get('payload') or {}
+    logic = 'or' if preset_payload.get('logic') == 'or' else 'and'
+    raw_filters = preset_payload.get('filters') or []
+    if not isinstance(raw_filters, list):
+        raw_filters = []
+
+    normalised_filters: List[Dict[str, Any]] = []
+    for item in raw_filters:
+        try:
+            column = int(item.get('column'))
+        except (TypeError, ValueError):
+            continue
+        operator = str(item.get('operator') or '').strip()
+        if not operator:
+            continue
+        values = item.get('values') or []
+        if not isinstance(values, list):
+            values = []
+        normalised_values = [str(value) for value in values]
+        condition_type = str(item.get('type') or 'text').strip() or 'text'
+        normalised_filters.append(
+            {
+                'column': column,
+                'operator': operator,
+                'values': normalised_values,
+                'type': condition_type,
+            }
+        )
+
+    if request.method == 'DELETE':
+        deleted, _ = TableFilterPreset.objects.filter(
+            user=request.user,
+            table_id=table_id,
+            name=name,
+        ).delete()
+        if deleted:
+            message = _localise_message(
+                lang,
+                'Filter removed.',
+                'فیلتر حذف شد.',
+            )
+            remaining = TableFilterPreset.objects.filter(user=request.user, table_id=table_id).order_by('name')
+            return JsonResponse({'presets': [_serialise_filter_preset(p) for p in remaining], 'message': message})
+        message = _localise_message(
+            lang,
+            'Filter not found.',
+            'فیلتر مورد نظر یافت نشد.',
+        )
+        return JsonResponse({'error': message}, status=404)
+
+    if not normalised_filters:
+        message = _localise_message(
+            lang,
+            'At least one condition is required to save a preset.',
+            'برای ذخیره فیلتر باید حداقل یک شرط تعیین کنید.',
+        )
+        return JsonResponse({'error': message}, status=400)
+
+    version = preset_payload.get('version')
+    try:
+        version = int(version)
+    except (TypeError, ValueError):
+        version = 1
+
+    context_label = str(preset_payload.get('context') or '').strip()
+    if context_label:
+        context_label = context_label[:150]
+
+    columns_meta = []
+    raw_columns = preset_payload.get('columns')
+    if isinstance(raw_columns, list):
+        for column_meta in raw_columns:
+            try:
+                meta_index = int(column_meta.get('index'))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            meta_name = str(column_meta.get('name') or '').strip()
+            meta_type = str(column_meta.get('type') or '').strip() or 'text'
+            columns_meta.append({'index': meta_index, 'name': meta_name, 'type': meta_type})
+
+    normalised_payload = {
+        'version': version,
+        'logic': logic,
+        'filters': normalised_filters,
+    }
+    if context_label:
+        normalised_payload['context'] = context_label
+    if columns_meta:
+        normalised_payload['columns'] = columns_meta
+
+    preset, _ = TableFilterPreset.objects.update_or_create(
+        user=request.user,
+        table_id=table_id,
+        name=name,
+        defaults={'payload': normalised_payload},
+    )
+
+    message = _localise_message(
+        lang,
+        'Filter saved successfully.',
+        'فیلتر با موفقیت ذخیره شد.',
+    )
+    updated = TableFilterPreset.objects.filter(user=request.user, table_id=table_id).order_by('name')
+    return JsonResponse(
+        {
+            'preset': _serialise_filter_preset(preset),
+            'presets': [_serialise_filter_preset(p) for p in updated],
+            'message': message,
+        }
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def notifications_unread(request: HttpRequest) -> JsonResponse:
+    """Return unread notifications for the current user."""
+
+    lang = request.session.get('lang', 'en')
+    lang = 'fa' if lang == 'fa' else 'en'
+    unread_qs = Notification.objects.filter(recipient=request.user, is_read=False).order_by('-created_at')
+    total = unread_qs.count()
+    items: List[Dict[str, Any]] = []
+    for note in unread_qs[:50]:
+        items.append(
+            {
+                'id': note.pk,
+                'message': localised_message(note, lang),
+                'eventType': note.event_type,
+                'createdAt': note.created_at.isoformat(),
+                'project': note.project.name if note.project else None,
+                'metadata': note.metadata,
+            }
+        )
+    return JsonResponse({'notifications': items, 'count': total})
+
+
+@login_required
+@require_http_methods(["POST"])
+def notifications_mark_read(request: HttpRequest) -> JsonResponse:
+    """Mark notifications as read for the current user."""
+
+    try:
+        payload = json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'ok': False, 'message': 'Invalid payload.'}, status=400)
+
+    if payload.get('all'):
+        updated = mark_notifications_read(request.user, None)
+    else:
+        ids = payload.get('ids')
+        if not isinstance(ids, list):
+            return JsonResponse({'ok': False, 'message': 'No notifications specified.'}, status=400)
+        try:
+            id_list = [int(value) for value in ids]
+        except (TypeError, ValueError):
+            return JsonResponse({'ok': False, 'message': 'Invalid notification identifiers.'}, status=400)
+        updated = mark_notifications_read(request.user, id_list)
+
+    return JsonResponse({'ok': True, 'updated': updated})
+
+
+def _calendar_user_label(user: User) -> str:
+    return user.get_full_name() or user.first_name or user.username
+
+
+def _calendar_participants_queryset(user: User):
+    if _user_is_organisation(user):
+        return User.objects.all()
+    project_ids = list(Membership.objects.filter(user=user).values_list('project_id', flat=True))
+    if not project_ids:
+        return User.objects.filter(pk=user.pk)
+    return User.objects.filter(Q(pk=user.pk) | Q(memberships__project_id__in=project_ids)).distinct()
+
+
+def _calendar_event_queryset(user: User):
+    return CalendarEvent.objects.filter(Q(created_by=user) | Q(participants=user)).distinct()
+
+
+def _serialise_calendar_event(event: CalendarEvent, viewer: User) -> Dict[str, Any]:
+    participants = [
+        {
+            'id': participant.pk,
+            'name': _calendar_user_label(participant),
+            'email': participant.email,
+        }
+        for participant in event.participants.all()
+    ]
+    creator_label = _calendar_user_label(event.created_by)
+    return {
+        'id': event.pk,
+        'title': event.title,
+        'description': event.description,
+        'start': event.start.isoformat(),
+        'end': event.end.isoformat(),
+        'reminder_minutes_before': event.reminder_minutes_before,
+        'participants': participants,
+        'creator': {'id': event.created_by_id, 'name': creator_label},
+        'can_edit': event.created_by_id == viewer.pk,
+    }
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed)
+    return parsed
+
+
+def _load_json_body(request: HttpRequest) -> Dict[str, Any] | None:
+    try:
+        return json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+
+def _dispatch_calendar_reminders() -> None:
+    now = timezone.now()
+    upcoming = CalendarEvent.objects.filter(
+        reminder_minutes_before__isnull=False,
+        reminder_sent=False,
+        start__gte=now - timedelta(days=1),
+    ).select_related('created_by').prefetch_related('participants')
+    for event in upcoming:
+        minutes = event.reminder_minutes_before or 0
+        if minutes <= 0:
+            continue
+        reminder_time = event.start - timedelta(minutes=minutes)
+        if reminder_time > now:
+            continue
+        recipients: List[User] = list(event.participants.all())
+        if event.created_by not in recipients:
+            recipients.append(event.created_by)
+        notify_event_reminder(event, recipients)
+        event.reminder_sent = True
+        event.save(update_fields=['reminder_sent'])
+
+
+@login_required
+@require_http_methods(["GET"])
+def calendar_participants(request: HttpRequest) -> JsonResponse:
+    qs = _calendar_participants_queryset(request.user).order_by('first_name', 'username')
+    data = [
+        {'id': user.pk, 'name': _calendar_user_label(user), 'email': user.email}
+        for user in qs
+    ]
+    return JsonResponse({'participants': data})
+
+
+def _clean_event_payload(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[datetime], Optional[datetime], Optional[int], List[int]]:
+    title = str(payload.get('title') or '').strip()
+    description = str(payload.get('description') or '').strip()
+    start_dt = _parse_iso_datetime(payload.get('start'))
+    end_dt = _parse_iso_datetime(payload.get('end'))
+    reminder = payload.get('reminder_minutes_before')
+    reminder_val: Optional[int] = None
+    if reminder not in (None, ''):
+        try:
+            reminder_val = max(0, int(reminder))
+        except (TypeError, ValueError):
+            reminder_val = None
+    participants = payload.get('participants') or []
+    participant_ids: List[int] = []
+    if isinstance(participants, list):
+        for pid in participants:
+            try:
+                participant_ids.append(int(pid))
+            except (TypeError, ValueError):
+                continue
+    return title, description, start_dt, end_dt, reminder_val, participant_ids
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def calendar_events(request: HttpRequest) -> JsonResponse:
+    _dispatch_calendar_reminders()
+    if request.method == 'GET':
+        start_dt = _parse_iso_datetime(request.GET.get('start'))
+        end_dt = _parse_iso_datetime(request.GET.get('end'))
+        qs = _calendar_event_queryset(request.user).select_related('created_by').prefetch_related('participants')
+        if start_dt and end_dt:
+            qs = qs.filter(start__lt=end_dt, end__gt=start_dt)
+        events = [_serialise_calendar_event(event, request.user) for event in qs]
+        return JsonResponse({'events': events})
+
+    payload = _load_json_body(request)
+    if payload is None:
+        return JsonResponse({'ok': False, 'message': 'Invalid payload.'}, status=400)
+    title, description, start_dt, end_dt, reminder_val, participant_ids = _clean_event_payload(payload)
+    if not title or not start_dt or not end_dt:
+        return JsonResponse({'ok': False, 'message': 'Missing required fields.'}, status=400)
+    if end_dt <= start_dt:
+        return JsonResponse({'ok': False, 'message': 'End time must be after start time.'}, status=400)
+
+    allowed_ids = set(_calendar_participants_queryset(request.user).values_list('pk', flat=True))
+    selected_ids = [pid for pid in participant_ids if pid in allowed_ids and pid != request.user.pk]
+
+    event = CalendarEvent.objects.create(
+        title=title,
+        description=description,
+        start=start_dt,
+        end=end_dt,
+        reminder_minutes_before=reminder_val,
+        created_by=request.user,
+    )
+    participant_users = list(User.objects.filter(pk__in=selected_ids))
+    if request.user not in participant_users:
+        participant_users.append(request.user)
+    event.participants.set(participant_users)
+    log_activity(request.user, 'Created calendar event', f'Event {event.pk}: {event.title}')
+    notify_event_invite(event, [user for user in participant_users if user != request.user], actor=request.user)
+
+    data = _serialise_calendar_event(event, request.user)
+    return JsonResponse({'ok': True, 'event': data})
+
+
+@login_required
+@require_http_methods(["GET", "PUT", "PATCH", "DELETE"])
+def calendar_event_detail(request: HttpRequest, event_id: int) -> JsonResponse:
+    _dispatch_calendar_reminders()
+    event = get_object_or_404(
+        _calendar_event_queryset(request.user).select_related('created_by').prefetch_related('participants'),
+        pk=event_id,
+    )
+    if request.method == 'GET':
+        return JsonResponse({'event': _serialise_calendar_event(event, request.user)})
+    if request.method == 'DELETE':
+        if event.created_by != request.user:
+            return JsonResponse({'ok': False, 'message': 'Only the event owner can delete this item.'}, status=403)
+        event.delete()
+        log_activity(request.user, 'Deleted calendar event', f'Event {event_id}')
+        return JsonResponse({'ok': True})
+
+    if event.created_by != request.user:
+        return JsonResponse({'ok': False, 'message': 'Only the event owner can update this item.'}, status=403)
+    payload = _load_json_body(request)
+    if payload is None:
+        return JsonResponse({'ok': False, 'message': 'Invalid payload.'}, status=400)
+
+    title, description, start_dt, end_dt, reminder_val, participant_ids = _clean_event_payload(payload)
+    if not title or not start_dt or not end_dt:
+        return JsonResponse({'ok': False, 'message': 'Missing required fields.'}, status=400)
+    if end_dt <= start_dt:
+        return JsonResponse({'ok': False, 'message': 'End time must be after start time.'}, status=400)
+
+    allowed_ids = set(_calendar_participants_queryset(request.user).values_list('pk', flat=True))
+    selected_ids = [pid for pid in participant_ids if pid in allowed_ids and pid != request.user.pk]
+    participant_users = list(User.objects.filter(pk__in=selected_ids))
+    if request.user not in participant_users:
+        participant_users.append(request.user)
+
+    fields_to_update = []
+    if event.title != title:
+        event.title = title
+        fields_to_update.append('title')
+    if event.description != description:
+        event.description = description
+        fields_to_update.append('description')
+    if event.start != start_dt:
+        event.start = start_dt
+        fields_to_update.append('start')
+        event.reminder_sent = False
+    if event.end != end_dt:
+        event.end = end_dt
+        fields_to_update.append('end')
+    if event.reminder_minutes_before != reminder_val:
+        event.reminder_minutes_before = reminder_val
+        fields_to_update.append('reminder_minutes_before')
+        event.reminder_sent = False
+    if fields_to_update:
+        fields_to_update.append('reminder_sent')
+        event.save(update_fields=list(set(fields_to_update)))
+    event.participants.set(participant_users)
+    log_activity(request.user, 'Updated calendar event', f'Event {event.pk}')
+    notify_event_update(event, [user for user in participant_users if user != request.user], actor=request.user)
+
+    return JsonResponse({'ok': True, 'event': _serialise_calendar_event(event, request.user)})

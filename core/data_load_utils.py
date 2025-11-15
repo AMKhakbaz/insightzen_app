@@ -14,6 +14,7 @@ import psycopg2
 from typing import Iterable, Tuple
 
 from .models import Person, Mobile
+from .services.gender_utils import normalize_gender_value
 
 
 # Connection parameters for the remote PostgreSQL database.  These values
@@ -69,31 +70,22 @@ def load_people_and_mobile(all_data: bool = False) -> None:
             rows = cur.fetchall()
             people_to_create: list[Person] = []
             sampled_codes: list[str] = []
-            # Map synonyms for address field
-            # Accept either 'address' or legacy 'addres'
-            def get_value(row_dict: dict, *keys):
-                for k in keys:
-                    if k in row_dict:
-                        return row_dict[k]
-                return None
             for row in rows:
                 row_dict = {colnames[i]: row[i] for i in range(len(colnames))}
                 nat_code = str(row_dict.get('national_code') or row_dict.get('National_code') or row_dict.get('nationalCode'))
                 if not nat_code:
                     continue
                 sampled_codes.append(nat_code)
+                birth_year_value = row_dict.get('birth_year') or row_dict.get('birthYear')
+                city_value = row_dict.get('city_name') or row_dict.get('city')
+                if birth_year_value in (None, '') or city_value in (None, ''):
+                    continue
                 person = Person(
                     national_code=nat_code,
                     full_name=row_dict.get('full_name') or row_dict.get('fullname') or row_dict.get('fullName'),
-                    father_name=row_dict.get('father_name') or row_dict.get('fathername') or row_dict.get('fatherName'),
-                    birth_year=row_dict.get('birth_year') or row_dict.get('birthYear'),
-                    birth_date=row_dict.get('birth_date') or row_dict.get('birthDate'),
-                    city_name=row_dict.get('city_name') or row_dict.get('city'),
-                    province_name=row_dict.get('province_name') or row_dict.get('province'),
-                    birth_city=row_dict.get('birth_city'),
-                    birth_province=row_dict.get('birth_province'),
-                    address=get_value(row_dict, 'address', 'addres', 'addr'),
-                    imputation=row_dict.get('imputation') if row_dict.get('imputation') is not None else False,
+                    birth_year=int(birth_year_value),
+                    city_name=str(city_value),
+                    gender=normalize_gender_value(row_dict.get('gender')),
                 )
                 people_to_create.append(person)
             # Bulk insert people (ignore conflicts on duplicate national_code)

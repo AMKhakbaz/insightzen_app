@@ -14,7 +14,16 @@ document.addEventListener('DOMContentLoaded', function () {
   const barCanvas = document.getElementById('bar-chart');
   const donutCanvas = document.getElementById('donut-chart');
   const lineCanvas = document.getElementById('line-chart');
+  const codeCanvas = document.getElementById('code-chart');
+  const hourlyCanvas = document.getElementById('hourly-chart');
   const topTable = document.getElementById('top5-table');
+  const topTableTitle = document.getElementById('top-table-title');
+  const rawTable = document.getElementById('raw-records-table');
+  const rawPageSizeSelect = document.getElementById('raw-page-size');
+  const rawPageInfo = document.getElementById('raw-page-info');
+  const rawPrevButton = document.getElementById('raw-page-prev');
+  const rawNextButton = document.getElementById('raw-page-next');
+  const rawResultsStatus = document.getElementById('raw-results-status');
   if (!barCanvas || !donutCanvas || !lineCanvas || !topTable) {
     return;
   }
@@ -22,12 +31,63 @@ document.addEventListener('DOMContentLoaded', function () {
   const ctxBar = barCanvas.getContext('2d');
   const ctxDonut = donutCanvas.getContext('2d');
   const ctxLine = lineCanvas.getContext('2d');
+  const ctxCode = codeCanvas ? codeCanvas.getContext('2d') : null;
+  const ctxHourly = hourlyCanvas ? hourlyCanvas.getContext('2d') : null;
   let barChart = null;
   let donutChart = null;
   let lineChart = null;
+  let codeChart = null;
+  let hourlyChart = null;
+  let donutSegments = [];
   let topData = [];
-  let sortKey = 'total';
-  let sortAsc = false;
+  const topTableLimitRaw = topTable && topTable.dataset.topLimit ? parseInt(topTable.dataset.topLimit, 10) : NaN;
+  const topTableLimit = Number.isFinite(topTableLimitRaw) && topTableLimitRaw > 0 ? topTableLimitRaw : 5;
+  let topTableInstance = null;
+  let needsTableRefresh = false;
+  let rawTableInstance = null;
+  let rawNeedsRefresh = false;
+  let rawCurrentPage = 1;
+  let rawTotalPages = 1;
+  let rawPendingExportParams = null;
+  let topPendingExportParams = null;
+  const locale = document.documentElement.lang || 'en';
+  const isPersian = locale.startsWith('fa');
+  const kpiTotal = document.getElementById('kpi-total-interviews');
+  const kpiSuccess = document.getElementById('kpi-successful-interviews');
+  const kpiRate = document.getElementById('kpi-success-rate');
+  const kpiDuration = document.getElementById('kpi-average-duration');
+  const kpiDurationSample = document.getElementById('kpi-duration-sample');
+  const kpiPeakHour = document.getElementById('kpi-peak-hour');
+  const statusLabels = {
+    true: isPersian ? 'موفق' : 'Successful',
+    false: isPersian ? 'ناموفق' : 'Unsuccessful',
+  };
+
+  topTable.addEventListener('interactive-table:init', (event) => {
+    topTableInstance = event.detail.instance;
+    if (topPendingExportParams) {
+      topTableInstance.updateExportParams(topPendingExportParams);
+      topPendingExportParams = null;
+    }
+    if (needsTableRefresh) {
+      topTableInstance.refresh();
+      needsTableRefresh = false;
+    }
+  });
+
+  if (rawTable) {
+    rawTable.addEventListener('interactive-table:init', (event) => {
+      rawTableInstance = event.detail.instance;
+      if (rawPendingExportParams) {
+        rawTableInstance.updateExportParams(rawPendingExportParams);
+        rawPendingExportParams = null;
+      }
+      if (rawNeedsRefresh) {
+        rawTableInstance.refresh();
+        rawNeedsRefresh = false;
+      }
+    });
+  }
 
   // Generate a palette of colours for donut segments
   function getPalette(n) {
@@ -47,29 +107,418 @@ document.addEventListener('DOMContentLoaded', function () {
     return val && val.trim() ? val.trim() : fallback;
   }
 
-  function buildUrl() {
+  function collectFilters() {
+    const projectSelect = document.getElementById('project-select');
+    const userSelect = document.getElementById('user-select');
+    const startInput = document.getElementById('start-date');
+    const endInput = document.getElementById('end-date');
+    const selectedProjects = projectSelect
+      ? Array.from(projectSelect.selectedOptions)
+          .map((option) => option.value)
+          .filter((value) => value)
+      : [];
+    const selectedUsers = userSelect
+      ? Array.from(userSelect.selectedOptions)
+          .map((option) => option.value)
+          .filter((value) => value)
+      : [];
+    const start = startInput ? startInput.value : '';
+    const end = endInput ? endInput.value : '';
+    return {
+      projects: selectedProjects,
+      users: selectedUsers,
+      start,
+      end,
+    };
+  }
+
+  function appendFilters(params, filters) {
+    if (filters.projects.length) {
+      params.append('projects', filters.projects.join(','));
+    }
+    if (filters.start) {
+      params.append('start_date', filters.start);
+    }
+    if (filters.end) {
+      params.append('end_date', filters.end);
+    }
+    if (filters.users.length) {
+      params.append('users', filters.users.join(','));
+    }
+  }
+
+  function applyExportDataset(element, params) {
+    if (!element || !element.dataset || !params) {
+      return;
+    }
+    Object.keys(params).forEach((key) => {
+      const suffix = key.charAt(0).toUpperCase() + key.slice(1);
+      element.dataset[`exportParam${suffix}`] = params[key];
+    });
+  }
+
+  function buildExportParams(filters) {
+    const safeFilters = filters || {};
+    const projects = Array.isArray(safeFilters.projects)
+      ? safeFilters.projects.filter((value) => Boolean(value))
+      : [];
+    const users = Array.isArray(safeFilters.users)
+      ? safeFilters.users.filter((value) => Boolean(value))
+      : [];
+    return {
+      projects: projects.join(','),
+      users: users.join(','),
+      startDate: safeFilters.start || '',
+      endDate: safeFilters.end || '',
+    };
+  }
+
+  function syncTableExportParams(filters) {
+    const params = buildExportParams(filters);
+    applyExportDataset(rawTable, params);
+    if (rawTableInstance) {
+      rawTableInstance.updateExportParams(params);
+    } else {
+      rawPendingExportParams = { ...params };
+    }
+    applyExportDataset(topTable, params);
+    if (topTableInstance) {
+      topTableInstance.updateExportParams(params);
+    } else {
+      topPendingExportParams = { ...params };
+    }
+  }
+
+  function formatNumber(value) {
+    if (!Number.isFinite(value)) {
+      return '';
+    }
+    const localeName = isPersian ? 'fa-IR' : undefined;
+    return value.toLocaleString(localeName);
+  }
+
+  function formatDateTime(value) {
+    if (!value) {
+      return { display: '', sort: '' };
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return { display: value, sort: value };
+    }
+    const localeName = isPersian ? 'fa-IR' : undefined;
+    const options = {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    };
+    const display = date.toLocaleString(localeName || undefined, options);
+    return { display, sort: date.toISOString() };
+  }
+
+  function formatDurationMinutes(value) {
+    if (!Number.isFinite(value) || value <= 0) {
+      return isPersian ? '—' : '—';
+    }
+    const totalSeconds = Math.round(value * 60);
+    const seconds = totalSeconds % 60;
+    const minutes = Math.floor(totalSeconds / 60) % 60;
+    const hours = Math.floor(totalSeconds / 3600);
+    if (hours > 0) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function getHeatColor(ratio) {
+    const clamped = Math.max(0, Math.min(1, ratio || 0));
+    const hue = 210 - clamped * 150; // shift from blue to warm as intensity increases
+    const saturation = 70;
+    const lightness = 32 + (1 - clamped) * 18;
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  }
+
+  function buildHeatColours(values) {
+    if (!Array.isArray(values) || values.length === 0) {
+      return [];
+    }
+    const max = Math.max(...values.map((v) => (Number.isFinite(v) ? v : 0)));
+    if (!max) {
+      return values.map(() => getCssVar('--surface-raised', '#1e293b'));
+    }
+    return values.map((value) => getHeatColor(value / max));
+  }
+
+  function updateKpis(meta) {
+    const safeMeta = meta || {};
+    const total = Number.isFinite(safeMeta.total_interviews) ? safeMeta.total_interviews : 0;
+    const success = Number.isFinite(safeMeta.successful_interviews) ? safeMeta.successful_interviews : 0;
+    const rateValue = Number.isFinite(safeMeta.success_rate)
+      ? safeMeta.success_rate
+      : total
+      ? (success / total) * 100
+      : 0;
+    if (kpiTotal) {
+      kpiTotal.textContent = formatNumber(total);
+    }
+    if (kpiSuccess) {
+      kpiSuccess.textContent = formatNumber(success);
+    }
+    if (kpiRate) {
+      if (Number.isFinite(rateValue)) {
+        const localeName = isPersian ? 'fa-IR' : undefined;
+        kpiRate.textContent = `${rateValue.toLocaleString(localeName, {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        })}%`;
+      } else {
+        kpiRate.textContent = '—';
+      }
+    }
+
+    const durationLabel = safeMeta.average_duration_label || formatDurationMinutes(safeMeta.average_duration_minutes);
+    if (kpiDuration) {
+      kpiDuration.textContent = durationLabel || '—';
+    }
+    if (kpiDurationSample) {
+      const sample = Number.isFinite(safeMeta.duration_sample_size) ? safeMeta.duration_sample_size : 0;
+      if (sample > 0) {
+        kpiDurationSample.textContent = isPersian
+          ? `بر پایه ${formatNumber(sample)} رکورد`
+          : `Based on ${formatNumber(sample)} records`;
+      } else {
+        kpiDurationSample.textContent = isPersian ? 'داده‌ای موجود نیست' : 'No duration data';
+      }
+    }
+    if (kpiPeakHour) {
+      const label = safeMeta.peak_hour_label || '';
+      if (label) {
+        kpiPeakHour.textContent = isPersian ? `اوج: ${label}` : `Peak: ${label}`;
+      } else {
+        kpiPeakHour.textContent = isPersian ? 'اوج مشخص نیست' : 'No peak hour';
+      }
+    }
+  }
+
+  function buildChartUrl(filtersOverride) {
     const baseUrl = barCanvas.dataset.url;
     const params = new URLSearchParams();
-    const project = document.getElementById('project-select').value;
-    const start = document.getElementById('start-date').value;
-    const end = document.getElementById('end-date').value;
-    const userSelect = document.getElementById('user-select');
-    const selectedUsers = Array.from(userSelect.selectedOptions).map((o) => o.value).join(',');
-    if (project) params.append('project', project);
-    if (start) params.append('start_date', start);
-    if (end) params.append('end_date', end);
-    if (selectedUsers) params.append('users', selectedUsers);
+    const filters = filtersOverride || collectFilters();
+    appendFilters(params, filters);
     return params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
   }
 
-  function fetchAndRender() {
-    fetch(buildUrl())
+  function buildRawUrl(filtersOverride, pageOverride) {
+    if (!rawTable || !rawTable.dataset || !rawTable.dataset.url) {
+      return '';
+    }
+    const baseUrl = rawTable.dataset.url;
+    const params = new URLSearchParams();
+    const filters = filtersOverride || collectFilters();
+    appendFilters(params, filters);
+    let pageSize = 30;
+    if (rawPageSizeSelect) {
+      const parsed = parseInt(rawPageSizeSelect.value, 10);
+      if (!Number.isNaN(parsed) && [30, 50, 200].includes(parsed)) {
+        pageSize = parsed;
+      }
+    }
+    params.append('page_size', pageSize);
+    const pageNumber = pageOverride && pageOverride > 0 ? pageOverride : rawCurrentPage || 1;
+    params.append('page', pageNumber);
+    return params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+  }
+
+  function setRawLoading() {
+    if (rawPageInfo) {
+      rawPageInfo.textContent = isPersian ? 'در حال بارگذاری…' : 'Loading…';
+    }
+    if (rawResultsStatus) {
+      rawResultsStatus.textContent = '';
+    }
+    if (rawPrevButton) {
+      rawPrevButton.disabled = true;
+    }
+    if (rawNextButton) {
+      rawNextButton.disabled = true;
+    }
+  }
+
+  function updateRawPagination(totalItems, page, pageSize, totalPages) {
+    const safeTotalPages = Math.max(totalPages || 1, 1);
+    rawTotalPages = safeTotalPages;
+    rawCurrentPage = page;
+    if (rawPageSizeSelect && String(pageSize) !== rawPageSizeSelect.value) {
+      const option = Array.from(rawPageSizeSelect.options).find((opt) => opt.value === String(pageSize));
+      if (option) {
+        rawPageSizeSelect.value = option.value;
+      }
+    }
+    if (rawPageInfo) {
+      if (totalItems === 0) {
+        rawPageInfo.textContent = isPersian ? 'هیچ رکوردی یافت نشد' : 'No records';
+      } else {
+        const pageLabel = isPersian
+          ? `صفحه ${formatNumber(page)} از ${formatNumber(safeTotalPages)}`
+          : `Page ${page} of ${safeTotalPages}`;
+        rawPageInfo.textContent = pageLabel;
+      }
+    }
+    if (rawResultsStatus) {
+      if (totalItems === 0) {
+        rawResultsStatus.textContent = isPersian ? 'هیچ مصاحبه‌ای برای نمایش وجود ندارد' : 'No interviews to display';
+      } else {
+        const startIndex = (page - 1) * pageSize + 1;
+        const endIndex = Math.min(totalItems, startIndex + pageSize - 1);
+        const startLabel = formatNumber(startIndex);
+        const endLabel = formatNumber(endIndex);
+        const totalLabel = formatNumber(totalItems);
+        rawResultsStatus.textContent = isPersian
+          ? `نمایش ${startLabel}–${endLabel} از ${totalLabel}`
+          : `Showing ${startLabel}–${endLabel} of ${totalLabel}`;
+      }
+    }
+    if (rawPrevButton) {
+      rawPrevButton.disabled = totalItems === 0 || page <= 1;
+    }
+    if (rawNextButton) {
+      rawNextButton.disabled = totalItems === 0 || page >= safeTotalPages;
+    }
+  }
+
+  function renderRawRows(results) {
+    if (!rawTable) {
+      return;
+    }
+    const tbody = rawTable.querySelector('tbody');
+    if (!tbody) {
+      return;
+    }
+    tbody.innerHTML = '';
+    if (!Array.isArray(results) || results.length === 0) {
+      if (rawTableInstance) {
+        rawTableInstance.refresh();
+      } else {
+        rawNeedsRefresh = true;
+      }
+      return;
+    }
+    results.forEach((item) => {
+      const tr = document.createElement('tr');
+      const projectCell = document.createElement('td');
+      projectCell.textContent = item.project || '';
+      tr.appendChild(projectCell);
+
+      const userCell = document.createElement('td');
+      userCell.textContent = item.user || '';
+      tr.appendChild(userCell);
+
+      const codeCell = document.createElement('td');
+      if (item.code != null) {
+        codeCell.textContent = String(item.code);
+        codeCell.dataset.sortValue = String(item.code);
+      } else {
+        codeCell.textContent = '';
+        delete codeCell.dataset.sortValue;
+      }
+      tr.appendChild(codeCell);
+
+      const statusCell = document.createElement('td');
+      const statusKey = item.status ? true : false;
+      statusCell.textContent = statusLabels[statusKey];
+      statusCell.dataset.sortValue = item.status ? '1' : '0';
+      tr.appendChild(statusCell);
+
+      const startCell = document.createElement('td');
+      const startFormatted = formatDateTime(item.start_form);
+      startCell.textContent = startFormatted.display;
+      if (startFormatted.sort) {
+        startCell.dataset.sortValue = startFormatted.sort;
+      } else {
+        delete startCell.dataset.sortValue;
+      }
+      tr.appendChild(startCell);
+
+      const endCell = document.createElement('td');
+      const endFormatted = formatDateTime(item.end_form);
+      endCell.textContent = endFormatted.display;
+      if (endFormatted.sort) {
+        endCell.dataset.sortValue = endFormatted.sort;
+      } else {
+        delete endCell.dataset.sortValue;
+      }
+      tr.appendChild(endCell);
+
+      const createdCell = document.createElement('td');
+      const createdFormatted = formatDateTime(item.created_at);
+      createdCell.textContent = createdFormatted.display;
+      if (createdFormatted.sort) {
+        createdCell.dataset.sortValue = createdFormatted.sort;
+      } else {
+        delete createdCell.dataset.sortValue;
+      }
+      tr.appendChild(createdCell);
+
+      tbody.appendChild(tr);
+    });
+    if (rawTableInstance) {
+      rawTableInstance.refresh();
+    } else {
+      rawNeedsRefresh = true;
+    }
+  }
+
+  function fetchRawData(pageOverride, filtersOverride) {
+    if (!rawTable || !rawTable.dataset || !rawTable.dataset.url) {
+      return;
+    }
+    setRawLoading();
+    const url = buildRawUrl(filtersOverride, pageOverride);
+    if (!url) {
+      renderRawRows([]);
+      updateRawPagination(0, 1, 30, 1);
+      return;
+    }
+    fetch(url)
       .then((resp) => resp.json())
       .then((data) => {
+        const results = Array.isArray(data.results) ? data.results : [];
+        const page = data.page || 1;
+        const pageSize = data.page_size || (rawPageSizeSelect ? parseInt(rawPageSizeSelect.value, 10) || 30 : 30);
+        const totalPages = data.total_pages || 1;
+        const totalItems = data.total_items || 0;
+        renderRawRows(results);
+        updateRawPagination(totalItems, page, pageSize, totalPages);
+      })
+      .catch((error) => {
+        console.error('Error loading raw interviews', error);
+        if (rawPageInfo) {
+          rawPageInfo.textContent = isPersian ? 'خطا در بارگیری داده‌ها' : 'Failed to load data';
+        }
+        if (rawResultsStatus) {
+          rawResultsStatus.textContent = '';
+        }
+        if (rawPrevButton) {
+          rawPrevButton.disabled = true;
+        }
+        if (rawNextButton) {
+          rawNextButton.disabled = true;
+        }
+      });
+  }
+
+
+  function fetchChartsAndTop(filtersOverride) {
+    fetch(buildChartUrl(filtersOverride))
+      .then((resp) => resp.json())
+      .then((data) => {
+        updateKpis(data.meta);
         // Update bar chart
-        const labels = data.labels || [];
-        const totals = data.totals || [];
-        const successes = data.successes || [];
+        const barData = data.bar || {};
+        const labels = barData.labels || [];
+        const totals = barData.totals || [];
+        const successes = barData.successes || [];
         const primary = getCssVar('--primary', 'rgba(88,166,255,0.6)');
         const primaryBorder = getCssVar('--primary-light', 'rgba(88,166,255,1)');
         const secondary = getCssVar('--secondary', 'rgba(139,92,246,0.6)');
@@ -139,7 +588,8 @@ document.addEventListener('DOMContentLoaded', function () {
           });
         }
         // Update donut chart
-        const donutData = data.donut || { labels: [], values: [] };
+        const donutData = data.donut || { labels: [], values: [], segments: [] };
+        donutSegments = donutData.segments || [];
         const donutColours = getPalette(donutData.values.length);
         if (donutChart) {
           donutChart.data.labels = donutData.labels;
@@ -170,6 +620,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     color: getCssVar('--text-color', '#e2e8f0'),
                   },
                 },
+                tooltip: {
+                  callbacks: {
+                    label(context) {
+                      const segment = donutSegments[context.dataIndex];
+                      const label = segment ? segment.label : context.label;
+                      return `${label}: ${context.formattedValue}`;
+                    },
+                  },
+                },
               },
               animation: {
                 duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 500,
@@ -177,6 +636,136 @@ document.addEventListener('DOMContentLoaded', function () {
               cutout: '60%',
             },
           });
+        }
+        // Update code breakdown chart
+        if (ctxCode) {
+          const codeItems = data.codes && Array.isArray(data.codes.items) ? data.codes.items : [];
+          const codeValues = codeItems.map((item) => (Number.isFinite(item.count) ? item.count : Number(item.count) || 0));
+          const codeLabels = codeItems.map((item) => {
+            if (item.code === null || item.code === undefined || item.code === '') {
+              return isPersian ? 'نامشخص' : 'Unknown';
+            }
+            const baseLabel = item.label || item.code;
+            return isPersian ? `کد ${baseLabel}` : `Code ${baseLabel}`;
+          });
+          const codeColours = codeValues.length ? getPalette(codeValues.length) : [];
+          if (codeChart) {
+            codeChart.data.labels = codeLabels;
+            codeChart.data.datasets[0].data = codeValues;
+            codeChart.data.datasets[0].backgroundColor = codeColours.length ? codeColours : [];
+            codeChart.data.datasets[0].borderColor = codeColours.length ? codeColours : [];
+            codeChart.update();
+          } else {
+            codeChart = new Chart(ctxCode, {
+              type: 'doughnut',
+              data: {
+                labels: codeLabels,
+                datasets: [
+                  {
+                    data: codeValues,
+                    backgroundColor: codeColours.length ? codeColours : [],
+                    borderColor: codeColours.length ? codeColours : [],
+                    borderWidth: 1,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '55%',
+                plugins: {
+                  legend: {
+                    position: 'bottom',
+                    labels: {
+                      color: getCssVar('--text-color', '#e2e8f0'),
+                    },
+                  },
+                },
+                animation: {
+                  duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 500,
+                },
+              },
+            });
+          }
+        }
+        // Update hourly distribution chart
+        if (ctxHourly) {
+          const hourly = data.hourly || { labels: [], totals: [], successes: [] };
+          const totalsData = Array.isArray(hourly.totals) ? hourly.totals : [];
+          const successData = Array.isArray(hourly.successes) ? hourly.successes : [];
+          const heatColours = buildHeatColours(totalsData);
+          if (hourlyChart) {
+            hourlyChart.data.labels = Array.isArray(hourly.labels) ? hourly.labels : [];
+            hourlyChart.data.datasets[0].data = totalsData;
+            hourlyChart.data.datasets[0].backgroundColor = heatColours;
+            hourlyChart.data.datasets[0].borderColor = heatColours;
+            hourlyChart.data.datasets[1].data = successData;
+            hourlyChart.update();
+          } else {
+            hourlyChart = new Chart(ctxHourly, {
+              type: 'bar',
+              data: {
+                labels: Array.isArray(hourly.labels) ? hourly.labels : [],
+                datasets: [
+                  {
+                    label: isPersian ? 'کل تماس‌ها' : 'Total Calls',
+                    data: totalsData,
+                    backgroundColor: heatColours,
+                    borderColor: heatColours,
+                    borderWidth: 1,
+                    maxBarThickness: 28,
+                  },
+                  {
+                    label: isPersian ? 'موفق' : 'Successful',
+                    data: successData,
+                    type: 'line',
+                    borderColor: secondaryBorder,
+                    backgroundColor: 'rgba(0,0,0,0)',
+                    borderWidth: 2,
+                    tension: 0.25,
+                    pointRadius: 2,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                  x: {
+                    grid: {
+                      color: getCssVar('--border-color', '#2a3551'),
+                    },
+                    ticks: {
+                      color: getCssVar('--text-color', '#e2e8f0'),
+                      maxRotation: 0,
+                      minRotation: 0,
+                      autoSkip: true,
+                      maxTicksLimit: 12,
+                    },
+                  },
+                  y: {
+                    beginAtZero: true,
+                    grid: {
+                      color: getCssVar('--border-color', '#2a3551'),
+                    },
+                    ticks: {
+                      color: getCssVar('--text-color', '#e2e8f0'),
+                    },
+                  },
+                },
+                plugins: {
+                  legend: {
+                    labels: {
+                      color: getCssVar('--text-color', '#e2e8f0'),
+                    },
+                  },
+                },
+                animation: {
+                  duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 500,
+                },
+              },
+            });
+          }
         }
         // Update line chart (daily trend)
         const daily = data.daily || { labels: [], totals: [], successes: [] };
@@ -245,7 +834,7 @@ document.addEventListener('DOMContentLoaded', function () {
           });
         }
         // Update top data and render table
-        topData = data.top5_all || [];
+        topData = data.top && data.top.rows ? data.top.rows : [];
         renderTopTable();
       })
       .catch((err) => {
@@ -256,54 +845,110 @@ document.addEventListener('DOMContentLoaded', function () {
   function renderTopTable() {
     const tbody = topTable.querySelector('tbody');
     tbody.innerHTML = '';
-    // Sort by current sortKey and sortAsc
-    const sorted = topData.slice().sort((a, b) => {
-      if (sortKey === 'rate') {
-        const diff = a.rate - b.rate;
-        return sortAsc ? diff : -diff;
+    if (!topData.length) {
+      updateTopHeading(0);
+      if (topTableInstance) {
+        topTableInstance.refresh();
+      } else {
+        needsTableRefresh = true;
       }
-      if (sortKey === 'user') {
-        const cmp = a.user.localeCompare(b.user);
-        return sortAsc ? cmp : -cmp;
-      }
-      // numeric sorts for total and success
-      const diff = a[sortKey] - b[sortKey];
-      return sortAsc ? diff : -diff;
-    });
-    const topN = sorted.slice(0, 5);
-    topN.forEach((row) => {
+      return;
+    }
+    const sorted = topData.slice().sort((a, b) => (b.total_calls || 0) - (a.total_calls || 0));
+    const limited = sorted.slice(0, topTableLimit);
+    updateTopHeading(limited.length);
+    limited.forEach((row) => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${row.user}</td>
-        <td>${row.total}</td>
-        <td>${row.success}</td>
-        <td>${row.rate}%</td>
-      `;
+      const projectCell = document.createElement('td');
+      projectCell.textContent = row.project || '';
+      const userCell = document.createElement('td');
+      userCell.textContent = row.user;
+      const totalCell = document.createElement('td');
+      const totalCalls = Number.isFinite(row.total_calls) ? row.total_calls : 0;
+      totalCell.textContent = totalCalls;
+      totalCell.dataset.sortValue = totalCalls;
+      const successCell = document.createElement('td');
+      const successfulCalls = Number.isFinite(row.successful_calls) ? row.successful_calls : 0;
+      successCell.textContent = successfulCalls;
+      successCell.dataset.sortValue = successfulCalls;
+      const rateCell = document.createElement('td');
+      const rateValue = Number.isFinite(row.success_rate) ? row.success_rate : 0;
+      rateCell.textContent = `${rateValue}%`;
+      rateCell.dataset.sortValue = rateValue;
+      tr.appendChild(projectCell);
+      tr.appendChild(userCell);
+      tr.appendChild(totalCell);
+      tr.appendChild(successCell);
+      tr.appendChild(rateCell);
       tbody.appendChild(tr);
     });
+    if (topTableInstance) {
+      topTableInstance.refresh();
+    } else {
+      needsTableRefresh = true;
+    }
   }
 
-  // Attach sort handlers to table headers
-  topTable.querySelectorAll('th[data-sort-key]').forEach((th) => {
-    th.style.cursor = 'pointer';
-    th.addEventListener('click', function () {
-      const key = th.getAttribute('data-sort-key');
-      if (sortKey === key) {
-        sortAsc = !sortAsc;
-      } else {
-        sortKey = key;
-        sortAsc = false;
+  function updateTopHeading(renderedCount) {
+    if (!topTableTitle) {
+      return;
+    }
+    const labelTemplate = isPersian
+      ? topTableTitle.dataset.labelFa || topTableTitle.textContent || ''
+      : topTableTitle.dataset.labelEn || topTableTitle.textContent || '';
+    if (!labelTemplate) {
+      return;
+    }
+    const countDisplay = isPersian
+      ? (Number.isFinite(renderedCount) ? renderedCount.toLocaleString('fa-IR') : '۰')
+      : (Number.isFinite(renderedCount) ? renderedCount.toLocaleString() : '0');
+    const updated = labelTemplate.replace('{count}', countDisplay);
+    topTableTitle.textContent = updated;
+  }
+
+  function refreshAll(resetRawPage = false) {
+    const filters = collectFilters();
+    syncTableExportParams(filters);
+    fetchChartsAndTop(filters);
+    if (rawTable && rawTable.dataset && rawTable.dataset.url) {
+      if (resetRawPage) {
+        rawCurrentPage = 1;
       }
-      renderTopTable();
-    });
-  });
+      fetchRawData(rawCurrentPage, filters);
+    }
+  }
 
   // Fetch data initially and whenever filters change
-  fetchAndRender();
+  refreshAll(true);
   ['project-select', 'start-date', 'end-date', 'user-select'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
-      el.addEventListener('change', fetchAndRender);
+      el.addEventListener('change', () => refreshAll(true));
     }
   });
+
+  if (rawPageSizeSelect) {
+    rawPageSizeSelect.addEventListener('change', () => {
+      rawCurrentPage = 1;
+      fetchRawData(rawCurrentPage, collectFilters());
+    });
+  }
+
+  if (rawPrevButton) {
+    rawPrevButton.addEventListener('click', () => {
+      if (rawCurrentPage > 1) {
+        rawCurrentPage -= 1;
+        fetchRawData(rawCurrentPage, collectFilters());
+      }
+    });
+  }
+
+  if (rawNextButton) {
+    rawNextButton.addEventListener('click', () => {
+      if (rawCurrentPage < rawTotalPages) {
+        rawCurrentPage += 1;
+        fetchRawData(rawCurrentPage, collectFilters());
+      }
+    });
+  }
 });

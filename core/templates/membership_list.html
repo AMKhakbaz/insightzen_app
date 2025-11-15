@@ -5,57 +5,151 @@
 {% block content %}
 <div class="card">
     <h1>{% if lang == 'fa' %}فهرست اعضا{% else %}Members List{% endif %}</h1>
-    <p>
+    <p class="card-intro">
         {% if lang == 'fa' %}
             در اینجا می‌توانید اعضای پروژه‌های خود را مشاهده و مدیریت کنید.
+            پس از پایان ددلاین هر پروژه فقط مالک آن به پنل‌ها دسترسی دارد.
         {% else %}
             Here you can view and manage members across your projects.
+            After a project's deadline passes only the owner retains panel access.
         {% endif %}
     </p>
     <a href="{% url 'membership_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}افزودن کاربر به پروژه{% else %}Add User to Project{% endif %}</a>
-    <div class="table-wrap">
-    <table class="table">
-        <thead>
-            <tr>
-                <th>{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}</th>
-                <th>{% if lang == 'fa' %}نام کامل{% else %}Full Name{% endif %}</th>
-                <th>{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}</th>
-                <th>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</th>
-                <th>{% if lang == 'fa' %}تاریخ شروع{% else %}Start Work{% endif %}</th>
-                <th>{% if lang == 'fa' %}پنل‌ها{% else %}Panels{% endif %}</th>
-                <th>{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
-            </tr>
-        </thead>
-        <tbody>
-                {% for m in memberships %}
-            <tr>
-                <td>{{ m.user.username }}</td>
-                <td>{{ m.user.first_name }}</td>
-                <td>{{ m.user.profile.phone }}</td>
-                <td>{{ m.project.name }}</td>
-                <td>{{ m.start_work }}</td>
-                <td>
-                    {# display enabled panel names for this membership using custom tag #}
-                    {% panel_names m panel_labels as enabled_panels %}
-                    {{ enabled_panels|default:'-' }}
-                </td>
-                <td style="white-space:nowrap;">
-                    <a href="{% url 'membership_edit' m.pk %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">
-                        {% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}
-                    </a>
-                    <form method="post" action="{% url 'membership_delete' m.pk %}" style="display:inline;">
-                        {% csrf_token %}
-                        <button class="btn btn-danger btn-sm" onclick="return confirm('{% if lang == 'fa' %}آیا از حذف این کاربر مطمئن هستید؟{% else %}Are you sure you want to delete this membership?{% endif %}')">
-                            {% if lang == 'fa' %}حذف{% else %}Delete{% endif %}
+
+    <div class="membership-message-panel" data-member-messaging data-member-endpoint="{% url 'membership_message_send' %}">
+        <div class="membership-message-panel__intro">
+            <strong>{% if lang == 'fa' %}ارسال پیام گروهی{% else %}Send a Group Message{% endif %}</strong>
+            <p>
+                {% if lang == 'fa' %}
+                    کاربران مدنظر را از جدول انتخاب کنید، پیام خود را حداکثر در ۵۰۰ کاراکتر بنویسید و ارسال کنید تا به‌صورت اعلان برای آن‌ها نمایش داده شود.
+                {% else %}
+                    Select the members you want to reach, craft a message of up to 500 characters, and send it as an in-app notification.
+                {% endif %}
+            </p>
+        </div>
+        <div class="membership-message-panel__composer">
+            <div class="membership-message-panel__summary">
+                <span data-member-selected-count>0</span>
+                <span>{% if lang == 'fa' %}کاربر انتخاب شده{% else %}recipients selected{% endif %}</span>
+            </div>
+            <label for="member-message-input" class="sr-only">{% if lang == 'fa' %}متن پیام{% else %}Message{% endif %}</label>
+            <textarea id="member-message-input" maxlength="500" data-member-message-input placeholder="{% if lang == 'fa' %}متن پیام شما{% else %}Write your message{% endif %}" required></textarea>
+            <div class="membership-message-panel__footer">
+                <span class="membership-message-panel__counter" data-member-char-count>0 / 500</span>
+                <div class="membership-message-panel__actions">
+                    <button type="button" class="btn btn-outline" data-member-clear disabled>{% if lang == 'fa' %}لغو انتخاب{% else %}Clear Selection{% endif %}</button>
+                    <button type="button" class="btn" data-member-send disabled>{% if lang == 'fa' %}ارسال پیام{% else %}Send Message{% endif %}</button>
+                </div>
+            </div>
+            <p class="form-status" data-member-status aria-live="polite"></p>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table id="membership-table" class="table" data-table="interactive" data-filter-context="membership_list" data-empty-text="{% if lang == 'fa' %}هیچ عضوی مطابق فیلتر نیست.{% else %}No members match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+            <thead>
+                <tr>
+                    <th class="table-select-col">
+                        <label class="sr-only" for="membership-select-all">{% if lang == 'fa' %}انتخاب همه{% else %}Select all{% endif %}</label>
+                        <input type="checkbox" id="membership-select-all" data-member-select-all>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="1" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
                         </button>
-                    </form>
-                </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="40">{% if lang == 'fa' %}عضوی وجود ندارد{% else %}No members yet{% endif %}</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="2" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}نام کامل{% else %}Full Name{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="3" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="4" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="5" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}تاریخ شروع{% else %}Start Work{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="6" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}مالک{% else %}Owner{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="7" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}پنل‌ها{% else %}Panels{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+                </tr>
+                <tr class="table-filter-row" hidden>
+                    <th></th>
+                    <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="2" placeholder="{% if lang == 'fa' %}نام{% else %}Name{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="3" placeholder="{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="4" placeholder="{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="5" placeholder="{% if lang == 'fa' %}تاریخ{% else %}Start{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="6" placeholder="{% if lang == 'fa' %}مالک{% else %}Owner{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="7" placeholder="{% if lang == 'fa' %}پنل{% else %}Panels{% endif %}" autocomplete="off"></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in memberships %}
+                <tr>
+                    <td class="table-select-col">
+                        <label class="sr-only" for="membership-select-{{ m.user_id }}">{% if lang == 'fa' %}انتخاب کاربر{% else %}Select member{% endif %}</label>
+                        <input type="checkbox" id="membership-select-{{ m.user_id }}" value="{{ m.user_id }}" data-member-checkbox>
+                    </td>
+                    <td>{{ m.user.username }}</td>
+                    <td>{{ m.user.first_name }}</td>
+                    <td>{{ m.user.profile.phone }}</td>
+                    <td>{{ m.project.name }}</td>
+                    <td>{{ m.start_work }}</td>
+                    <td>
+                        {% if m.is_owner %}
+                            <span class="badge badge-owner">{% if lang == 'fa' %}مالک{% else %}Owner{% endif %}</span>
+                        {% else %}
+                            <span class="badge badge-member">{% if lang == 'fa' %}عضو{% else %}Member{% endif %}</span>
+                        {% endif %}
+                    </td>
+                    <td class="table-cell--ellipsis">
+                        {# display enabled panel names for this membership using custom tag #}
+                        {% panel_names m panel_labels as enabled_panels %}
+                        <span class="table-ellipsis" title="{{ enabled_panels|default:'-' }}" tabindex="0">{{ enabled_panels|default:'-' }}</span>
+                    </td>
+                    <td style="white-space:nowrap;">
+                        <a href="{% url 'membership_edit' m.pk %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">
+                            {% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}
+                        </a>
+                        <form method="post" action="{% url 'membership_delete' m.pk %}" style="display:inline;">
+                            {% csrf_token %}
+                            <button class="btn btn-danger btn-sm" onclick="return confirm('{% if lang == 'fa' %}آیا از حذف این کاربر مطمئن هستید؟{% else %}Are you sure you want to delete this membership?{% endif %}')">
+                                {% if lang == 'fa' %}حذف{% else %}Delete{% endif %}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr data-empty-row><td colspan="40">{% if lang == 'fa' %}عضوی وجود ندارد{% else %}No members yet{% endif %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 {% endblock %}

@@ -24,10 +24,34 @@
             {{ form.project.errors }}
         </div>
         {# Membership title field #}
-        <div>
+        <div class="membership-title-field">
             {{ form.title.label_tag }}
-            {{ form.title }}
-            {{ form.title.errors }}
+            <div class="membership-title-inputs">
+                {{ form.title }}
+                {% if lang == 'fa' %}
+                    <small class="form-hint">یکی از عناوین پیشنهادی را انتخاب کنید یا گزینه سایر را برای ورود عنوان دلخواه برگزینید.</small>
+                {% else %}
+                    <small class="form-hint">Choose a suggested title or select Other to enter a custom label.</small>
+                {% endif %}
+                {{ form.title.errors }}
+            </div>
+            <div class="membership-title-custom" data-title-custom-wrapper {% if form.title.value != '__custom__' %}hidden{% endif %}>
+                <label for="id_title_custom">
+                    {% if lang == 'fa' %}عنوان دلخواه{% else %}Custom title{% endif %}
+                </label>
+                {{ form.title_custom }}
+                {{ form.title_custom.errors }}
+            </div>
+        </div>
+        <div class="form-check membership-owner-field">
+            {{ form.is_owner }}
+            <label for="id_is_owner">
+                {% if lang == 'fa' %}این کاربر مالک پروژه است{% else %}This user is the project owner{% endif %}
+            </label>
+            <small class="form-hint">
+                {% if lang == 'fa' %}پس از اتمام ددلاین فقط مالک به پنل‌ها دسترسی خواهد داشت.{% else %}Only the owner can access panels after the deadline passes.{% endif %}
+            </small>
+            {{ form.is_owner.errors }}
         </div>
         {# Panel permissions grouped by category.  Each group has a
            master checkbox that toggles all child checkboxes. #}
@@ -103,6 +127,29 @@
     // in the template.  The mapping is hard coded here to avoid
     // querying the DOM repeatedly.
     document.addEventListener('DOMContentLoaded', function() {
+        const titleSelect = document.getElementById('id_title');
+        const customWrapper = document.querySelector('[data-title-custom-wrapper]');
+        const customInput = document.getElementById('id_title_custom');
+
+        const syncTitleVisibility = function() {
+            if (!titleSelect || !customWrapper || !customInput) {
+                return;
+            }
+            if (titleSelect.value === '__custom__') {
+                customWrapper.hidden = false;
+                customInput.disabled = false;
+            } else {
+                customWrapper.hidden = true;
+                customInput.disabled = true;
+                customInput.value = '';
+            }
+        };
+
+        syncTitleVisibility();
+        if (titleSelect) {
+            titleSelect.addEventListener('change', syncTitleVisibility);
+        }
+
         const groupMap = {
             'database_quota': ['database_management','quota_management'],
             'collection': ['collection_management','collection_performance','telephone_interviewer','fieldwork_interviewer','focus_group_panel'],

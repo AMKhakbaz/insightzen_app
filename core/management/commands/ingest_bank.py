@@ -32,13 +32,9 @@ CREATE SCHEMA IF NOT EXISTS staging;
 CREATE UNLOGGED TABLE IF NOT EXISTS staging.person (
     national_code varchar(10) PRIMARY KEY,
     full_name varchar(145),
-    father_name varchar(35),
     birth_year bigint,
-    birth_date varchar(10),
-    city_name varchar(22),
-    province_name varchar(20),
-    birth_city varchar(22),
-    birth_province varchar(20)
+    city_name varchar(64),
+    gender varchar(10)
 );
 CREATE UNLOGGED TABLE IF NOT EXISTS staging.mobile (
     mobile varchar(15) PRIMARY KEY,
@@ -50,10 +46,8 @@ CREATE UNLOGGED TABLE IF NOT EXISTS staging.mobile (
 SQL_MERGE = """
 SET LOCAL synchronous_commit = off;
 
-INSERT INTO core_person (national_code, full_name, father_name, birth_year, birth_date,
-                        city_name, province_name, birth_city, birth_province, imputation)
-SELECT p.national_code, p.full_name, p.father_name, p.birth_year, p.birth_date,
-       p.city_name, p.province_name, p.birth_city, p.birth_province, false
+INSERT INTO core_person (national_code, full_name, birth_year, city_name, gender)
+SELECT p.national_code, p.full_name, p.birth_year, p.city_name, p.gender
 FROM staging.person p
 ON CONFLICT (national_code) DO NOTHING;
 

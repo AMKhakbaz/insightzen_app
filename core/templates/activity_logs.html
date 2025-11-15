@@ -7,14 +7,40 @@
         {% if lang == 'fa' %}گزارش فعالیت‌ها{% else %}Activity Logs{% endif %}
     </h1>
     {% if logs %}
-    <div style="overflow-x:auto;">
-        <table class="table" style="min-width:600px;">
+    <div class="table-responsive">
+        <table id="activity-logs-table" class="table" data-table="interactive" data-filter-context="activity_logs" data-empty-text="{% if lang == 'fa' %}هیچ لاگی با این فیلتر نیست.{% else %}No log entries match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
-                    <th>{% if lang == 'fa' %}زمان{% else %}Timestamp{% endif %}</th>
-                    <th>{% if lang == 'fa' %}کاربر{% else %}User{% endif %}</th>
-                    <th>{% if lang == 'fa' %}عملیات{% else %}Action{% endif %}</th>
-                    <th>{% if lang == 'fa' %}جزئیات{% else %}Details{% endif %}</th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}زمان{% else %}Timestamp{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="1" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}کاربر{% else %}User{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="2" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}عملیات{% else %}Action{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="3" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}جزئیات{% else %}Details{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                </tr>
+                <tr class="table-filter-row">
+                    <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}تاریخ یا ساعت{% else %}Date / time{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}کاربر{% else %}User{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="2" placeholder="{% if lang == 'fa' %}عملیات{% else %}Action{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="3" placeholder="{% if lang == 'fa' %}کلیدواژه{% else %}Keyword{% endif %}" autocomplete="off"></th>
                 </tr>
             </thead>
             <tbody>

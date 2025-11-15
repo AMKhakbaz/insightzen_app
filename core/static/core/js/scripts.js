@@ -2,14 +2,7 @@
 // Handles sidebar toggle and Conjoint Analysis AJAX interactions.
 
 document.addEventListener('DOMContentLoaded', function () {
-  // Sidebar toggle button
-  const menuToggle = document.getElementById('menu-toggle');
-  if (menuToggle) {
-    menuToggle.addEventListener('click', function () {
-      document.body.classList.toggle('sidebar-collapsed');
-    });
-  }
-
+  initNotificationCenter();
   // Conjoint analysis form submission
   const form = document.getElementById('conjoint-form');
   if (form) {
@@ -66,7 +59,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const pwCard = document.createElement('div');
             pwCard.className = 'dashboard-card';
             let pwHtml = '<h3>Part‑Worth Table</h3>';
-            pwHtml += '<div class="table-wrap"><table class="table"><thead><tr><th>Level</th><th>Value</th></tr></thead><tbody>';
+            pwHtml += '<div class="table-responsive"><table class="table"><thead><tr><th>Level</th><th>Value</th></tr></thead><tbody>';
             data.partworth_table.forEach((row) => {
               pwHtml += `<tr><td>${row.level}</td><td>${row.value}</td></tr>`;
             });
@@ -79,7 +72,7 @@ document.addEventListener('DOMContentLoaded', function () {
             topCard.className = 'dashboard-card';
             let topHtml = '<h3>Top Profiles</h3>';
             if (data.top_profiles && data.top_profiles.length > 0) {
-              topHtml += '<div class="table-wrap"><table class="table"><thead><tr>';
+              topHtml += '<div class="table-responsive"><table class="table"><thead><tr>';
               Object.keys(data.top_profiles[0]).forEach((key) => {
                 topHtml += `<th>${key}</th>`;
               });
@@ -261,7 +254,7 @@ document.addEventListener('DOMContentLoaded', function () {
               // Span across two columns on larger screens
               tableCard.style.gridColumn = 'span 2';
               let tblHtml = '<h3>MaxDiff Results</h3>';
-              tblHtml += '<div class="table-wrap"><table class="table"><thead><tr>';
+              tblHtml += '<div class="table-responsive"><table class="table"><thead><tr>';
               Object.keys(data.results[0]).forEach((key) => {
                 tblHtml += `<th>${key}</th>`;
               });
@@ -464,7 +457,847 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
   }
+
+  const qcEditButtons = document.querySelectorAll('[data-enketo-edit]');
+  if (qcEditButtons.length) {
+    qcEditButtons.forEach((button) => {
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        if (button.disabled) {
+          return;
+        }
+        const submissionId = button.getAttribute('data-enketo-edit');
+        const entryId = button.getAttribute('data-entry-id');
+        if (!submissionId || !entryId) {
+          return;
+        }
+        const statusEl = button.parentElement ? button.parentElement.querySelector('[data-status]') : null;
+        const loadingText = button.dataset.loadingText || 'Requesting link…';
+        const successText = button.dataset.successText || 'Edit form opened.';
+        const errorText = button.dataset.errorText || 'Unable to fetch edit link.';
+        if (statusEl) {
+          statusEl.textContent = loadingText;
+          statusEl.dataset.state = 'loading';
+        }
+        button.disabled = true;
+        const pendingWindow = window.open('', '_blank');
+        const csrftoken = getCookie('csrftoken');
+        fetch(`/qc/edit/${entryId}/link/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrftoken,
+          },
+          body: JSON.stringify({ submission_id: submissionId }),
+        })
+          .then((response) =>
+            response
+              .json()
+              .catch(() => ({}))
+              .then((data) => ({ status: response.status, data })),
+          )
+          .then(({ status, data }) => {
+            if (status >= 200 && status < 300 && data.url) {
+              if (pendingWindow) {
+                pendingWindow.location.href = data.url;
+                pendingWindow.focus();
+              } else {
+                window.open(data.url, '_blank', 'noopener');
+              }
+              if (statusEl) {
+                statusEl.textContent = successText;
+                statusEl.dataset.state = 'success';
+              }
+            } else {
+              if (pendingWindow) {
+                pendingWindow.close();
+              }
+              const message = data.error || errorText;
+              if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.dataset.state = 'error';
+              }
+            }
+          })
+          .catch(() => {
+            if (pendingWindow) {
+              pendingWindow.close();
+            }
+            if (statusEl) {
+              statusEl.textContent = errorText;
+              statusEl.dataset.state = 'error';
+            }
+          })
+          .finally(() => {
+            button.disabled = false;
+          });
+      });
+    });
+  }
+
+  const messagingPanel = document.querySelector('[data-member-messaging]');
+  if (messagingPanel) {
+    const endpoint = messagingPanel.getAttribute('data-member-endpoint');
+    const textarea = messagingPanel.querySelector('[data-member-message-input]');
+    const sendButton = messagingPanel.querySelector('[data-member-send]');
+    const clearButton = messagingPanel.querySelector('[data-member-clear]');
+    const counterNode = messagingPanel.querySelector('[data-member-char-count]');
+    const selectedCountNode = messagingPanel.querySelector('[data-member-selected-count]');
+    const statusNode = messagingPanel.querySelector('[data-member-status]');
+    const table = document.getElementById('membership-table');
+    const masterCheckbox = document.querySelector('[data-member-select-all]');
+    const lang = document.documentElement.lang === 'fa' ? 'fa' : 'en';
+    const text = {
+      en: {
+        sending: 'Sending message…',
+        success: (count) => `${count} notification${count === 1 ? '' : 's'} sent.`,
+        partial: 'Some recipients were skipped because they lack access.',
+        required: 'Enter a message before sending.',
+        none: 'Select at least one member.',
+        error: 'Unable to send the message. Please try again.',
+      },
+      fa: {
+        sending: 'در حال ارسال پیام…',
+        success: (count) => `${count} اعلان ارسال شد.`,
+        partial: 'برخی کاربران به دلیل محدودیت دسترسی نادیده گرفته شدند.',
+        required: 'لطفاً متن پیام را وارد کنید.',
+        none: 'حداقل یک کاربر را انتخاب کنید.',
+        error: 'امکان ارسال پیام وجود ندارد. دوباره تلاش کنید.',
+      },
+    };
+
+    const state = {
+      selected: new Set(),
+      sending: false,
+    };
+
+    const setStatus = (message, variant) => {
+      if (!statusNode) return;
+      statusNode.textContent = message || '';
+      statusNode.classList.remove('is-error', 'is-success');
+      if (variant === 'error') {
+        statusNode.classList.add('is-error');
+      } else if (variant === 'success') {
+        statusNode.classList.add('is-success');
+      }
+    };
+
+    const clearStatus = () => setStatus('', null);
+
+    const getCheckboxes = () => {
+      if (!table) return [];
+      return Array.from(table.querySelectorAll('[data-member-checkbox]'));
+    };
+
+    const syncCounter = () => {
+      if (!textarea || !counterNode) return;
+      const maxLen = 500;
+      if (textarea.value.length > maxLen) {
+        textarea.value = textarea.value.slice(0, maxLen);
+      }
+      counterNode.textContent = `${textarea.value.length} / ${maxLen}`;
+    };
+
+    const updateControls = () => {
+      const hasSelection = state.selected.size > 0;
+      const message = textarea ? textarea.value.trim() : '';
+      if (selectedCountNode) {
+        selectedCountNode.textContent = state.selected.size;
+      }
+      if (sendButton) {
+        const disabled =
+          !endpoint || !hasSelection || !message || message.length > 500 || state.sending;
+        sendButton.disabled = disabled;
+      }
+      if (clearButton) {
+        clearButton.disabled = !hasSelection || state.sending;
+      }
+    };
+
+    const refreshMaster = () => {
+      if (!masterCheckbox) return;
+      const boxes = getCheckboxes();
+      const total = boxes.length;
+      if (!total) {
+        masterCheckbox.checked = false;
+        masterCheckbox.indeterminate = false;
+        return;
+      }
+      const selected = state.selected.size;
+      masterCheckbox.checked = selected > 0 && selected === total;
+      masterCheckbox.indeterminate = selected > 0 && selected < total;
+    };
+
+    const toggleSelection = (checkbox, force) => {
+      if (!checkbox) return;
+      const value = parseInt(checkbox.value, 10);
+      if (Number.isNaN(value)) {
+        return;
+      }
+      const shouldCheck = typeof force === 'boolean' ? force : checkbox.checked;
+      checkbox.checked = shouldCheck;
+      if (shouldCheck) {
+        state.selected.add(value);
+      } else {
+        state.selected.delete(value);
+      }
+    };
+
+    const attachCheckboxHandlers = () => {
+      getCheckboxes().forEach((checkbox) => {
+        checkbox.addEventListener('change', (event) => {
+          const target = event.currentTarget;
+          if (!(target instanceof HTMLInputElement)) return;
+          toggleSelection(target);
+          refreshMaster();
+          updateControls();
+          clearStatus();
+        });
+      });
+    };
+
+    const clearSelection = () => {
+      getCheckboxes().forEach((checkbox) => {
+        toggleSelection(checkbox, false);
+      });
+      state.selected.clear();
+      if (masterCheckbox) {
+        masterCheckbox.checked = false;
+        masterCheckbox.indeterminate = false;
+      }
+      updateControls();
+    };
+
+    const sendMessage = () => {
+      if (!textarea || !sendButton || !endpoint) return;
+      const message = textarea.value.trim();
+      if (!state.selected.size) {
+        setStatus(text[lang].none, 'error');
+        return;
+      }
+      if (!message) {
+        setStatus(text[lang].required, 'error');
+        return;
+      }
+      const csrftoken = getCookie('csrftoken') || '';
+      state.sending = true;
+      updateControls();
+      setStatus(text[lang].sending, null);
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken,
+        },
+        body: JSON.stringify({
+          message,
+          user_ids: Array.from(state.selected),
+        }),
+      })
+        .then((response) =>
+          response
+            .json()
+            .then((data) => ({ ok: response.ok, data }))
+            .catch(() => ({ ok: response.ok, data: {} }))
+        )
+        .then((result) => {
+          const data = result.data || {};
+          if (!result.ok || !data.ok) {
+            setStatus(data.message || text[lang].error, 'error');
+            return;
+          }
+          const count = Number(data.created || 0);
+          let messageText = text[lang].success(count);
+          if (Array.isArray(data.skipped) && data.skipped.length) {
+            messageText = `${messageText} ${text[lang].partial}`;
+          }
+          setStatus(messageText, 'success');
+          textarea.value = '';
+          syncCounter();
+          clearSelection();
+        })
+        .catch(() => {
+          setStatus(text[lang].error, 'error');
+        })
+        .finally(() => {
+          state.sending = false;
+          updateControls();
+        });
+    };
+
+    attachCheckboxHandlers();
+    refreshMaster();
+    syncCounter();
+    updateControls();
+
+    if (masterCheckbox) {
+      masterCheckbox.addEventListener('change', () => {
+        const shouldCheck = masterCheckbox.checked;
+        getCheckboxes().forEach((checkbox) => {
+          toggleSelection(checkbox, shouldCheck);
+        });
+        if (!shouldCheck) {
+          masterCheckbox.indeterminate = false;
+        }
+        updateControls();
+        clearStatus();
+      });
+    }
+
+    if (clearButton) {
+      clearButton.addEventListener('click', () => {
+        clearSelection();
+        clearStatus();
+      });
+    }
+
+    if (textarea) {
+      textarea.addEventListener('input', () => {
+        syncCounter();
+        updateControls();
+        clearStatus();
+      });
+    }
+
+    if (sendButton) {
+      sendButton.addEventListener('click', sendMessage);
+    }
+  }
+
+  const bulkModal = document.getElementById('bulk-membership-modal');
+  if (bulkModal) {
+    const userScript = document.getElementById('project-user-options');
+    const memberScript = document.getElementById('project-member-map');
+    let userOptions = [];
+    let memberMap = {};
+    try {
+      userOptions = userScript ? JSON.parse(userScript.textContent) : [];
+    } catch (err) {
+      userOptions = [];
+    }
+    try {
+      memberMap = memberScript ? JSON.parse(memberScript.textContent) : {};
+    } catch (err) {
+      memberMap = {};
+    }
+
+    const titleNode = document.getElementById('bulk-membership-title');
+    const hintNode = bulkModal.querySelector('[data-bulk-membership-hint]');
+    const userList = bulkModal.querySelector('[data-bulk-membership-user-list]');
+    const statusNode = bulkModal.querySelector('[data-bulk-membership-status]');
+    const submitButton = bulkModal.querySelector('[data-bulk-membership-submit]');
+    const dismissTriggers = bulkModal.querySelectorAll('[data-bulk-membership-dismiss]');
+    const panelInputs = Array.from(
+      bulkModal.querySelectorAll('[data-panel-field]')
+    );
+
+    const locale = document.documentElement.lang === 'fa' ? 'fa' : 'en';
+    const messages = {
+      en: {
+        title: (name) => `Assign members to ${name}`,
+        hint:
+          'Select the team members you want to add. Existing members are disabled.',
+        empty: 'No users available.',
+        noneSelected: 'Select at least one user to continue.',
+        success: (count) =>
+          `${count} user${count === 1 ? '' : 's'} added successfully.`,
+        partial:
+          'Some users were skipped because they are already assigned or unavailable.',
+        error: 'Unable to add the selected users. Please try again.',
+        unauthorized: 'You do not have permission to add members to this project.',
+      },
+      fa: {
+        title: (name) => `افزودن اعضا به ${name}`,
+        hint:
+          'کاربران موردنظر را انتخاب کنید. اعضایی که قبلاً اضافه شده‌اند غیرفعال هستند.',
+        empty: 'هیچ کاربری یافت نشد.',
+        noneSelected: 'لطفاً حداقل یک کاربر را انتخاب کنید.',
+        success: (count) => `${count} کاربر با موفقیت اضافه شد.`,
+        partial:
+          'برخی کاربران به دلیل عضویت قبلی یا محدودیت دسترسی اضافه نشدند.',
+        error: 'امکان افزودن کاربران وجود ندارد. لطفاً دوباره تلاش کنید.',
+        unauthorized: 'دسترسی لازم برای افزودن اعضا به این پروژه را ندارید.',
+      },
+    };
+
+    const text = messages[locale];
+
+    const clearStatus = () => {
+      if (!statusNode) return;
+      statusNode.textContent = '';
+      statusNode.classList.remove('is-success', 'is-error');
+    };
+
+    const setStatus = (message, type) => {
+      if (!statusNode) return;
+      statusNode.textContent = message;
+      statusNode.classList.remove('is-success', 'is-error');
+      if (type === 'success') {
+        statusNode.classList.add('is-success');
+      } else if (type === 'error') {
+        statusNode.classList.add('is-error');
+      }
+    };
+
+    const renderUserList = (projectId) => {
+      if (!userList) {
+        return;
+      }
+      userList.innerHTML = '';
+      const assigned = new Set(memberMap[String(projectId)] || memberMap[projectId] || []);
+      let inserted = 0;
+      userOptions.forEach((option) => {
+        const label = document.createElement('label');
+        label.className = 'bulk-membership-modal__user';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = option.id;
+        const details = document.createElement('div');
+        details.className = 'bulk-membership-modal__user-details';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'bulk-membership-modal__user-name';
+        nameSpan.textContent = option.label;
+        const emailSpan = document.createElement('span');
+        emailSpan.className = 'bulk-membership-modal__user-email';
+        emailSpan.textContent = option.email;
+        details.appendChild(nameSpan);
+        details.appendChild(emailSpan);
+        if (assigned.has(option.id)) {
+          label.classList.add('is-disabled');
+          input.disabled = true;
+        }
+        label.appendChild(input);
+        label.appendChild(details);
+        userList.appendChild(label);
+        inserted += 1;
+      });
+
+      if (!inserted) {
+        const empty = document.createElement('p');
+        empty.className = 'bulk-membership-modal__empty';
+        empty.textContent = text.empty;
+        userList.appendChild(empty);
+      }
+    };
+
+    const closeModal = () => {
+      bulkModal.setAttribute('hidden', '');
+      bulkModal.removeAttribute('data-project-id');
+      bulkModal.removeAttribute('data-action');
+      clearStatus();
+    };
+
+    const openModal = (projectId, projectName, action) => {
+      if (titleNode) {
+        titleNode.textContent = text.title(projectName);
+      }
+      if (hintNode) {
+        hintNode.textContent = text.hint;
+      }
+      bulkModal.dataset.projectId = String(projectId);
+      bulkModal.dataset.action = action;
+      clearStatus();
+      panelInputs.forEach((input) => {
+        input.checked = false;
+      });
+      renderUserList(projectId);
+      bulkModal.removeAttribute('hidden');
+      const firstCheckbox = userList ? userList.querySelector('input[type="checkbox"]:not(:disabled)') : null;
+      if (firstCheckbox) {
+        firstCheckbox.focus({ preventScroll: true });
+      } else if (submitButton) {
+        submitButton.focus({ preventScroll: true });
+      }
+    };
+
+    dismissTriggers.forEach((trigger) => {
+      trigger.addEventListener('click', () => {
+        closeModal();
+      });
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !bulkModal.hasAttribute('hidden')) {
+        event.preventDefault();
+        closeModal();
+      }
+    });
+
+    const submitHandler = () => {
+      const projectId = bulkModal.dataset.projectId;
+      const action = bulkModal.dataset.action;
+      if (!projectId || !action) {
+        setStatus(text.error, 'error');
+        return;
+      }
+      const selected = Array.from(
+        bulkModal.querySelectorAll('[data-bulk-membership-user-list] input[type="checkbox"]:checked:not(:disabled)')
+      ).map((input) => parseInt(input.value, 10));
+
+      if (!selected.length) {
+        setStatus(text.noneSelected, 'error');
+        return;
+      }
+
+      const panels = {};
+      panelInputs.forEach((input) => {
+        const field = input.getAttribute('data-panel-field');
+        if (field) {
+          panels[field] = input.checked;
+        }
+      });
+
+      const csrftoken = getCookie('csrftoken');
+      fetch(action, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken || '',
+        },
+        body: JSON.stringify({ user_ids: selected, panels }),
+      })
+        .then((response) =>
+          response
+            .json()
+            .then((data) => ({ ok: response.ok, status: response.status, data }))
+            .catch(() => ({ ok: response.ok, status: response.status, data: {} }))
+        )
+        .then((result) => {
+          const data = result.data || {};
+          if (!result.ok || !data.ok) {
+            if (result.status === 403) {
+              setStatus(text.unauthorized, 'error');
+              return;
+            }
+            setStatus(data.message || text.error, 'error');
+            return;
+          }
+
+          const created = Array.isArray(data.created) ? data.created : [];
+          const skipped = Array.isArray(data.skipped) ? data.skipped : [];
+          const projectKey = String(projectId);
+          if (!memberMap[projectKey]) {
+            memberMap[projectKey] = [];
+          }
+
+          created.forEach((item) => {
+            const id = item.id;
+            if (!memberMap[projectKey].includes(id)) {
+              memberMap[projectKey].push(id);
+            }
+          });
+
+          const checkboxes = bulkModal.querySelectorAll(
+            '[data-bulk-membership-user-list] input[type="checkbox"]'
+          );
+          checkboxes.forEach((input) => {
+            const value = parseInt(input.value, 10);
+            if (created.some((item) => item.id === value)) {
+              input.checked = false;
+              input.disabled = true;
+              const wrapper = input.closest('.bulk-membership-modal__user');
+              if (wrapper) {
+                wrapper.classList.add('is-disabled');
+              }
+            }
+          });
+
+          const count = created.length;
+          let message = count ? text.success(count) : text.error;
+          if (skipped.length) {
+            message = `${message} ${text.partial}`;
+          }
+          setStatus(message, count ? 'success' : 'error');
+        })
+        .catch(() => {
+          setStatus(text.error, 'error');
+        });
+    };
+
+    if (submitButton) {
+      submitButton.addEventListener('click', submitHandler);
+    }
+
+    document.querySelectorAll('[data-bulk-membership-open]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const projectId = button.getAttribute('data-project-id');
+        const projectName = button.getAttribute('data-project-name') || '';
+        const action = button.getAttribute('data-bulk-url');
+        if (projectId && action) {
+          openModal(projectId, projectName, action);
+        }
+      });
+    });
+  }
 });
+
+function initNotificationCenter() {
+  const root = document.querySelector('[data-notification-root]');
+  if (!root) return;
+
+  const toggle = root.querySelector('[data-notification-toggle]');
+  const panel = root.querySelector('[data-notification-panel]');
+  if (!toggle || !panel) return;
+
+  const list = root.querySelector('[data-notification-list]');
+  const emptyState = root.querySelector('[data-notification-empty]');
+  const countBadge = root.querySelector('[data-notification-count]');
+  const statusEl = root.querySelector('[data-notification-status]');
+  const markAllButton = root.querySelector('[data-notification-mark-all]');
+
+  const lang = document.documentElement.lang === 'fa' ? 'fa' : 'en';
+  const locale = lang === 'fa' ? 'fa-IR' : 'en-US';
+
+  const text = {
+    en: {
+      loading: 'Loading notifications…',
+      error: 'Unable to load notifications.',
+      updated: 'Notifications updated.',
+      markAll: 'Mark all as read',
+      empty: "You're all caught up.",
+      none: 'No unread notifications.',
+      project: 'Project',
+    },
+    fa: {
+      loading: 'در حال بارگذاری اعلان‌ها…',
+      error: 'بارگذاری اعلان‌ها ممکن نیست.',
+      updated: 'اعلان‌ها به‌روزرسانی شد.',
+      markAll: 'علامت‌گذاری همه به‌عنوان خوانده‌شده',
+      empty: 'اعلان خوانده‌نشده‌ای وجود ندارد.',
+      none: 'اعلان خوانده‌نشده‌ای وجود ندارد.',
+      project: 'پروژه',
+    },
+  };
+
+  if (markAllButton) {
+    markAllButton.textContent = text[lang].markAll;
+  }
+  if (emptyState) {
+    emptyState.textContent = text[lang].empty;
+  }
+
+  let totalUnread = 0;
+  let cachedItems = [];
+  let isOpen = false;
+  let isFetching = false;
+
+  const updateBadge = (total) => {
+    if (!countBadge) return;
+    if (total > 0) {
+      countBadge.hidden = false;
+      countBadge.textContent = total > 99 ? '99+' : String(total);
+    } else {
+      countBadge.hidden = true;
+    }
+  };
+
+  const setStatus = (message, tone = 'info') => {
+    if (!statusEl) return;
+    statusEl.textContent = message || '';
+    statusEl.dataset.tone = tone;
+  };
+
+  const formatTimestamp = (isoString) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      if (Number.isNaN(date.getTime())) {
+        return '';
+      }
+      return date.toLocaleString(locale, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
+    } catch (err) {
+      return '';
+    }
+  };
+
+  const renderList = (items) => {
+    cachedItems = Array.isArray(items) ? items.slice() : [];
+    if (list) {
+      list.innerHTML = '';
+    }
+    if (!list) {
+      return;
+    }
+    if (!cachedItems.length) {
+      if (emptyState) {
+        emptyState.hidden = false;
+      }
+      return;
+    }
+    if (emptyState) {
+      emptyState.hidden = true;
+    }
+
+    cachedItems.forEach((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'notification-item';
+      button.dataset.id = String(item.id);
+      button.setAttribute('role', 'listitem');
+
+      const message = document.createElement('div');
+      message.className = 'notification-item__message';
+      message.textContent = item.message || '';
+      button.appendChild(message);
+
+      const metaParts = [];
+      if (item.project) {
+        metaParts.push(`${text[lang].project}: ${item.project}`);
+      }
+      const when = formatTimestamp(item.createdAt);
+      if (when) {
+        metaParts.push(when);
+      }
+      if (metaParts.length) {
+        const meta = document.createElement('div');
+        meta.className = 'notification-item__meta';
+        meta.textContent = metaParts.join(' • ');
+        button.appendChild(meta);
+      }
+
+      list.appendChild(button);
+    });
+  };
+
+  const fetchNotifications = (force = false) => {
+    if (isFetching) return;
+    if (!force && !isOpen) {
+      return;
+    }
+    isFetching = true;
+    setStatus(text[lang].loading);
+    fetch('/api/notifications/unread/', { headers: { Accept: 'application/json' } })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        const notifications = Array.isArray(data.notifications) ? data.notifications : [];
+        totalUnread = Number(data.count) || 0;
+        renderList(notifications);
+        updateBadge(totalUnread);
+        setStatus(totalUnread ? '' : text[lang].none);
+      })
+      .catch(() => {
+        setStatus(text[lang].error, 'error');
+      })
+      .finally(() => {
+        isFetching = false;
+      });
+  };
+
+  const postMark = (payload) => {
+    return fetch('/api/notifications/mark-read/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken') || '',
+      },
+      body: JSON.stringify(payload),
+    }).then((response) => {
+      if (!response.ok) {
+        throw new Error('failed');
+      }
+      return response.json();
+    });
+  };
+
+  const closePanel = () => {
+    if (!isOpen) return;
+    isOpen = false;
+    panel.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', handleOutside, true);
+    document.removeEventListener('keydown', handleKeydown, true);
+  };
+
+  const openPanel = () => {
+    if (isOpen) return;
+    isOpen = true;
+    panel.hidden = false;
+    toggle.setAttribute('aria-expanded', 'true');
+    fetchNotifications(true);
+    document.addEventListener('click', handleOutside, true);
+    document.addEventListener('keydown', handleKeydown, true);
+  };
+
+  const handleOutside = (event) => {
+    if (!root.contains(event.target)) {
+      closePanel();
+    }
+  };
+
+  const handleKeydown = (event) => {
+    if (event.key === 'Escape') {
+      closePanel();
+    }
+  };
+
+  toggle.addEventListener('click', () => {
+    if (isOpen) {
+      closePanel();
+    } else {
+      openPanel();
+    }
+  });
+
+  if (markAllButton) {
+    markAllButton.addEventListener('click', () => {
+      if (!totalUnread) {
+        setStatus(text[lang].none);
+        return;
+      }
+      markAllButton.disabled = true;
+      setStatus(text[lang].loading);
+      postMark({ all: true })
+        .then((data) => {
+          const updated = Number(data.updated) || totalUnread;
+          totalUnread = Math.max(0, totalUnread - updated);
+          cachedItems = [];
+          renderList([]);
+          updateBadge(totalUnread);
+          setStatus(text[lang].updated);
+        })
+        .catch(() => {
+          setStatus(text[lang].error, 'error');
+        })
+        .finally(() => {
+          markAllButton.disabled = false;
+        });
+    });
+  }
+
+  if (list) {
+    list.addEventListener('click', (event) => {
+      const target = event.target.closest('.notification-item');
+      if (!target) return;
+      const id = Number(target.dataset.id);
+      if (!id) return;
+      target.disabled = true;
+      postMark({ ids: [id] })
+        .then((data) => {
+          const removed = Number(data.updated) || 1;
+          totalUnread = Math.max(0, totalUnread - removed);
+          cachedItems = cachedItems.filter((item) => item.id !== id);
+          renderList(cachedItems);
+          updateBadge(totalUnread);
+          setStatus(totalUnread ? text[lang].updated : text[lang].none);
+        })
+        .catch(() => {
+          setStatus(text[lang].error, 'error');
+          target.disabled = false;
+        });
+    });
+  }
+
+  // Prime the badge once the page loads.
+  fetchNotifications(true);
+}
 
 // Helper to get CSRF token from cookies
 function getCookie(name) {

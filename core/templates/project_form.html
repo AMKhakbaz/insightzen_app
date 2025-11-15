@@ -8,7 +8,7 @@
     {% else %}
         {{ title }}
     {% endif %}</h1>
-    <form method="post" id="project-form">
+    <form method="post" id="project-form" enctype="multipart/form-data">
         {% csrf_token %}
         {{ form.non_field_errors }}
         {# Project name #}
@@ -23,18 +23,19 @@
             {{ form.status }}
             {{ form.status.errors }}
         </div>
-        {# Project types: allow user to add multiple types with a + button.  We display
-           one input initially and allow cloning more inputs.  The values
-           will be collected into a hidden 'types' field on submission. #}
         <div id="types-section" style="margin-bottom:1rem;">
             <label>{% if lang == 'fa' %}نوع پروژه{% else %}Project Type(s){% endif %}</label>
-            <div id="types-container" style="display:flex;flex-direction:column;gap:0.5rem;">
+            <div id="types-container"
+                 style="display:flex;flex-direction:column;gap:0.5rem;"
+                 data-placeholder="{% if lang == 'fa' %}نوع{% else %}Type{% endif %}"
+                 data-add-label="{% if lang == 'fa' %}افزودن نوع{% else %}Add Type{% endif %}"
+                 data-remove-label="{% if lang == 'fa' %}حذف نوع{% else %}Remove Type{% endif %}">
                 <div class="type-row" style="display:flex;gap:0.5rem;align-items:center;">
-                    <input type="text" class="form-control type-input" placeholder="{% if lang == 'fa' %}نوع{% else %}Type{% endif %}">
+                    <input type="text" class="form-control type-input" placeholder="{% if lang == 'fa' %}نوع{% else %}Type{% endif %}" value="{{ types_initial|default:'' }}">
                     <button type="button" class="btn btn-secondary add-type" title="{% if lang == 'fa' %}افزودن نوع{% else %}Add Type{% endif %}">+</button>
                 </div>
             </div>
-            <input type="hidden" name="types" id="types-hidden">
+            <input type="hidden" name="types" id="types-hidden" value="{{ types_initial|default:'' }}">
             {% if form.types.errors %}<div class="text-danger">{{ form.types.errors }}</div>{% endif %}
         </div>
         {# Start date #}
@@ -55,6 +56,114 @@
             {{ form.sample_size }}
             {{ form.sample_size.errors }}
         </div>
+        <div class="sample-config-block">
+            <h2>{% if lang == 'fa' %}منبع نمونه پاسخگو{% else %}Respondent Sample Source{% endif %}</h2>
+            <div>
+                {{ form.sample_source.label_tag }}
+                {{ form.sample_source }}
+                {{ form.sample_source.errors }}
+                <span class="form-hint">
+                    {% if lang == 'fa' %}
+                        تعیین کنید که نمونه تماس از بانک پاسخگوی سیستم انتخاب شود یا فایل اکسل اختصاصی آپلود گردد.
+                    {% else %}
+                        Choose whether this project should draw numbers from the default respondent bank or from an uploaded Excel file.
+                    {% endif %}
+                </span>
+            </div>
+            {% with active_source=form.sample_source.value|default:form.instance.sample_source %}
+            <div class="sample-upload-panel" data-sample-upload {% if active_source != 'upload' %}hidden{% endif %}>
+                {{ form.sample_upload.label_tag }}
+                {{ form.sample_upload }}
+                {{ form.sample_upload.errors }}
+                <span class="form-hint">
+                    {% if lang == 'fa' %}فرمت اکسل با پسوند xlsx/xls و حداکثر چند هزار ردیف پشتیبانی می‌شود.{% else %}Upload an .xlsx/.xls workbook that contains the calling list for this project.{% endif %}
+                </span>
+                <div class="sample-upload-guide">
+                    <strong>{% if lang == 'fa' %}ستون‌های ضروری:{% else %}Required columns:{% endif %}</strong>
+                    <ul style="margin:0.35rem 0 0;padding-left:1.25rem;">
+                        {% for header in required_headers %}
+                            <li><code>{{ header }}</code></li>
+                        {% endfor %}
+                    </ul>
+                    <p style="margin:0.5rem 0 0;">
+                        {% if lang == 'fa' %}ستون‌ها باید شامل نام، شماره تماس، شهر، سن و جنسیت باشند تا سیستم بتواند ردیف‌ها را اعتبارسنجی کند. برای جنسیت می‌توانید از مقادیر «male/female» یا معادل فارسی «مرد/زن» استفاده کنید.{% else %}Ensure every row provides the full name, phone number, city, age, and gender headers so the system can validate each contact. Use values such as “male/female” (or the Persian equivalents مرد/زن) for the gender column.{% endif %}
+                    </p>
+                </div>
+                {% if project.sample_upload_metadata.accepted_rows %}
+                    {% with meta=project.sample_upload_metadata %}
+                        <div class="sample-upload-meta">
+                            <span>
+                                <strong>{% if lang == 'fa' %}آخرین بروزرسانی{% else %}Last Refresh{% endif %}</strong>
+                                {{ project.sample_upload_refreshed_at|date:'Y-m-d H:i'|default:'—' }}
+                            </span>
+                            <span>
+                                <strong>{% if lang == 'fa' %}ردیف‌های معتبر{% else %}Accepted Rows{% endif %}</strong>
+                                {{ meta.accepted_rows }} / {{ meta.total_rows }}
+                            </span>
+                            <span>
+                                <strong>{% if lang == 'fa' %}ردیف‌های نادیده{% else %}Skipped Rows{% endif %}</strong>
+                                {{ meta.skipped_rows }}
+                            </span>
+                        </div>
+                    {% endwith %}
+                {% endif %}
+            </div>
+            {% endwith %}
+        </div>
+        <div class="sample-config-block">
+            <h2>{% if lang == 'fa' %}کدهای نتیجه تماس{% else %}Call Result Codes{% endif %}</h2>
+            <div>
+                {{ form.call_result_source.label_tag }}
+                {{ form.call_result_source }}
+                {{ form.call_result_source.errors }}
+                <span class="form-hint">
+                    {% if lang == 'fa' %}
+                        انتخاب کنید که از کدهای پیش‌فرض سیستم استفاده شود یا فایل CSV/اکسل با ستون‌های <code>code</code>، <code>label</code> و <code>is_success</code> بارگذاری کنید.
+                    {% else %}
+                        Choose whether to rely on the built-in status codes or upload a CSV/Excel file containing <code>code</code>, <code>label</code>, and <code>is_success</code> columns.
+                    {% endif %}
+                </span>
+            </div>
+            {% with result_source=form.call_result_source.value|default:form.instance.call_result_source %}
+            <div class="sample-upload-panel" data-call-result-upload {% if result_source != 'custom' %}hidden{% endif %}>
+                {{ form.call_result_upload.label_tag }}
+                {{ form.call_result_upload }}
+                {{ form.call_result_upload.errors }}
+                <span class="form-hint">
+                    {% if lang == 'fa' %}فرمت CSV یا اکسل با ستون‌های موردنیاز پشتیبانی می‌شود و مقدار <code>is_success</code> باید ۰/۱ یا yes/no باشد.{% else %}CSV and Excel uploads are supported; the <code>is_success</code> column should contain 0/1 or yes/no values.{% endif %}
+                </span>
+                <div class="sample-upload-guide">
+                    <strong>{% if lang == 'fa' %}ستون‌های ضروری:{% else %}Required columns:{% endif %}</strong>
+                    <ul style="margin:0.35rem 0 0;padding-left:1.25rem;">
+                        {% for header in call_result_headers %}
+                            <li><code>{{ header }}</code></li>
+                        {% endfor %}
+                    </ul>
+                    <p style="margin:0.5rem 0 0;">
+                        {% if lang == 'fa' %}هر ردیف باید یک عدد یکتا برای <code>code</code> و متن قابل نمایش برای <code>label</code> داشته باشد.{% else %}Each row must provide a unique numeric <code>code</code> and the label that interviewers will see in the dropdown.{% endif %}
+                    </p>
+                </div>
+                {% if project.call_result_metadata.accepted_rows %}
+                    {% with meta=project.call_result_metadata %}
+                        <div class="sample-upload-meta">
+                            <span>
+                                <strong>{% if lang == 'fa' %}آخرین بروزرسانی{% else %}Last Refresh{% endif %}</strong>
+                                {{ project.call_result_refreshed_at|date:'Y-m-d H:i'|default:'—' }}
+                            </span>
+                            <span>
+                                <strong>{% if lang == 'fa' %}ردیف‌های معتبر{% else %}Accepted Rows{% endif %}</strong>
+                                {{ meta.accepted_rows }} / {{ meta.total_rows }}
+                            </span>
+                            <span>
+                                <strong>{% if lang == 'fa' %}ردیف‌های نادیده{% else %}Skipped Rows{% endif %}</strong>
+                                {{ meta.skipped_rows }}
+                            </span>
+                        </div>
+                    {% endwith %}
+                {% endif %}
+            </div>
+            {% endwith %}
+        </div>
         <button type="submit" class="btn" style="margin-top:1rem;">
             {% if lang == 'fa' %}
                 {% if title == 'Add Project' %}ثبت پروژه{% else %}ذخیره تغییرات{% endif %}
@@ -69,26 +178,103 @@
     document.addEventListener('DOMContentLoaded', function() {
         const container = document.getElementById('types-container');
         const form = document.getElementById('project-form');
+        const hiddenField = document.getElementById('types-hidden');
+        if (!container || !form || !hiddenField) {
+            return;
+        }
+        const placeholderText = container.dataset.placeholder || (container.querySelector('.type-input')?.getAttribute('placeholder') || 'Type');
+        const removeLabel = container.dataset.removeLabel || '{% if lang == 'fa' %}حذف{% else %}Remove{% endif %}';
+
+        const appendTypeRow = (value = '') => {
+            const row = document.createElement('div');
+            row.className = 'type-row';
+            row.style.display = 'flex';
+            row.style.gap = '0.5rem';
+            row.style.alignItems = 'center';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'form-control type-input';
+            input.placeholder = placeholderText;
+            input.value = value;
+            row.appendChild(input);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'btn btn-outline btn-sm remove-type';
+            removeBtn.title = removeLabel;
+            removeBtn.textContent = '-';
+            row.appendChild(removeBtn);
+
+            container.appendChild(row);
+        };
+
+        const hydrateInitialTypes = () => {
+            const raw = hiddenField.value || '';
+            const values = raw ? raw.split(',').map(value => value.trim()).filter(Boolean) : [];
+            let firstInput = container.querySelector('.type-input');
+            if (!firstInput) {
+                appendTypeRow();
+                firstInput = container.querySelector('.type-input');
+            }
+            if (!firstInput) {
+                return;
+            }
+            if (!values.length) {
+                firstInput.value = '';
+                return;
+            }
+            firstInput.value = values.shift() || '';
+            values.forEach(value => appendTypeRow(value));
+        };
+
+        hydrateInitialTypes();
+
         container.addEventListener('click', function(e) {
             if (e.target.classList.contains('add-type')) {
                 e.preventDefault();
-                const row = document.createElement('div');
-                row.className = 'type-row';
-                row.style.display = 'flex';
-                row.style.gap = '0.5rem';
-                row.style.alignItems = 'center';
-                row.innerHTML = `<input type="text" class="form-control type-input" placeholder="{% if lang == 'fa' %}نوع{% else %}Type{% endif %}"> <button type="button" class="btn btn-outline btn-sm remove-type" title="{% if lang == 'fa' %}حذف{% else %}Remove{% endif %}">-</button>`;
-                container.appendChild(row);
+                appendTypeRow();
             } else if (e.target.classList.contains('remove-type')) {
                 e.preventDefault();
+                const rows = container.querySelectorAll('.type-row');
+                if (rows.length <= 1) {
+                    const input = rows[0]?.querySelector('.type-input');
+                    if (input) {
+                        input.value = '';
+                    }
+                    return;
+                }
                 const row = e.target.closest('.type-row');
-                if (row) row.remove();
+                if (row) {
+                    row.remove();
+                }
             }
         });
+
         form.addEventListener('submit', function() {
-            const values = Array.from(container.querySelectorAll('.type-input')).map(el => el.value.trim()).filter(Boolean);
-            document.getElementById('types-hidden').value = values.join(',');
+            const values = Array.from(container.querySelectorAll('.type-input'))
+                .map(el => el.value.trim())
+                .filter(Boolean);
+            hiddenField.value = values.join(',');
         });
+        const sourceSelect = document.getElementById('id_sample_source');
+        const uploadPanel = document.querySelector('[data-sample-upload]');
+        if (sourceSelect && uploadPanel) {
+            const toggleUpload = () => {
+                uploadPanel.hidden = sourceSelect.value !== 'upload';
+            };
+            toggleUpload();
+            sourceSelect.addEventListener('change', toggleUpload);
+        }
+        const callSourceSelect = document.getElementById('id_call_result_source');
+        const callUploadPanel = document.querySelector('[data-call-result-upload]');
+        if (callSourceSelect && callUploadPanel) {
+            const toggleCallUpload = () => {
+                callUploadPanel.hidden = callSourceSelect.value !== 'custom';
+            };
+            toggleCallUpload();
+            callSourceSelect.addEventListener('change', toggleCallUpload);
+        }
     });
     </script>
 </div>

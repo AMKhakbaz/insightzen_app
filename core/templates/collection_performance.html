@@ -19,29 +19,38 @@
 {% block content %}
 <div class="card" style="max-width:1200px;margin:2rem auto;padding:1.5rem;">
     <h1 style="margin-bottom:1rem;">{% if lang == 'fa' %}کارایی گردآوری{% else %}Collection Performance{% endif %}</h1>
+    <p class="card-intro">
+        {% if lang == 'fa' %}پس از پایان ددلاین هر پروژه، فقط مالک می‌تواند این داشبورد را مشاهده کند.{% else %}After a project's deadline passes, only the owner can review this dashboard.{% endif %}
+    </p>
     <div class="filters" style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
-        <div>
+        <div style="min-width:220px;">
             <label for="project-select">{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</label><br>
-            <select id="project-select" class="form-select" style="min-width:180px;">
-                <option value="">{% if lang == 'fa' %}همه{% else %}All{% endif %}</option>
+            <select id="project-select" class="form-select" multiple style="min-width:220px;max-height:150px;">
                 {% for p in projects %}
-                    <option value="{{ p.pk }}">{{ p.name }}</option>
+                    <option value="{{ p.pk }}" {% if p.pk in filters.project_ids %}selected{% endif %}>{{ p.name }}</option>
                 {% endfor %}
             </select>
+            <small class="form-hint">
+                {% if lang == 'fa' %}
+                    برای انتخاب چند پروژه کلیدهای Ctrl (یا Cmd در مک) را نگه دارید؛ خالی گذاشتن یعنی همه پروژه‌ها.
+                {% else %}
+                    Hold Ctrl (or Cmd on macOS) to choose multiple projects, or leave empty for all.
+                {% endif %}
+            </small>
         </div>
         <div>
             <label for="start-date">{% if lang == 'fa' %}از{% else %}From{% endif %}</label><br>
-            <input type="datetime-local" id="start-date" class="form-control">
+            <input type="datetime-local" id="start-date" class="form-control" value="{{ filters.start|default:'' }}">
         </div>
         <div>
             <label for="end-date">{% if lang == 'fa' %}تا{% else %}To{% endif %}</label><br>
-            <input type="datetime-local" id="end-date" class="form-control">
+            <input type="datetime-local" id="end-date" class="form-control" value="{{ filters.end|default:'' }}">
         </div>
         <div>
             <label for="user-select">{% if lang == 'fa' %}پرسشگران{% else %}Interviewers{% endif %}</label><br>
             <select id="user-select" class="form-select" multiple style="min-width:200px;max-height:130px;">
                 {% for u in users %}
-                    <option value="{{ u.pk }}">{{ u.first_name }}</option>
+                    <option value="{{ u.pk }}" {% if u.pk in filters.user_ids %}selected{% endif %}>{{ u.first_name }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -51,32 +60,186 @@
             </button>
         </div>
     </div>
-    <div class="chart-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;margin-bottom:1.5rem;">
-        <div class="chart-container" style="height:320px;">
+    <section id="raw-records" style="margin-bottom:1.5rem;">
+        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:1rem;">
+            <h2 style="margin:0;">{% if lang == 'fa' %}رکوردهای خام{% else %}Raw Interviews{% endif %}</h2>
+            <p class="card-intro" style="margin:0;">
+                {% if lang == 'fa' %}
+                    فهرست زیر داده‌های خام مصاحبه را با همان فیلترهای بالا نمایش می‌دهد. برای جست‌وجوی پیشرفته می‌توانید از نوار ابزار جدول استفاده کنید.
+                {% else %}
+                    The table below reflects the raw interview records that match your filters. Use the table toolbar to run quick searches or open the advanced filter builder.
+                {% endif %}
+            </p>
+        </div>
+        <div class="table-responsive">
+            <table id="raw-records-table" class="table" data-table="interactive" data-filter-context="collection_performance_raw" data-url="{% url 'collection_performance_raw' %}" data-empty-text="{% if lang == 'fa' %}داده‌ای برای نمایش وجود ندارد.{% else %}No interviews match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}" data-export-endpoint="{% url 'table_export' %}" data-export-filename="collection-raw">
+                <thead>
+                    <tr>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="1" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}پرسشگر{% else %}Interviewer{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="2" data-sort-type="number">
+                                <span>{% if lang == 'fa' %}کد{% else %}Code{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="3" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+        
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="4" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}شروع فرم{% else %}Form Started{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="5" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}پایان فرم{% else %}Form Submitted{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="6" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}ثبت{% else %}Logged{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                    </tr>
+                    <tr class="table-filter-row" hidden>
+                        <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}نام پروژه{% else %}Project{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}نام پرسشگر{% else %}Interviewer{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="2" data-filter-type="number" placeholder="{% if lang == 'fa' %}کد{% else %}Code{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="3" placeholder="{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="4" placeholder="{% if lang == 'fa' %}مثال: 2024-01-01{% else %}e.g. 2024-01-01{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="5" placeholder="{% if lang == 'fa' %}مثال: 2024-01-01{% else %}e.g. 2024-01-01{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="6" placeholder="{% if lang == 'fa' %}تاریخ{% else %}Date{% endif %}" autocomplete="off"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Raw rows populated dynamically -->
+                </tbody>
+            </table>
+        </div>
+        <div class="table-pagination" id="raw-pagination" style="margin-top:1rem;">
+            <div class="page-size-control">
+                <label for="raw-page-size" style="margin:0;">{% if lang == 'fa' %}تعداد در هر صفحه{% else %}Rows per page{% endif %}</label>
+                <select id="raw-page-size">
+                    <option value="30">30</option>
+                    <option value="50">50</option>
+                    <option value="200">200</option>
+                </select>
+            </div>
+            <div class="page-info" id="raw-page-info" style="color:var(--color-text-muted);font-size:var(--font-size-sm);">
+                {% if lang == 'fa' %}در حال بارگذاری…{% else %}Loading…{% endif %}
+            </div>
+            <div class="page-controls">
+                <button type="button" class="btn btn-outline" id="raw-page-prev">{% if lang == 'fa' %}قبلی{% else %}Previous{% endif %}</button>
+                <span id="raw-results-status" style="color:var(--color-text-muted);font-size:var(--font-size-sm);"></span>
+                <button type="button" class="btn btn-outline" id="raw-page-next">{% if lang == 'fa' %}بعدی{% else %}Next{% endif %}</button>
+            </div>
+        </div>
+    </section>
+    <div class="kpi-grid" aria-live="polite">
+        <div class="kpi-card">
+            <p class="kpi-label">{% if lang == 'fa' %}کل تماس‌ها{% else %}Total Calls{% endif %}</p>
+            <p class="kpi-value" id="kpi-total-interviews">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">{% if lang == 'fa' %}تماس‌های موفق{% else %}Successful Calls{% endif %}</p>
+            <p class="kpi-value" id="kpi-successful-interviews">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">{% if lang == 'fa' %}نرخ موفقیت{% else %}Success Rate{% endif %}</p>
+            <p class="kpi-value" id="kpi-success-rate">—</p>
+        </div>
+        <div class="kpi-card kpi-card--metrics">
+            <p class="kpi-label">{% if lang == 'fa' %}میانگین مدت و اوج زمانی{% else %}Avg Duration & Peak Hour{% endif %}</p>
+            <p class="kpi-value" id="kpi-average-duration">—</p>
+            <p class="kpi-subvalue" id="kpi-duration-sample">{% if lang == 'fa' %}داده‌ای موجود نیست{% else %}No duration data{% endif %}</p>
+            <p class="kpi-subvalue" id="kpi-peak-hour">—</p>
+        </div>
+    </div>
+    <div class="chart-grid">
+        <div class="chart-container chart-container--tall">
             <canvas id="bar-chart" data-url="{% url 'collection_performance_data' %}" data-total-label="{% if lang == 'fa' %}کل{% else %}Total{% endif %}" data-success-label="{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}"></canvas>
         </div>
-        <div class="chart-container" style="height:320px;">
+        <div class="chart-container chart-container--tall">
             <canvas id="donut-chart" data-url="{% url 'collection_performance_data' %}"></canvas>
         </div>
-        <div class="chart-container" style="height:320px;grid-column:1/-1;">
+        <div class="chart-container chart-container--compact">
+            <canvas id="code-chart" data-url="{% url 'collection_performance_data' %}"></canvas>
+        </div>
+        <div class="chart-container chart-container--compact">
+            <canvas id="hourly-chart" data-url="{% url 'collection_performance_data' %}"></canvas>
+        </div>
+        <div class="chart-container chart-container--wide">
             <canvas id="line-chart" data-url="{% url 'collection_performance_data' %}" data-total-label="{% if lang == 'fa' %}کل{% else %}Total{% endif %}" data-success-label="{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}"></canvas>
         </div>
     </div>
-    <div class="top-table" style="overflow-x:auto;">
-        <h2 style="margin-bottom:0.5rem;">{% if lang == 'fa' %}۵ پرسشگر برتر{% else %}Top Interviewers{% endif %}</h2>
-        <table id="top5-table" class="table" style="min-width:500px;">
-            <thead>
-                <tr>
-                    <th data-sort-key="user">{% if lang == 'fa' %}کاربر{% else %}User{% endif %}</th>
-                    <th data-sort-key="total">{% if lang == 'fa' %}کل تماس‌ها{% else %}Total Calls{% endif %}</th>
-                    <th data-sort-key="success">{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}</th>
-                    <th data-sort-key="rate">{% if lang == 'fa' %}نرخ موفقیت{% else %}Success Rate{% endif %}</th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Rows populated by charts.js -->
-            </tbody>
-        </table>
+    <div class="top-table">
+        <h2 id="top-table-title" style="margin-bottom:0.5rem;" data-label-fa="{count} پرسشگر برتر" data-label-en="Top {count} Interviewers">{% if lang == 'fa' %}پرسشگران برتر{% else %}Top Interviewers{% endif %}</h2>
+        <div class="table-responsive">
+            <table id="top5-table" class="table" data-table="interactive" data-filter-context="collection_performance_top" data-top-limit="5" data-empty-text="{% if lang == 'fa' %}داده‌ای برای نمایش نیست.{% else %}No interviewers match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}" data-export-endpoint="{% url 'table_export' %}" data-export-filename="collection-top" data-export-param-limit="5">
+                <thead>
+                    <tr>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="1" data-sort-type="text">
+                                <span>{% if lang == 'fa' %}کاربر{% else %}User{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="2" data-sort-type="number">
+                                <span>{% if lang == 'fa' %}کل تماس‌ها{% else %}Total Calls{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="3" data-sort-type="number">
+                                <span>{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col">
+                            <button type="button" class="table-sort" data-sort-column="4" data-sort-type="number">
+                                <span>{% if lang == 'fa' %}نرخ موفقیت{% else %}Success Rate{% endif %}</span>
+                                <span class="sort-icon" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                    </tr>
+                    <tr class="table-filter-row" hidden>
+                        <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}نام پروژه{% else %}Project{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}نام کاربر{% else %}User{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="2" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا >۱۰{% else %}Number or >10{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="3" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا <۵{% else %}Number or <5{% endif %}" autocomplete="off"></th>
+                        <th><input type="text" data-filter-column="4" data-filter-type="number" placeholder="{% if lang == 'fa' %}٪ یا >۵۰{% else %}% or >50{% endif %}" autocomplete="off"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Rows populated by charts.js -->
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -91,15 +254,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const exportUrl = "{% url 'collection_performance_export' %}";
     exportBtn.addEventListener('click', function () {
         const params = new URLSearchParams();
-        const project = document.getElementById('project-select').value;
+        const projectSelect = document.getElementById('project-select');
         const start = document.getElementById('start-date').value;
         const end = document.getElementById('end-date').value;
         const userSelect = document.getElementById('user-select');
-        const selectedUsers = Array.from(userSelect.selectedOptions).map(function (o) { return o.value; }).join(',');
-        if (project) params.append('project', project);
+        const selectedProjects = projectSelect ? Array.from(projectSelect.selectedOptions).map(function (o) { return o.value; }).filter(function (v) { return v; }) : [];
+        const selectedUsers = Array.from(userSelect.selectedOptions).map(function (o) { return o.value; }).filter(function (v) { return v; });
+        if (selectedProjects.length) params.append('projects', selectedProjects.join(','));
         if (start) params.append('start_date', start);
         if (end) params.append('end_date', end);
-        if (selectedUsers) params.append('users', selectedUsers);
+        if (selectedUsers.length) params.append('users', selectedUsers.join(','));
         const url = params.toString() ? (exportUrl + '?' + params.toString()) : exportUrl;
         window.open(url, '_blank');
     });

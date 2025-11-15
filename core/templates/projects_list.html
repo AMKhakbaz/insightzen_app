@@ -12,45 +12,166 @@
         {% endif %}
     </p>
     <a href="{% url 'project_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}پروژه جدید{% else %}Add Project{% endif %}</a>
-    <div class="table-wrap">
-    <table class="table">
-        <thead>
-            <tr>
-                <th>{% if lang == 'fa' %}نام{% else %}Name{% endif %}</th>
-                <th>{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}</th>
-                <th>{% if lang == 'fa' %}نوع{% else %}Type{% endif %}</th>
-                <th>{% if lang == 'fa' %}تاریخ شروع{% else %}Start Date{% endif %}</th>
-                <th>{% if lang == 'fa' %}مهلت{% else %}Deadline{% endif %}</th>
-                <th>{% if lang == 'fa' %}اندازه نمونه{% else %}Sample Size{% endif %}</th>
-                <th>{% if lang == 'fa' %}نمونه‌های پر شده{% else %}Filled Samples{% endif %}</th>
-                <th>{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for project in projects %}
-            <tr>
-                <td>{{ project.name }}</td>
-                <td>{% if project.status %}{% if lang == 'fa' %}فعال{% else %}Active{% endif %}{% else %}{% if lang == 'fa' %}غیرفعال{% else %}Inactive{% endif %}{% endif %}</td>
-                <td>{{ project.type }}</td>
-                <td>{{ project.start_date }}</td>
-                <td>{{ project.deadline }}</td>
-                <td>{{ project.sample_size }}</td>
-                <td>{{ project.filled_samples }}</td>
-                <td style="white-space:nowrap;">
-                    <a href="{% url 'project_edit' project.id %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</a>
-                    <form method="post" action="{% url 'project_delete' project.id %}" style="display:inline;">
-                        {% csrf_token %}
-                        <button class="btn btn-danger btn-sm" onclick="return confirm('{% if lang == 'fa' %}آیا از حذف این پروژه مطمئن هستید؟{% else %}Are you sure you want to delete this project?{% endif %}')">
-                            {% if lang == 'fa' %}حذف{% else %}Delete{% endif %}
+    <div class="table-responsive">
+        <table id="projects-table" class="table" data-table="interactive" data-filter-context="projects_list" data-empty-text="{% if lang == 'fa' %}هیچ پروژه‌ای با این فیلتر یافت نشد.{% else %}No projects match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+            <thead>
+                <tr>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}نام{% else %}Name{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
                         </button>
-                    </form>
-                </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="8">{% if lang == 'fa' %}پروژه‌ای وجود ندارد{% else %}No projects yet{% endif %}</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="1" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="2" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}نوع{% else %}Type{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="3" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}تاریخ شروع{% else %}Start Date{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="4" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}مهلت{% else %}Deadline{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="5" data-sort-type="number">
+                            <span>{% if lang == 'fa' %}اندازه نمونه{% else %}Sample Size{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="6" data-sort-type="number">
+                            <span>{% if lang == 'fa' %}نمونه‌های پر شده{% else %}Filled Samples{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+                </tr>
+                <tr class="table-filter-row">
+                    <th><input type="text" data-filter-column="0" data-filter-type="text" placeholder="{% if lang == 'fa' %}جستجوی نام{% else %}Filter name{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="1" data-filter-type="text" placeholder="{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="2" data-filter-type="text" placeholder="{% if lang == 'fa' %}نوع{% else %}Type{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="3" data-filter-type="text" placeholder="{% if lang == 'fa' %}تاریخ شروع{% else %}Start date{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="4" data-filter-type="text" placeholder="{% if lang == 'fa' %}مهلت{% else %}Deadline{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="5" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا >۵۰{% else %}Number or >50{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="6" data-filter-type="number" placeholder="{% if lang == 'fa' %}عدد یا <۱۰{% else %}Number or <10{% endif %}" autocomplete="off"></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for project in projects %}
+                <tr>
+                    <td>{{ project.name }}</td>
+                    <td>{% if project.status %}{% if lang == 'fa' %}فعال{% else %}Active{% endif %}{% else %}{% if lang == 'fa' %}غیرفعال{% else %}Inactive{% endif %}{% endif %}</td>
+                    <td>
+                        {% if project.types %}
+                            {{ project.types|join:', ' }}
+                        {% else %}
+                            <span class="table-cell__placeholder">{% if lang == 'fa' %}تعریف نشده{% else %}Not specified{% endif %}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ project.start_date }}</td>
+                    <td>{{ project.deadline }}</td>
+                    <td>{{ project.sample_size }}</td>
+                    <td>{{ project.filled_samples }}</td>
+                    <td style="white-space:nowrap;">
+                        <a href="{% url 'project_edit' project.id %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">
+                            {% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}
+                        </a>
+                        <button type="button"
+                                class="btn btn-sm btn-outline"
+                                data-bulk-membership-open
+                                data-project-id="{{ project.id }}"
+                                data-project-name="{{ project.name }}"
+                                data-bulk-url="{% url 'membership_bulk_add' project.id %}"
+                                style="margin-right:0.25rem;">
+                            {% if lang == 'fa' %}افزودن اعضا{% else %}Assign Members{% endif %}
+                        </button>
+                        <form method="post" action="{% url 'project_delete' project.id %}" style="display:inline;">
+                            {% csrf_token %}
+                            <button class="btn btn-danger btn-sm" onclick="return confirm('{% if lang == 'fa' %}آیا از حذف این پروژه مطمئن هستید؟{% else %}Are you sure you want to delete this project?{% endif %}')">
+                                {% if lang == 'fa' %}حذف{% else %}Delete{% endif %}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr data-empty-row><td colspan="8">{% if lang == 'fa' %}پروژه‌ای وجود ندارد{% else %}No projects yet{% endif %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
+
+<div class="bulk-membership-modal" id="bulk-membership-modal" hidden>
+    <div class="bulk-membership-modal__backdrop" data-bulk-membership-dismiss></div>
+    <div class="bulk-membership-modal__panel" role="dialog" aria-modal="true" aria-labelledby="bulk-membership-title">
+        <header class="bulk-membership-modal__header">
+            <h2 id="bulk-membership-title"></h2>
+            <button type="button" class="bulk-membership-modal__close" data-bulk-membership-dismiss aria-label="Close">&times;</button>
+        </header>
+        <div class="bulk-membership-modal__body">
+            <p class="bulk-membership-modal__hint" data-bulk-membership-hint></p>
+            <div class="bulk-membership-modal__columns">
+                <section class="bulk-membership-modal__section">
+                    <h3 class="bulk-membership-modal__section-title">{% if lang == 'fa' %}کاربران{% else %}Users{% endif %}</h3>
+                    <div class="bulk-membership-modal__user-list" data-bulk-membership-user-list>
+                        <p class="bulk-membership-modal__empty">{% if lang == 'fa' %}هیچ کاربری یافت نشد.{% else %}No users available.{% endif %}</p>
+                    </div>
+                </section>
+                <section class="bulk-membership-modal__section">
+                    <h3 class="bulk-membership-modal__section-title">{% if lang == 'fa' %}دسترسی به پنل‌ها{% else %}Panel access{% endif %}</h3>
+                    <div class="bulk-membership-modal__panel-grid">
+                        {% for field, label in (
+                            ('database_management', lang == 'fa' and 'مدیریت پایگاه داده' or 'Database Management'),
+                            ('quota_management', lang == 'fa' and 'مدیریت سهمیه' or 'Quota Management'),
+                            ('collection_management', lang == 'fa' and 'مدیریت گردآوری' or 'Collection Management'),
+                            ('collection_performance', lang == 'fa' and 'کارایی گردآوری' or 'Collection Performance'),
+                            ('telephone_interviewer', lang == 'fa' and 'مصاحبه تلفنی' or 'Telephone Interviewer'),
+                            ('fieldwork_interviewer', lang == 'fa' and 'مصاحبه میدانی' or 'Fieldwork Interviewer'),
+                            ('focus_group_panel', lang == 'fa' and 'پنل گروه کانونی' or 'Focus Group Panel'),
+                            ('qc_management', lang == 'fa' and 'مدیریت QC' or 'QC Management'),
+                            ('qc_performance', lang == 'fa' and 'کارایی QC' or 'QC Performance'),
+                            ('voice_review', lang == 'fa' and 'بازبینی صدا' or 'Voice Review'),
+                            ('callback_qc', lang == 'fa' and 'QC تماس برگشتی' or 'Callback QC'),
+                            ('coding', lang == 'fa' and 'کدگذاری' or 'Coding'),
+                            ('statistical_health_check', lang == 'fa' and 'بررسی سلامت آماری' or 'Statistical Health Check'),
+                            ('tabulation', lang == 'fa' and 'جدول‌بندی' or 'Tabulation'),
+                            ('statistics', lang == 'fa' and 'آمار' or 'Statistics'),
+                            ('funnel_analysis', lang == 'fa' and 'تحلیل قیف' or 'Funnel Analysis'),
+                            ('conjoint_analysis', lang == 'fa' and 'تحلیل همگرایی' or 'Conjoint Analysis'),
+                            ('segmentation_analysis', lang == 'fa' and 'تحلیل تقسیم‌بندی' or 'Segmentation Analysis'),
+                        ) %}
+                            <label class="bulk-membership-modal__checkbox">
+                                <input type="checkbox" value="1" data-panel-field="{{ field }}">
+                                <span>{{ label }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </section>
+            </div>
+            <div class="bulk-membership-modal__status" data-bulk-membership-status role="status" aria-live="polite"></div>
+        </div>
+        <footer class="bulk-membership-modal__footer">
+            <button type="button" class="btn btn-secondary" data-bulk-membership-dismiss>{% if lang == 'fa' %}انصراف{% else %}Cancel{% endif %}</button>
+            <button type="button" class="btn" data-bulk-membership-submit>{% if lang == 'fa' %}افزودن کاربران{% else %}Add Users{% endif %}</button>
+        </footer>
+    </div>
+</div>
+
+{{ available_user_options|json_script:"project-user-options" }}
+{{ project_member_map|json_script:"project-member-map" }}
 {% endblock %}

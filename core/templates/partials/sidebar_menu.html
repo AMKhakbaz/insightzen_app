@@ -1,0 +1,61 @@
+<nav class="sidebar-menu">
+    {% for section in sections %}
+        {% if section.visible %}
+            {% if section.collapsible %}
+                <details class="menu-group{% if section.has_active %} is-active{% endif %}"{% if section.is_open %} open{% endif %}>
+                    <summary class="menu-summary{% if section.has_active %} is-active{% endif %}">
+                        <i class="menu-icon" data-feather="{{ section.icon }}" aria-hidden="true"></i>
+                        <span class="menu-label">
+                            {% if lang == 'fa' %}
+                                {{ section.title.fa }}
+                            {% else %}
+                                {{ section.title.en }}
+                            {% endif %}
+                        </span>
+                        <i class="menu-caret" data-feather="chevron-down" aria-hidden="true"></i>
+                    </summary>
+                    <ul class="menu-list">
+                        {% for item in section.items %}
+                            {% if item.visible %}
+                                <li>
+                                    <a href="{{ item.url }}" class="menu-link{% if item.disabled %} disabled{% endif %}{% if item.is_active %} is-active{% endif %}"{% if item.disabled %} aria-disabled="true"{% endif %}{% if item.is_active %} aria-current="page"{% endif %}>
+                                        <i class="menu-icon" data-feather="{{ item.icon }}" aria-hidden="true"></i>
+                                        <span class="menu-label">
+                                            {% if lang == 'fa' %}
+                                                {{ item.label.fa }}
+                                            {% else %}
+                                                {{ item.label.en }}
+                                            {% endif %}
+                                        </span>
+                                    </a>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                    </ul>
+                </details>
+            {% else %}
+                <div class="menu-group menu-group--single{% if section.has_active %} is-active{% endif %}">
+                    <ul class="menu-list">
+                        {% for item in section.items %}
+                            {% if item.visible %}
+                                <li>
+                                    <a href="{{ item.url }}" class="menu-link{% if item.disabled %} disabled{% endif %}{% if item.is_active %} is-active{% endif %}"{% if item.disabled %} aria-disabled="true"{% endif %}{% if item.is_active %} aria-current="page"{% endif %}>
+                                        <i class="menu-icon" data-feather="{{ item.icon }}" aria-hidden="true"></i>
+                                        <span class="menu-label">
+                                            {% if lang == 'fa' %}
+                                                {{ item.label.fa }}
+                                            {% else %}
+                                                {{ item.label.en }}
+                                            {% endif %}
+                                        </span>
+                                    </a>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+</nav>
+

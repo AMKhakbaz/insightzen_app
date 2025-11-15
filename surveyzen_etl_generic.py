@@ -7,9 +7,9 @@ Generic KoboToolbox (KPI v2 JSON) -> PostgreSQL ETL (Single‑Form, Insert‑Onl
 This module is adapted from a script supplied by the user.  It provides
 helpers to synchronise data from KoboToolbox (or SurveyZen) into the
 InsightZen PostgreSQL database using only INSERT operations.  The API
-token, asset UID and XLSForm file path must be supplied at runtime.
-Tables are created dynamically based on the XLSForm definition.  Only
-new records (based on the `_id` field) are inserted on each run.
+token and asset UID must be supplied at runtime.  Tables are created
+dynamically based on the form definition fetched from the KPI API.
+Only new records (based on the `_id` field) are inserted on each run.
 
 Key modifications from the original script:
 
@@ -512,31 +512,31 @@ def prepare_rows_for_form(
 # Diagnostics
 
 def schema_mismatch_report(
-    xls_main_cols: List[Tuple[str, str]],
-    xls_repeat_cols: Dict[str, List[Tuple[str, str]]],
+    definition_main_cols: List[Tuple[str, str]],
+    definition_repeat_cols: Dict[str, List[Tuple[str, str]]],
     main_table: str,
     sample_main_keys: set[str],
     sample_rep_keys_by_root: Dict[str, set[str]],
 ) -> None:
     """
-    Compare sample keys against XLSForm-defined columns and log mismatches.
+    Compare sample keys against the form definition and log mismatches.
     """
-    xls_main = {sanitize_identifier(p) for p, _ in xls_main_cols}
-    only_in_xls_main = sorted(list(xls_main - sample_main_keys))[:50]
-    only_in_data_main = sorted(list((sample_main_keys - xls_main) - SYS_MAIN_SANITIZED))[:50]
-    if only_in_xls_main:
-        log.warning(f"[schema][{main_table}] main: in XLS not in sample: {only_in_xls_main}")
+    definition_main = {sanitize_identifier(p) for p, _ in definition_main_cols}
+    only_in_definition_main = sorted(list(definition_main - sample_main_keys))[:50]
+    only_in_data_main = sorted(list((sample_main_keys - definition_main) - SYS_MAIN_SANITIZED))[:50]
+    if only_in_definition_main:
+        log.warning(f"[schema][{main_table}] main: in definition not in sample: {only_in_definition_main}")
     if only_in_data_main:
-        log.warning(f"[schema][{main_table}] main: in sample not in XLS: {only_in_data_main}")
-    for root, cols in xls_repeat_cols.items():
-        xls_rep = {sanitize_identifier(p) for p, _ in cols}
+        log.warning(f"[schema][{main_table}] main: in sample not in definition: {only_in_data_main}")
+    for root, cols in definition_repeat_cols.items():
+        definition_rep = {sanitize_identifier(p) for p, _ in cols}
         sample_rep = sample_rep_keys_by_root.get(root, set())
-        only_in_xls_rep = sorted(list(xls_rep - sample_rep))[:50]
-        only_in_data_rep = sorted(list(sample_rep - xls_rep))[:50]
-        if only_in_xls_rep:
-            log.warning(f"[schema][{main_table}] repeat[{root}]: in XLS not in sample: {only_in_xls_rep}")
+        only_in_definition_rep = sorted(list(definition_rep - sample_rep))[:50]
+        only_in_data_rep = sorted(list(sample_rep - definition_rep))[:50]
+        if only_in_definition_rep:
+            log.warning(f"[schema][{main_table}] repeat[{root}]: in definition not in sample: {only_in_definition_rep}")
         if only_in_data_rep:
-            log.warning(f"[schema][{main_table}] repeat[{root}]: in sample not in XLS: {only_in_data_rep}")
+            log.warning(f"[schema][{main_table}] repeat[{root}]: in sample not in definition: {only_in_data_rep}")
 
 def audit_all_null_columns(conn, table: str, max_cols: int = 200) -> None:
     """Log columns that have no non-null values in the given table."""
@@ -600,26 +600,101 @@ def cleanup_duplicate_repeat_columns(conn, table: str, repeat_prefix: str) -> No
 # ---------------------------------------------------------------------------
 # Core ETL logic
 
+def extract_schema_from_asset(asset_detail: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Dict[str, List[Tuple[str, str]]]]:
+    """Derive main and repeat column definitions from an asset payload."""
+    if not isinstance(asset_detail, dict):
+        raise ValueError("Asset detail payload is missing or invalid.")
+
+    content = asset_detail.get("content")
+    if isinstance(content, dict):
+        survey_nodes = content.get("survey") or content.get("children") or []
+    elif isinstance(content, list):
+        survey_nodes = content
+    else:
+        survey_nodes = []
+    if not isinstance(survey_nodes, list):
+        survey_nodes = []
+
+    main_cols: List[Tuple[str, str]] = []
+    repeat_cols: Dict[str, List[Tuple[str, str]]] = {}
+
+    def dedupe(items: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        seen: set[str] = set()
+        result: List[Tuple[str, str]] = []
+        for name, typ in items:
+            key = sanitize_identifier(name)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append((name, typ))
+        return result
+
+    def walk(nodes: List[Dict[str, Any]], parent_parts: List[str], repeat_key: Optional[str]) -> None:
+        for node in nodes or []:
+            if not isinstance(node, dict):
+                continue
+            node_type = str(node.get("type") or "").strip()
+            node_name = (node.get("name") or "").strip()
+            children = node.get("children") or []
+            node_base = base_type(node_type)
+            if node_base in {"begin_group", "group"}:
+                next_parent = parent_parts + ([node_name] if node_name else [])
+                walk(children, next_parent, repeat_key)
+                continue
+            if node_base == "begin_repeat":
+                repeat_parts = parent_parts + ([node_name] if node_name else [])
+                repeat_label_parts = [part for part in repeat_parts if part]
+                repeat_label = "/".join(repeat_label_parts) or node_name or "repeat"
+                repeat_cols.setdefault(repeat_label, [])
+                walk(children, repeat_parts, repeat_label)
+                continue
+            if node_base.startswith("end"):
+                continue
+            if not node_name:
+                continue
+            path_parts = parent_parts + [node_name]
+            full_path = "/".join([p for p in path_parts if p]) or node_name
+            sql_type = map_xls_to_pg(node_type)
+            if repeat_key:
+                repeat_cols.setdefault(repeat_key, []).append((full_path, sql_type))
+            else:
+                main_cols.append((full_path, sql_type))
+            if children:
+                walk(children, path_parts, repeat_key)
+
+    walk(survey_nodes, [], None)
+    main_cols = dedupe(main_cols)
+    for key, cols in list(repeat_cols.items()):
+        repeat_cols[key] = dedupe(cols)
+
+    if not main_cols and not repeat_cols:
+        raise ValueError("Asset definition did not contain any survey questions.")
+
+    return main_cols, repeat_cols
+
+
 @dataclass
 class FormSpec:
     api_token: str
     asset_uid: str
-    xls_path: str
     main_table: str
-    xls_main_cols: List[Tuple[str, str]] = field(default_factory=list)
-    xls_repeat_cols: Dict[str, List[Tuple[str, str]]] = field(default_factory=dict)
+    asset_detail: Optional[Dict[str, Any]] = None
+    definition_main_cols: List[Tuple[str, str]] = field(default_factory=list)
+    definition_repeat_cols: Dict[str, List[Tuple[str, str]]] = field(default_factory=dict)
 
 def ensure_tables_for_form(conn, form: FormSpec) -> Dict[str, str]:
     """Ensure the main and repeat tables exist for a form."""
-    main_cols, rep_cols = parse_xls_full_paths(form.xls_path)
-    form.xls_main_cols = main_cols
-    form.xls_repeat_cols = rep_cols
-    ensure_main_table(conn, form.main_table, form.xls_main_cols)
+    if not form.asset_detail:
+        raise ValueError("FormSpec.asset_detail must be populated before ensuring tables.")
+    main_cols, rep_cols = extract_schema_from_asset(form.asset_detail)
+    form.definition_main_cols = main_cols
+    form.definition_repeat_cols = rep_cols
+    ensure_main_table(conn, form.main_table, form.definition_main_cols)
     repeat_map: Dict[str, str] = {}
-    for root in form.xls_repeat_cols.keys():
+    for root in form.definition_repeat_cols.keys():
         tail = root.split("/")[-1]
         rep_table = f"{form.main_table}__{sanitize_identifier(tail)}"
-        ensure_repeat_table(conn, rep_table, form.xls_repeat_cols[root])
+        ensure_repeat_table(conn, rep_table, form.definition_repeat_cols[root])
         repeat_map[root] = rep_table
     return repeat_map
 
@@ -634,12 +709,13 @@ def run_once(form: FormSpec) -> Tuple[int, int]:
     """
     conn = pg_connect()
     try:
+        session = kpi_session(form.api_token)
+        if not form.asset_detail:
+            form.asset_detail = get_asset_detail(session, form.asset_uid)
         repeat_table_map = ensure_tables_for_form(conn, form)
         last_id = get_max_main_id(conn, form.main_table)
         log.info(f"[info][{form.main_table}] last _id = {last_id}")
-        session = kpi_session(form.api_token)
-        asset = get_asset_detail(session, form.asset_uid)
-        data_url = get_data_url_from_asset(asset, form.asset_uid)
+        data_url = get_data_url_from_asset(form.asset_detail, form.asset_uid)
         log.info(f"[info][{form.main_table}] data endpoint: {data_url}")
         batch_main: List[Dict[str, Any]] = []
         batch_rep: Dict[str, List[Dict[str, Any]]] = {t: [] for t in repeat_table_map.values()}
@@ -649,7 +725,7 @@ def run_once(form: FormSpec) -> Tuple[int, int]:
         sample_rep_keys_by_root: Dict[str, set[str]] = {}
         sample_main_seen = 0
         sample_rep_seen: Dict[str, int] = {}
-        repeat_roots_full = list(form.xls_repeat_cols.keys())
+        repeat_roots_full = list(form.definition_repeat_cols.keys())
         label = f"{form.main_table}/{form.asset_uid}"
         for sub in fetch_new_submissions(session, data_url, last_id, label=label):
             main_row, rep_rows_by_root = prepare_rows_for_form(sub, repeat_roots_full, label=label)
@@ -686,19 +762,19 @@ def run_once(form: FormSpec) -> Tuple[int, int]:
                 total_rep += len(rows)
         log.info(f"[done][{form.main_table}] inserted main={total_main}, repeat={total_rep}")
         schema_mismatch_report(
-            form.xls_main_cols,
-            form.xls_repeat_cols,
+            form.definition_main_cols,
+            form.definition_repeat_cols,
             form.main_table,
             sample_main_keys,
             sample_rep_keys_by_root,
         )
         if RUN_NULL_AUDIT:
             audit_all_null_columns(conn, form.main_table, max_cols=200)
-            for root in form.xls_repeat_cols.keys():
+            for root in form.definition_repeat_cols.keys():
                 tbl = repeat_table_map.get(root)
                 if tbl:
                     audit_all_null_columns(conn, tbl, max_cols=200)
-        for root in form.xls_repeat_cols.keys():
+        for root in form.definition_repeat_cols.keys():
             tbl = repeat_table_map.get(root)
             if tbl:
                 prefix = sanitize_identifier(root.split("/")[-1]) + "__"
@@ -715,13 +791,11 @@ def cli_main() -> None:
     p = argparse.ArgumentParser(description="Kobo/SurveyZen ETL (single run)")
     p.add_argument("--api-token", required=True, help="API Token for Kobo/SurveyZen")
     p.add_argument("--asset-uid", required=True, help="Asset UID of the form")
-    p.add_argument("--xls", required=True, help="Path to the XLSForm (xlsx file)")
     args = p.parse_args()
     table_name = sanitize_identifier(args.asset_uid)
     form = FormSpec(
         api_token=args.api_token,
         asset_uid=args.asset_uid,
-        xls_path=args.xls,
         main_table=table_name,
     )
     inserted_main, inserted_rep = run_once(form)
