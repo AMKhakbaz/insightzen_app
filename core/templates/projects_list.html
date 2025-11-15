@@ -134,35 +134,16 @@
                 </section>
                 <section class="bulk-membership-modal__section">
                     <h3 class="bulk-membership-modal__section-title">{% if lang == 'fa' %}دسترسی به پنل‌ها{% else %}Panel access{% endif %}</h3>
-                    <div class="bulk-membership-modal__panel-grid">
-                        {% for field, label in (
-                            ('database_management', lang == 'fa' and 'مدیریت پایگاه داده' or 'Database Management'),
-                            ('quota_management', lang == 'fa' and 'مدیریت سهمیه' or 'Quota Management'),
-                            ('collection_management', lang == 'fa' and 'مدیریت گردآوری' or 'Collection Management'),
-                            ('collection_performance', lang == 'fa' and 'کارایی گردآوری' or 'Collection Performance'),
-                            ('telephone_interviewer', lang == 'fa' and 'مصاحبه تلفنی' or 'Telephone Interviewer'),
-                            ('fieldwork_interviewer', lang == 'fa' and 'مصاحبه میدانی' or 'Fieldwork Interviewer'),
-                            ('focus_group_panel', lang == 'fa' and 'پنل گروه کانونی' or 'Focus Group Panel'),
-                            ('qc_management', lang == 'fa' and 'مدیریت QC' or 'QC Management'),
-                            ('qc_performance', lang == 'fa' and 'کارایی QC' or 'QC Performance'),
-                            ('voice_review', lang == 'fa' and 'بازبینی صدا' or 'Voice Review'),
-                            ('callback_qc', lang == 'fa' and 'QC تماس برگشتی' or 'Callback QC'),
-                            ('coding', lang == 'fa' and 'کدگذاری' or 'Coding'),
-                            ('statistical_health_check', lang == 'fa' and 'بررسی سلامت آماری' or 'Statistical Health Check'),
-                            ('tabulation', lang == 'fa' and 'جدول‌بندی' or 'Tabulation'),
-                            ('statistics', lang == 'fa' and 'آمار' or 'Statistics'),
-                            ('funnel_analysis', lang == 'fa' and 'تحلیل قیف' or 'Funnel Analysis'),
-                            ('conjoint_analysis', lang == 'fa' and 'تحلیل همگرایی' or 'Conjoint Analysis'),
-                            ('segmentation_analysis', lang == 'fa' and 'تحلیل تقسیم‌بندی' or 'Segmentation Analysis'),
-                        ) %}
-                            <label class="bulk-membership-modal__checkbox">
-                                <input type="checkbox" value="1" data-panel-field="{{ field }}">
-                                <span>{{ label }}</span>
-                            </label>
-                        {% endfor %}
-                    </div>
-                </section>
-            </div>
+                <div class="bulk-membership-modal__panel-grid">
+                    {% for option in bulk_panel_options %}
+                        <label class="bulk-membership-modal__checkbox">
+                            <input type="checkbox" value="1" data-panel-field="{{ option.field }}">
+                            <span>{% if lang == 'fa' %}{{ option.label_fa }}{% else %}{{ option.label_en }}{% endif %}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
             <div class="bulk-membership-modal__status" data-bulk-membership-status role="status" aria-live="polite"></div>
         </div>
         <footer class="bulk-membership-modal__footer">

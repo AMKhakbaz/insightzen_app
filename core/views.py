@@ -117,47 +117,32 @@ from .models import (
 )
 
 
-MEMBERSHIP_PANEL_FIELDS: List[str] = [
-    'database_management',
-    'quota_management',
-    'collection_management',
-    'collection_performance',
-    'telephone_interviewer',
-    'fieldwork_interviewer',
-    'focus_group_panel',
-    'qc_management',
-    'qc_performance',
-    'voice_review',
-    'callback_qc',
-    'coding',
-    'statistical_health_check',
-    'tabulation',
-    'statistics',
-    'funnel_analysis',
-    'conjoint_analysis',
-    'segmentation_analysis',
+MEMBERSHIP_PANEL_DEFINITIONS: List[Tuple[str, str, str]] = [
+    ('database_management', 'Database Management', 'مدیریت پایگاه داده'),
+    ('quota_management', 'Quota Management', 'مدیریت سهمیه'),
+    ('collection_management', 'Collection Management', 'مدیریت گردآوری'),
+    ('collection_performance', 'Collection Performance', 'کارایی گردآوری'),
+    ('telephone_interviewer', 'Telephone Interviewer', 'مصاحبه تلفنی'),
+    ('fieldwork_interviewer', 'Fieldwork Interviewer', 'مصاحبه میدانی'),
+    ('focus_group_panel', 'Focus Group Panel', 'پنل گروه کانونی'),
+    ('qc_management', 'QC Management', 'مدیریت QC'),
+    ('qc_performance', 'QC Performance', 'کارایی QC'),
+    ('voice_review', 'Voice Review', 'بازبینی صدا'),
+    ('callback_qc', 'Callback QC', 'QC تماس برگشتی'),
+    ('coding', 'Coding', 'کدگذاری'),
+    ('statistical_health_check', 'Statistical Health Check', 'بررسی سلامت آماری'),
+    ('tabulation', 'Tabulation', 'جدول‌بندی'),
+    ('statistics', 'Statistics', 'آمار'),
+    ('funnel_analysis', 'Funnel Analysis', 'تحلیل قیف'),
+    ('conjoint_analysis', 'Conjoint Analysis', 'تحلیل همگرایی'),
+    ('segmentation_analysis', 'Segmentation Analysis', 'تحلیل تقسیم‌بندی'),
 ]
 
-MEMBERSHIP_PANEL_LABELS: Dict[str, str] = {
-    'database_management': 'Database Management',
-    'quota_management': 'Quota Management',
-    'collection_management': 'Collection Management',
-    'collection_performance': 'Collection Performance',
-    'telephone_interviewer': 'Telephone Interviewer',
-    'fieldwork_interviewer': 'Fieldwork Interviewer',
-    'focus_group_panel': 'Focus Group Panel',
-    'qc_management': 'QC Management',
-    'qc_performance': 'QC Performance',
-    'voice_review': 'Voice Review',
-    'callback_qc': 'Callback QC',
-    'coding': 'Coding',
-    'statistical_health_check': 'Statistical Health Check',
-    'tabulation': 'Tabulation',
-    'statistics': 'Statistics',
-    'funnel_analysis': 'Funnel Analysis',
-    'conjoint_analysis': 'Conjoint Analysis',
-    'segmentation_analysis': 'Segmentation Analysis',
-}
+MEMBERSHIP_PANEL_FIELDS: List[str] = [field for field, _, _ in MEMBERSHIP_PANEL_DEFINITIONS]
+
+MEMBERSHIP_PANEL_LABELS: Dict[str, str] = {field: label_en for field, label_en, _ in MEMBERSHIP_PANEL_DEFINITIONS}
+
+MEMBERSHIP_PANEL_LABELS_FA: Dict[str, str] = {field: label_fa for field, _, label_fa in MEMBERSHIP_PANEL_DEFINITIONS}
 
 
 def register(request: HttpRequest) -> HttpResponse:
@@ -1476,6 +1461,14 @@ def project_list(request: HttpRequest) -> HttpResponse:
         'projects': projects,
         'available_user_options': user_options,
         'project_member_map': dict(member_map),
+        'bulk_panel_options': [
+            {
+                'field': field,
+                'label_en': label_en,
+                'label_fa': label_fa,
+            }
+            for field, label_en, label_fa in MEMBERSHIP_PANEL_DEFINITIONS
+        ],
     }
     return render(request, 'projects_list.html', context)
 
