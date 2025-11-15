@@ -1,128 +1,101 @@
-"""Utility functions for loading data from external sources.
+"""Utility helpers for pulling the respondent bank from the main database.
 
-This module contains helper functions used to import large datasets
-into the InsightZen application's SQLite database.  The ``load_people_and_mobile``
-function connects to a remote PostgreSQL database and retrieves rows
-from the ``people`` and ``mobile`` tables.  The retrieved data is
-converted into the local ``Person`` and ``Mobile`` Django models and
-saved using bulk inserts for efficiency.
+During the first ``runserver`` execution we prompt the operator to
+optionally sync the respondent bank (``Person``/``Mobile`` rows) from the
+primary PostgreSQL instance.  The helpers in this module encapsulate the
+connection details and copy logic so ``CoreConfig`` can simply call
+``load_people_and_mobile``.
 """
 
 from __future__ import annotations
 
-import psycopg2
-from typing import Iterable, Tuple
+import os
+from typing import Dict, Iterable
 
-from .models import Person, Mobile
+import psycopg2
+from psycopg2 import sql
+
+from .models import Mobile, Person
 from .services.gender_utils import normalize_gender_value
 
 
-# Connection parameters for the remote PostgreSQL database.  These values
-# should remain in sync with the user's configuration.  It may be
-# desirable to read these from environment variables or a settings file
-# rather than hard coding them here.
-DB_HOST = "192.168.10.83"
-DB_NAME = "Numbers"
-DB_USER = "postgres"
-DB_PASSWORD = "cri#49146"
+DB_HOST = os.environ.get('RESPONDENT_DB_HOST', '127.0.0.1')
+DB_PORT = int(os.environ.get('RESPONDENT_DB_PORT', '5433'))
+DB_NAME = os.environ.get('RESPONDENT_DB_NAME', 'Numbers')
+DB_USER = os.environ.get('RESPONDENT_DB_USER', 'insightzen')
+DB_PASSWORD = os.environ.get('RESPONDENT_DB_PASSWORD', 'K8RwWAPT5F7-?mrMBzR<')
 
 
-def _fetch_rows(cur, query: str) -> Iterable[Tuple]:
-    """Execute a query and yield rows lazily.
+def _stream_table(conn, table_name: str) -> Iterable[Dict[str, object]]:
+    """Yield dictionaries representing each row of the given table."""
 
-    This helper function executes the provided SQL query using the
-    given cursor.  Fetching results in batches keeps memory usage
-    manageable when dealing with very large tables.
-    """
-    cur.execute(query)
-    while True:
-        rows = cur.fetchmany(10000)
-        if not rows:
-            break
-        for row in rows:
-            yield row
+    cursor_name = f"{table_name}_cursor"
+    with conn.cursor(name=cursor_name) as cur:
+        cur.itersize = 5000
+        cur.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table_name)))
+        colnames = [desc[0] for desc in cur.description]
+        for row in cur:
+            yield {colnames[i]: row[i] for i in range(len(colnames))}
 
 
-def load_people_and_mobile(all_data: bool = False) -> None:
-    """Load people and mobile data from the remote database into SQLite.
+def load_people_and_mobile() -> None:
+    """Copy all person and mobile rows from the primary PostgreSQL DB."""
 
-    Args:
-        all_data: If True, download all rows from the remote tables.  If
-            False, download a sample of approximately 100,000 people and
-            the corresponding mobile numbers.
-
-    This implementation introspects the column names of the remote
-    tables to accommodate variations in schema (e.g., ``address`` vs
-    ``addres``).  It selects either all rows or a limited subset and
-    maps them into the local ``Person`` and ``Mobile`` models.  Bulk
-    inserts are used for efficiency and existing records are ignored.
-    """
-    conn = psycopg2.connect(host=DB_HOST, database=DB_NAME, user=DB_USER, password=DB_PASSWORD)
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+    )
     try:
-        with conn.cursor() as cur:
-            # Fetch all or sample of people
-            people_base_query = "SELECT * FROM people"
-            if not all_data:
-                people_base_query += " LIMIT 100000"
-            cur.execute(people_base_query)
-            # Determine column names from cursor description
-            colnames = [desc[0] for desc in cur.description]
-            rows = cur.fetchall()
-            people_to_create: list[Person] = []
-            sampled_codes: list[str] = []
-            for row in rows:
-                row_dict = {colnames[i]: row[i] for i in range(len(colnames))}
-                nat_code = str(row_dict.get('national_code') or row_dict.get('National_code') or row_dict.get('nationalCode'))
-                if not nat_code:
-                    continue
-                sampled_codes.append(nat_code)
-                birth_year_value = row_dict.get('birth_year') or row_dict.get('birthYear')
-                city_value = row_dict.get('city_name') or row_dict.get('city')
-                if birth_year_value in (None, '') or city_value in (None, ''):
-                    continue
-                person = Person(
-                    national_code=nat_code,
-                    full_name=row_dict.get('full_name') or row_dict.get('fullname') or row_dict.get('fullName'),
-                    birth_year=int(birth_year_value),
-                    city_name=str(city_value),
-                    gender=normalize_gender_value(row_dict.get('gender')),
-                )
-                people_to_create.append(person)
-            # Bulk insert people (ignore conflicts on duplicate national_code)
-            Person.objects.bulk_create(people_to_create, ignore_conflicts=True)
-            # Determine mobile rows to fetch
-            with conn.cursor() as cur2:
-                if all_data:
-                    mobile_query = "SELECT * FROM mobile"
-                else:
-                    if not sampled_codes:
-                        mobile_query = None
-                    else:
-                        # Use tuple to prevent SQL injection
-                        codes_tuple = tuple(sampled_codes)
-                        placeholder = ','.join(['%s'] * len(codes_tuple))
-                        mobile_query = f"SELECT * FROM mobile WHERE national_code IN ({placeholder})"
-                mobiles_to_create: list[Mobile] = []
-                if mobile_query:
-                    if all_data:
-                        cur2.execute(mobile_query)
-                        mobile_colnames = [desc[0] for desc in cur2.description]
-                        for row in cur2.fetchall():
-                            row_dict = {mobile_colnames[i]: row[i] for i in range(len(mobile_colnames))}
-                            mobile_num = str(row_dict.get('mobile') or row_dict.get('phone') or row_dict.get('mobile_number'))
-                            nat_code = row_dict.get('national_code') or row_dict.get('nationalCode')
-                            if mobile_num and nat_code:
-                                mobiles_to_create.append(Mobile(mobile=mobile_num, person_id=str(nat_code)))
-                    else:
-                        cur2.execute(mobile_query, codes_tuple)
-                        mobile_colnames = [desc[0] for desc in cur2.description]
-                        for row in cur2.fetchall():
-                            row_dict = {mobile_colnames[i]: row[i] for i in range(len(mobile_colnames))}
-                            mobile_num = str(row_dict.get('mobile') or row_dict.get('phone') or row_dict.get('mobile_number'))
-                            nat_code = row_dict.get('national_code') or row_dict.get('nationalCode')
-                            if mobile_num and nat_code:
-                                mobiles_to_create.append(Mobile(mobile=mobile_num, person_id=str(nat_code)))
-                    # Bulk insert mobiles
-                    Mobile.objects.bulk_create(mobiles_to_create, ignore_conflicts=True)
+        _copy_people(conn)
+        _copy_mobiles(conn)
     finally:
         conn.close()
+
+
+def _copy_people(conn) -> None:
+    buffer: list[Person] = []
+    for row in _stream_table(conn, 'core_person'):
+        nat_code = str(row.get('national_code') or '').strip()
+        if not nat_code:
+            continue
+        birth_year = row.get('birth_year')
+        city_name = row.get('city_name')
+        if birth_year in (None, '') or city_name in (None, ''):
+            continue
+        buffer.append(
+            Person(
+                national_code=nat_code,
+                full_name=row.get('full_name'),
+                birth_year=int(birth_year),
+                city_name=str(city_name),
+                gender=normalize_gender_value(row.get('gender')),
+            )
+        )
+        if len(buffer) >= 5000:
+            Person.objects.bulk_create(buffer, ignore_conflicts=True)
+            buffer.clear()
+    if buffer:
+        Person.objects.bulk_create(buffer, ignore_conflicts=True)
+
+
+def _copy_mobiles(conn) -> None:
+    buffer: list[Mobile] = []
+    for row in _stream_table(conn, 'core_mobile'):
+        mobile_value = row.get('mobile') or row.get('phone') or row.get('mobile_number')
+        person_id = row.get('person_id') or row.get('national_code')
+        if not mobile_value or not person_id:
+            continue
+        buffer.append(
+            Mobile(
+                mobile=str(mobile_value),
+                person_id=str(person_id),
+            )
+        )
+        if len(buffer) >= 5000:
+            Mobile.objects.bulk_create(buffer, ignore_conflicts=True)
+            buffer.clear()
+    if buffer:
+        Mobile.objects.bulk_create(buffer, ignore_conflicts=True)

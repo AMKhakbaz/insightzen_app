@@ -25,10 +25,9 @@ class CoreConfig(AppConfig):
 
         When the application starts via the ``runserver`` command and no
         people records exist, this method prompts the user on the
-        console.  The user may choose to download all data or a sample
-        subset.  Data is retrieved from a remote PostgreSQL database
-        specified in the project documentation and saved into the local
-        SQLite database.
+        console.  If confirmed, it copies the entire respondent bank from
+        the reference PostgreSQL database into the local store so the app
+        can run with real data immediately.
         """
         # Only run this prompt when using the development server
         if 'runserver' not in sys.argv:
@@ -48,21 +47,20 @@ class CoreConfig(AppConfig):
             return
         try:
             # Prompt the operator
-            resp = input('No people data found. Download data from remote database? [y/N] ').strip().lower()
+            resp = input(
+                'Respondent bank is empty. Download data from the main database now? [y/N] '
+            ).strip().lower()
         except Exception:
             # If input is not possible (e.g., in non‑interactive environments)
             return
-        if resp != 'y':
-            return
-        try:
-            sample_choice = input('Download all data or a 100k sample? [all/100k] ').strip().lower()
-        except Exception:
+        if resp not in {'y', 'yes'}:
+            print('Skipping respondent bank import; continuing setup without remote data.')
             return
         # Import utility lazily
         from . import data_load_utils
-        all_data = sample_choice == 'all'
+
         try:
-            data_load_utils.load_people_and_mobile(all_data)
-            print('Data loaded successfully.')
+            data_load_utils.load_people_and_mobile()
+            print('Respondent bank imported successfully.')
         except Exception as exc:
             print(f'Failed to load data: {exc}')
