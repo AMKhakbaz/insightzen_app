@@ -33,7 +33,21 @@ def _stream_table(conn, table_name: str) -> Iterable[Dict[str, object]]:
     with conn.cursor(name=cursor_name) as cur:
         cur.itersize = 5000
         cur.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table_name)))
+
+        first_row = cur.fetchone()
+        if first_row is None:
+            return
+
+        if cur.description is None:
+            raise RuntimeError(
+                f'Cursor description is unavailable for table "{table_name}"; '
+                'cannot stream rows without column metadata.'
+            )
+
         colnames = [desc[0] for desc in cur.description]
+
+        yield {colnames[i]: first_row[i] for i in range(len(colnames))}
+
         for row in cur:
             yield {colnames[i]: row[i] for i in range(len(colnames))}
 

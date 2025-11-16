@@ -2114,6 +2114,10 @@ body.rtl .table-toolbar__export {
     z-index: 1100;
 }
 
+.notification-panel[hidden] {
+    display: none;
+}
+
 body.rtl .notification-panel {
     inset-inline-start: 0;
     inset-inline-end: auto;
