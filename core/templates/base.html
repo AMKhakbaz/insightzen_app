@@ -189,8 +189,13 @@
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/locales-all.global.min.js"></script>
     <script src="{% static 'core/js/calendar.js' %}"></script>
-    {# Chart.js from CDN for interactive charts #}
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-V0nLmCBeWWog78ZFPUtAN0hYdR4P9J66yUfXJy3FxjsNuEzsAnfOq3+9Ky2i7c+5" crossorigin="anonymous"></script>
+    {# Prefer locally bundled Chart.js and fall back to CDN if unavailable #}
+    <script
+        src="{% static 'core/js/vendor/chart.umd.min.js' %}"
+        data-cdn-src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+        data-cdn-integrity="sha384-V0nLmCBeWWog78ZFPUtAN0hYdR4P9J66yUfXJy3FxjsNuEzsAnfOq3+9Ky2i7c+5"
+        onerror="(function(el){var s=document.createElement('script');s.src=el.dataset.cdnSrc;s.integrity=el.dataset.cdnIntegrity;s.crossOrigin='anonymous';document.head.appendChild(s);})(this);">
+    </script>
     {# Custom UI interactions: sidebar persistence and accordion behaviour #}
     <script src="{% static 'core/js/ui.js' %}"></script>
     {# Feather icons: convert data-feather attributes to inline SVGs #}

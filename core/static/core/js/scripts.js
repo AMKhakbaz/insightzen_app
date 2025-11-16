@@ -1210,7 +1210,7 @@ function initNotificationCenter() {
   const closePanel = () => {
     if (!isOpen) return;
     isOpen = false;
-    panel.hidden = true;
+    panel.setAttribute('hidden', '');
     toggle.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', handleOutside, true);
     document.removeEventListener('keydown', handleKeydown, true);
@@ -1219,7 +1219,7 @@ function initNotificationCenter() {
   const openPanel = () => {
     if (isOpen) return;
     isOpen = true;
-    panel.hidden = false;
+    panel.removeAttribute('hidden');
     toggle.setAttribute('aria-expanded', 'true');
     fetchNotifications(true);
     document.addEventListener('click', handleOutside, true);
