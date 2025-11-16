@@ -81,65 +81,67 @@ def ingest_project_sample_upload(project: Project) -> SampleUploadStats:
 
     upload.open('rb')
     try:
-        workbook = load_workbook(upload, read_only=True, data_only=True)
-    except Exception as exc:  # pragma: no cover - delegated to UI message
-        raise SampleUploadError('The uploaded workbook could not be read.') from exc
+        try:
+            workbook = load_workbook(upload, read_only=True, data_only=True)
+        except Exception as exc:  # pragma: no cover - delegated to UI message
+            raise SampleUploadError('The uploaded workbook could not be read.') from exc
+
+        worksheet = workbook.active
+        header_row = next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), None)
+        if not header_row:
+            raise SampleUploadError('The uploaded workbook does not contain any rows.')
+
+        header_map: Dict[str, int] = {}
+        for idx, raw_header in enumerate(header_row):
+            header_name = HEADER_ALIASES.get(_normalise_header(raw_header), _normalise_header(raw_header))
+            if header_name:
+                header_map[header_name] = idx
+
+        missing = [col for col in SAMPLE_REQUIRED_HEADERS if col not in header_map]
+        if missing:
+            raise SampleUploadError(
+                'Missing required columns: ' + ', '.join(missing)
+            )
+
+        seen_numbers: set[str] = set()
+        entries: List[UploadedSampleEntry] = []
+        total_rows = 0
+        for excel_row_index, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+            total_rows += 1
+            phone = _normalise_phone(row[header_map['phone']] if header_map.get('phone') is not None else None)
+            if not phone or phone in seen_numbers:
+                continue
+            seen_numbers.add(phone)
+            entry = UploadedSampleEntry(
+                project=project,
+                phone=phone,
+                full_name=_coerce_text(row[header_map['full_name']]) if header_map.get('full_name') is not None else '',
+                city=_coerce_text(row[header_map['city']]) if header_map.get('city') is not None else '',
+                age=_coerce_int(row[header_map['age']]) if header_map.get('age') is not None else None,
+                gender=normalize_gender_value(
+                    row[header_map['gender']] if header_map.get('gender') is not None else None
+                ) or '',
+                metadata={'source': 'upload'},
+                created_from_row=excel_row_index,
+            )
+            entries.append(entry)
+
+        if not entries:
+            raise SampleUploadError('No valid rows were found in the uploaded workbook.')
+
+        UploadedSampleEntry.objects.filter(project=project).delete()
+        UploadedSampleEntry.objects.bulk_create(entries, batch_size=500)
+
+        stats = SampleUploadStats(total_rows=total_rows, accepted_rows=len(entries))
+        project.sample_upload_refreshed_at = timezone.now()
+        project.sample_upload_metadata = {
+            'total_rows': stats.total_rows,
+            'accepted_rows': stats.accepted_rows,
+            'skipped_rows': stats.skipped_rows,
+            'required_headers': SAMPLE_REQUIRED_HEADERS,
+        }
+        project.save(update_fields=['sample_upload_refreshed_at', 'sample_upload_metadata'])
     finally:
         upload.close()
 
-    worksheet = workbook.active
-    header_row = next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), None)
-    if not header_row:
-        raise SampleUploadError('The uploaded workbook does not contain any rows.')
-
-    header_map: Dict[str, int] = {}
-    for idx, raw_header in enumerate(header_row):
-        header_name = HEADER_ALIASES.get(_normalise_header(raw_header), _normalise_header(raw_header))
-        if header_name:
-            header_map[header_name] = idx
-
-    missing = [col for col in SAMPLE_REQUIRED_HEADERS if col not in header_map]
-    if missing:
-        raise SampleUploadError(
-            'Missing required columns: ' + ', '.join(missing)
-        )
-
-    seen_numbers: set[str] = set()
-    entries: List[UploadedSampleEntry] = []
-    total_rows = 0
-    for excel_row_index, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
-        total_rows += 1
-        phone = _normalise_phone(row[header_map['phone']] if header_map.get('phone') is not None else None)
-        if not phone or phone in seen_numbers:
-            continue
-        seen_numbers.add(phone)
-        entry = UploadedSampleEntry(
-            project=project,
-            phone=phone,
-            full_name=_coerce_text(row[header_map['full_name']]) if header_map.get('full_name') is not None else '',
-            city=_coerce_text(row[header_map['city']]) if header_map.get('city') is not None else '',
-            age=_coerce_int(row[header_map['age']]) if header_map.get('age') is not None else None,
-            gender=normalize_gender_value(
-                row[header_map['gender']] if header_map.get('gender') is not None else None
-            ) or '',
-            metadata={'source': 'upload'},
-            created_from_row=excel_row_index,
-        )
-        entries.append(entry)
-
-    if not entries:
-        raise SampleUploadError('No valid rows were found in the uploaded workbook.')
-
-    UploadedSampleEntry.objects.filter(project=project).delete()
-    UploadedSampleEntry.objects.bulk_create(entries, batch_size=500)
-
-    stats = SampleUploadStats(total_rows=total_rows, accepted_rows=len(entries))
-    project.sample_upload_refreshed_at = timezone.now()
-    project.sample_upload_metadata = {
-        'total_rows': stats.total_rows,
-        'accepted_rows': stats.accepted_rows,
-        'skipped_rows': stats.skipped_rows,
-        'required_headers': SAMPLE_REQUIRED_HEADERS,
-    }
-    project.save(update_fields=['sample_upload_refreshed_at', 'sample_upload_metadata'])
     return stats
