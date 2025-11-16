@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 from django.contrib.auth.models import User
@@ -102,3 +103,18 @@ class CollectionPerformanceAPITest(TestCase):
         for key in ['project', 'user', 'total_calls', 'successful_calls', 'success_rate']:
             self.assertIn(key, sample)
         self.assertGreaterEqual(sample['total_calls'], sample['successful_calls'])
+
+    def test_collection_performance_page_includes_export_endpoint(self) -> None:
+        self.client.force_login(self.owner)
+        response = self.client.get(reverse('collection_performance'))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode('utf-8')
+        self.assertIn(reverse('table_export'), body)
+
+    def test_table_export_without_context_returns_error(self) -> None:
+        self.client.force_login(self.owner)
+        response = self.client.post(
+            reverse('table_export'), data=json.dumps({}), content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', response.json())

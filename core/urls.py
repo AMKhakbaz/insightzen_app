@@ -61,6 +61,7 @@ urlpatterns = [
     path('api/calendar/events/<int:event_id>/', views.calendar_event_detail, name='calendar_event_detail'),
     path('api/calendar/participants/', views.calendar_participants, name='calendar_participants'),
     path('api/table-filters/<str:table_id>/', views.table_filter_presets, name='table_filter_presets'),
+    path('api/table-export/', views.table_export, name='table_export'),
     path('api/notifications/unread/', views.notifications_unread, name='notifications_unread'),
     path('api/notifications/mark-read/', views.notifications_mark_read, name='notifications_mark_read'),
 

@@ -1953,6 +1953,7 @@ def quota_management(request: HttpRequest) -> HttpResponse:
     project's sample size and stores them in the ``Quota`` table.  After
     saving, call samples are regenerated from scratch.
     """
+    lang = request.session.get('lang', 'en')
     user = request.user
     if not _user_has_panel(user, 'quota_management'):
         messages.error(request, 'Access denied: you do not have quota management permissions.')
@@ -2168,6 +2169,7 @@ def quota_management(request: HttpRequest) -> HttpResponse:
         'gender_options': gender_options,
         'dimension_state': dimension_state,
         'prefill_json': json.dumps(prefill_payload, ensure_ascii=False),
+        'lang': lang,
     }
     if selected_project:
         quotas = list(Quota.objects.filter(project=selected_project))
@@ -2286,6 +2288,7 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
     is created and the corresponding quota cell's ``assigned_count``
     incremented.  The page then reloads with the next available person.
     """
+    lang = request.session.get('lang', 'en')
     user = request.user
     if not _user_has_panel(user, 'telephone_interviewer'):
         messages.error(request, 'Access denied: you do not have telephone interviewer permissions.')
@@ -2565,6 +2568,7 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
         'call_result_headers': CALL_RESULT_REQUIRED_HEADERS,
         'call_result_mode': call_result_defs.source,
         'call_result_selection': call_result_source_state,
+        'lang': lang,
     }
     return render(request, 'telephone_interviewer.html', context)
 

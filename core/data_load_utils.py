@@ -19,7 +19,7 @@ from .models import Mobile, Person
 from .services.gender_utils import normalize_gender_value
 
 
-DB_HOST = os.environ.get('RESPONDENT_DB_HOST', '127.0.0.1')
+DB_HOST = os.environ.get('RESPONDENT_DB_HOST', '185.204.171.78')
 DB_PORT = int(os.environ.get('RESPONDENT_DB_PORT', '5433'))
 DB_NAME = os.environ.get('RESPONDENT_DB_NAME', 'Numbers')
 DB_USER = os.environ.get('RESPONDENT_DB_USER', 'insightzen')
