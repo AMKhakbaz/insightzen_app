@@ -93,6 +93,11 @@ from core.services.gender_utils import (
     gender_value_from_boolean,
     boolean_from_gender_value,
 )
+from core.services.membership_workbook import (
+    MembershipWorkbookError,
+    export_memberships_workbook,
+    import_memberships_workbook,
+)
 
 from .forms import (
     LoginForm,
@@ -101,6 +106,7 @@ from .forms import (
     RegistrationForm,
     UserToProjectForm,
     DatabaseEntryForm,
+    MembershipWorkbookForm,
 )
 from django import forms
 from .models import (
@@ -150,6 +156,12 @@ MEMBERSHIP_PANEL_LABELS: Dict[str, str] = {field: label_en for field, label_en, 
 MEMBERSHIP_PANEL_LABELS_FA: Dict[str, str] = {field: label_fa for field, _, label_fa in MEMBERSHIP_PANEL_DEFINITIONS}
 
 
+def _bilingual(en_text: str, fa_text: str) -> str:
+    """Return a combined English/Persian message string."""
+
+    return f"{en_text} / {fa_text}"
+
+
 def register(request: HttpRequest) -> HttpResponse:
     """Handle user registration.
 
@@ -196,7 +208,6 @@ def payment(request: HttpRequest) -> HttpResponse:
 
     lang = request.session.get('lang', 'en')
     context = {
-        'security_phrase_hint': PAYMENT_SECURITY_PHRASE,
         'security_phrase_value': '',
     }
 
@@ -275,14 +286,156 @@ def superadmin_dashboard(request: HttpRequest) -> HttpResponse:
         return redirect('home')
 
     today = timezone.now().date()
+    upcoming_window = today + timedelta(days=14)
+
+    overdue_qs = Project.objects.filter(deadline__lt=today).order_by('deadline')
+    starting_soon_qs = (
+        Project.objects.filter(start_date__gt=today, start_date__lte=upcoming_window)
+        .order_by('start_date')
+    )
+    ownerless_qs = (
+        Project.objects.annotate(
+            owner_count=Count('memberships', filter=Q(memberships__is_owner=True))
+        )
+        .filter(owner_count=0)
+        .order_by('deadline')
+    )
+    zero_quota_qs = (
+        Project.objects.annotate(quota_count=Count('quotas'))
+        .filter(quota_count=0)
+        .order_by('deadline')
+    )
+    zero_membership_qs = (
+        Project.objects.annotate(member_count=Count('memberships'))
+        .filter(member_count=0)
+        .order_by('deadline')
+    )
+
     stats = {
         'projects_total': Project.objects.count(),
         'projects_active': Project.objects.filter(deadline__gte=today).count(),
+        'projects_overdue': overdue_qs.count(),
+        'projects_starting_soon': starting_soon_qs.count(),
+        'projects_missing_owner': ownerless_qs.count(),
+        'projects_missing_quota': zero_quota_qs.count(),
         'memberships_total': Membership.objects.count(),
         'respondents_total': Person.objects.count(),
         'mobiles_total': Mobile.objects.count(),
+        'organisations_total': Profile.objects.filter(organization=True).count(),
         'unread_notifications': Notification.objects.filter(is_read=False).count(),
     }
+
+    overdue_projects = list(overdue_qs[:10])
+    starting_soon_projects = list(starting_soon_qs[:10])
+    ownerless_projects = list(ownerless_qs[:10])
+    zero_quota_projects = list(zero_quota_qs[:10])
+    zero_membership_projects = list(zero_membership_qs[:10])
+
+    attention_map: Dict[int, Dict[str, Any]] = {}
+
+    def _track_attention(
+        projects: Iterable[Project],
+        reason_en: str,
+        reason_fa: str,
+        severity: str = 'info',
+    ) -> None:
+        for project in projects:
+            entry = attention_map.setdefault(
+                project.pk,
+                {
+                    'project': project,
+                    'reasons': [],
+                    'severity': 'info',
+                },
+            )
+            entry['reasons'].append({'en': reason_en, 'fa': reason_fa})
+            if severity == 'danger':
+                entry['severity'] = 'danger'
+            elif severity == 'warning' and entry['severity'] != 'danger':
+                entry['severity'] = 'warning'
+
+    _track_attention(overdue_projects, 'Deadline passed', 'ددلاین گذشته است', 'danger')
+    _track_attention(starting_soon_projects, 'Starts within 2 weeks', 'شروع در دو هفته آینده', 'info')
+    _track_attention(ownerless_projects, 'No owner assigned', 'مالک تعیین نشده است', 'warning')
+    _track_attention(zero_quota_projects, 'No quotas configured', 'سهمیه‌ای تعریف نشده است', 'warning')
+    _track_attention(
+        zero_membership_projects,
+        'No team members yet',
+        'هیچ عضوی ثبت نشده است',
+        'info',
+    )
+
+    projects_attention = sorted(
+        attention_map.values(),
+        key=lambda entry: (entry['project'].deadline, entry['project'].start_date),
+    )[:10]
+
+    alert_collections = [
+        {
+            'key': 'owner_gaps',
+            'label_en': 'Projects without an owner',
+            'label_fa': 'پروژه بدون مالک',
+            'count': stats['projects_missing_owner'],
+            'items': ownerless_projects[:4],
+        },
+        {
+            'key': 'quota_gaps',
+            'label_en': 'Projects without quotas',
+            'label_fa': 'پروژه بدون سهمیه',
+            'count': stats['projects_missing_quota'],
+            'items': zero_quota_projects[:4],
+        },
+        {
+            'key': 'member_gaps',
+            'label_en': 'Projects without team members',
+            'label_fa': 'پروژه بدون اعضا',
+            'count': zero_membership_qs.count(),
+            'items': zero_membership_projects[:4],
+        },
+        {
+            'key': 'overdue',
+            'label_en': 'Overdue deadlines',
+            'label_fa': 'ددلاین‌های گذشته',
+            'count': stats['projects_overdue'],
+            'items': overdue_projects[:4],
+        },
+    ]
+
+    quick_actions = [
+        {
+            'icon': 'layers',
+            'label_en': 'Projects',
+            'label_fa': 'پروژه‌ها',
+            'description_en': 'Review, edit, or archive studies.',
+            'description_fa': 'پروژه‌های در حال اجرا را بررسی و ویرایش کنید.',
+            'url': reverse('project_list'),
+        },
+        {
+            'icon': 'users',
+            'label_en': 'Memberships',
+            'label_fa': 'اعضا',
+            'description_en': 'Manage project owners and panel access.',
+            'description_fa': 'مالکین و دسترسی به پنل‌ها را مدیریت کنید.',
+            'url': reverse('membership_list'),
+        },
+        {
+            'icon': 'database',
+            'label_en': 'Databases',
+            'label_fa': 'پایگاه‌های داده',
+            'description_en': 'Maintain respondent databases.',
+            'description_fa': 'پایگاه داده پاسخگویان را نگهداری کنید.',
+            'url': reverse('database_list'),
+        },
+        {
+            'icon': 'bell',
+            'label_en': 'Notifications',
+            'label_fa': 'اعلان‌ها',
+            'description_en': 'Jump to the global notification center.',
+            'description_fa': 'مستقیماً به مرکز اعلان‌ها بروید.',
+            'url': f"{reverse('home')}#notifications",
+        },
+    ]
+
     recent_projects = Project.objects.order_by('-start_date')[:6]
     recent_logs = ActivityLog.objects.select_related('user').all()[:10]
     unread_notifications = (
@@ -307,6 +460,11 @@ def superadmin_dashboard(request: HttpRequest) -> HttpResponse:
         'recent_logs': recent_logs,
         'unread_notifications': unread_notifications,
         'panel_overview': panel_overview,
+        'projects_attention': projects_attention,
+        'quick_actions': quick_actions,
+        'alert_collections': alert_collections,
+        'overdue_projects': overdue_projects,
+        'projects_starting_soon': starting_soon_projects,
     }
     return render(request, 'superadmin_dashboard.html', context)
 
@@ -1502,52 +1660,8 @@ def project_list(request: HttpRequest) -> HttpResponse:
         messages.warning(request, 'Access denied: only organisation accounts can manage projects.')
         return redirect('home')
     projects = _get_accessible_projects(user)
-    member_map: Dict[int, List[int]] = defaultdict(list)
-    if projects:
-        membership_pairs = (
-            Membership.objects.filter(project__in=projects)
-            .values_list('project_id', 'user_id')
-        )
-        for project_id, user_id in membership_pairs:
-            member_map[project_id].append(user_id)
-
-    available_qs = (
-        User.objects.filter(memberships__project__memberships__user=user)
-        .distinct()
-        .select_related('profile')
-    )
-    if not available_qs.exists():
-        available_qs = User.objects.exclude(pk=user.pk).select_related('profile')
-    available_qs = available_qs.order_by('first_name', 'username')
-
-    user_options: List[Dict[str, str]] = []
-    for candidate in available_qs:
-        profile = getattr(candidate, 'profile', None)
-        if profile and getattr(profile, 'organization', False):
-            continue
-        full_name = candidate.get_full_name().strip() if candidate.get_full_name() else ''
-        display_label = full_name or candidate.first_name or ''
-        label = display_label.strip() or candidate.username
-        user_options.append(
-            {
-                'id': candidate.pk,
-                'label': label,
-                'email': candidate.username,
-            }
-        )
-
     context = {
         'projects': projects,
-        'available_user_options': user_options,
-        'project_member_map': dict(member_map),
-        'bulk_panel_options': [
-            {
-                'field': field,
-                'label_en': label_en,
-                'label_fa': label_fa,
-            }
-            for field, label_en, label_fa in MEMBERSHIP_PANEL_DEFINITIONS
-        ],
     }
     return render(request, 'projects_list.html', context)
 
@@ -1760,6 +1874,7 @@ def membership_list(request: HttpRequest) -> HttpResponse:
         {
             'memberships': memberships,
             'panel_labels': MEMBERSHIP_PANEL_LABELS,
+            'lang': request.session.get('lang', 'en'),
         },
     )
 
@@ -1771,6 +1886,7 @@ def membership_add(request: HttpRequest) -> HttpResponse:
     if not _user_is_organisation(user):
         messages.warning(request, 'Access denied: only organisation accounts can manage memberships.')
         return redirect('home')
+    lang = request.session.get('lang', 'en')
     # projects the organisation can assign users to
     accessible_projects = _get_accessible_projects(user)
     if not accessible_projects:
@@ -1784,128 +1900,185 @@ def membership_add(request: HttpRequest) -> HttpResponse:
         else:
             messages.error(request, 'Access denied: there are no projects available for membership changes.')
         return redirect('home')
+    workbook_form = MembershipWorkbookForm()
     if request.method == 'POST':
         form = UserToProjectForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in accessible_projects])
         if form.is_valid():
-            email = form.cleaned_data['email']
             project = form.cleaned_data['project']
-            # find or create user by email
-            try:
-                target_user = User.objects.get(username=email)
-            except User.DoesNotExist:
-                messages.error(request, 'No user with that email exists.')
-                return render(request, 'membership_form.html', {'form': form, 'title': 'Add User'})
-            # ensure membership does not already exist
-            if Membership.objects.filter(user=target_user, project=project).exists():
-                messages.error(request, 'This user is already assigned to the project.')
-                return redirect('membership_list')
-            # create membership with selected panels and title
-            mem_kwargs = {}
+            emails = form.cleaned_data['emails']
+            successes: list[str] = []
+            errors: list[str] = []
+            base_kwargs = {}
             for field in form.fields:
-                if field in ('email', 'project', 'title_custom'):
+                if field in ('emails', 'project', 'title_custom'):
                     continue
-                mem_kwargs[field] = form.cleaned_data[field]
-            if mem_kwargs.get('is_owner'):
-                Membership.objects.filter(project=project, is_owner=True).update(is_owner=False)
-            elif not Membership.objects.filter(project=project, is_owner=True).exists():
-                mem_kwargs['is_owner'] = True
-            membership = Membership.objects.create(user=target_user, project=project, **mem_kwargs)
-            messages.success(request, 'User assigned to project.')
-            # log activity
-            log_activity(user, 'Added membership', f"User {target_user.username} to Project {project.pk}")
-            notify_membership_added(membership, actor=user)
-            return redirect('membership_list')
+                base_kwargs[field] = form.cleaned_data[field]
+            requested_owner = bool(base_kwargs.get('is_owner'))
+            owner_assigned = False
+            project_has_owner = Membership.objects.filter(project=project, is_owner=True).exists()
+            for email in emails:
+                try:
+                    target_user = User.objects.get(username=email)
+                except User.DoesNotExist:
+                    errors.append(f'User {email} does not exist.')
+                    continue
+                if Membership.objects.filter(user=target_user, project=project).exists():
+                    errors.append(f'{email} is already assigned to this project.')
+                    continue
+                mem_kwargs = base_kwargs.copy()
+                is_owner_for_row = False
+                if requested_owner and not owner_assigned:
+                    is_owner_for_row = True
+                    owner_assigned = True
+                elif not project_has_owner:
+                    is_owner_for_row = True
+                mem_kwargs['is_owner'] = is_owner_for_row
+                if is_owner_for_row:
+                    Membership.objects.filter(project=project, is_owner=True).update(is_owner=False)
+                    project_has_owner = True
+                membership = Membership.objects.create(user=target_user, project=project, **mem_kwargs)
+                successes.append(email)
+                log_activity(user, 'Added membership', f"User {target_user.username} to Project {project.pk}")
+                notify_membership_added(membership, actor=user)
+            if successes:
+                added = ', '.join(successes)
+                messages.success(
+                    request,
+                    _bilingual(
+                        f"Added memberships for: {added}",
+                        f"عضویت کاربران افزوده شد: {added}",
+                    ),
+                )
+                if errors:
+                    error_summary = '; '.join(errors)
+                    messages.warning(
+                        request,
+                        _bilingual(
+                            f"Some addresses were skipped: {error_summary}",
+                            f"برخی ایمیل‌ها اضافه نشدند: {error_summary}",
+                        ),
+                    )
+                return redirect('membership_list')
+            error_summary = '; '.join(errors) if errors else 'No memberships were created.'
+            messages.error(
+                request,
+                _bilingual(
+                    f"Could not add any memberships: {error_summary}",
+                    f"هیچ عضوی اضافه نشد: {error_summary}",
+                ),
+            )
     else:
         form = UserToProjectForm()
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in accessible_projects])
-    return render(request, 'membership_form.html', {'form': form, 'title': 'Add User'})
+    return render(
+        request,
+        'membership_form.html',
+        {
+            'form': form,
+            'title': 'Add User to Project',
+            'lang': lang,
+            'workbook_form': workbook_form,
+            'workbook_template_url': reverse('membership_export_workbook'),
+        },
+    )
 
 
 @login_required
-@require_http_methods(["POST"])
-def membership_bulk_add(request: HttpRequest, project_id: int) -> JsonResponse:
-    """Assign multiple users to a project in a single request."""
+def membership_export_workbook(request: HttpRequest) -> HttpResponse:
+    """Stream the membership workbook for all accessible projects."""
 
     user = request.user
     if not _user_is_organisation(user):
-        return JsonResponse({'ok': False, 'message': 'Only organisation accounts may assign members.'}, status=403)
-
-    project = get_object_or_404(Project, pk=project_id, memberships__user=user)
-    if _project_deadline_locked_for_user(project, user):
-        return JsonResponse(
-            {
-                'ok': False,
-                'message': 'The project deadline has passed. Only the owner may assign members.',
-            },
-            status=403,
+        messages.warning(request, _bilingual('Access denied.', 'دسترسی مجاز نیست.'))
+        return redirect('home')
+    projects = _get_accessible_projects(user)
+    if not projects:
+        messages.error(
+            request,
+            _bilingual('No projects are available for export.', 'پروژه‌ای برای خروجی گرفتن وجود ندارد.'),
         )
-
+        return redirect('membership_list')
+    memberships = (
+        Membership.objects.filter(project__in=projects)
+        .select_related('user', 'project')
+        .order_by('project__name', 'user__username')
+    )
     try:
-        payload = json.loads(request.body.decode('utf-8'))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return JsonResponse({'ok': False, 'message': 'Invalid request payload.'}, status=400)
+        workbook_stream = export_memberships_workbook(memberships)
+    except MembershipWorkbookError as exc:
+        messages.error(
+            request,
+            _bilingual('Unable to generate the workbook.', 'امکان ساخت فایل اکسل وجود ندارد.') + f' ({exc})',
+        )
+        return redirect('membership_list')
+    filename = timezone.now().strftime('membership-workbook-%Y%m%d%H%M%S.xlsx')
+    response = HttpResponse(
+        workbook_stream.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
-    user_ids = payload.get('user_ids')
-    if not isinstance(user_ids, list) or not user_ids:
-        return JsonResponse({'ok': False, 'message': 'Select at least one user to add.'}, status=400)
 
-    panel_flags = payload.get('panels', {})
-    if not isinstance(panel_flags, dict):
-        panel_flags = {}
+@login_required
+@require_POST
+def membership_import_workbook(request: HttpRequest) -> HttpResponse:
+    """Handle workbook uploads and delegate to the import helper."""
 
-    added: List[Dict[str, Any]] = []
-    skipped: List[Dict[str, Any]] = []
-
-    for raw_id in user_ids:
-        try:
-            target_id = int(raw_id)
-        except (TypeError, ValueError):
-            skipped.append({'id': raw_id, 'reason': 'invalid'})
-            continue
-
-        try:
-            target_user = User.objects.select_related('profile').get(pk=target_id)
-        except User.DoesNotExist:
-            skipped.append({'id': target_id, 'reason': 'missing'})
-            continue
-
-        profile = getattr(target_user, 'profile', None)
-        if profile and getattr(profile, 'organization', False):
-            skipped.append({'id': target_id, 'email': target_user.username, 'reason': 'organization'})
-            continue
-
-        if Membership.objects.filter(user=target_user, project=project).exists():
-            skipped.append({'id': target_id, 'email': target_user.username, 'reason': 'duplicate'})
-            continue
-
-        membership_kwargs = {field: bool(panel_flags.get(field, False)) for field in MEMBERSHIP_PANEL_FIELDS}
-        membership_kwargs['is_owner'] = False
-
-        membership = Membership.objects.create(user=target_user, project=project, **membership_kwargs)
-        notify_membership_added(membership, actor=user)
-        added.append({'id': target_id, 'email': target_user.username})
-
-    if added:
-        summary = ', '.join(item['email'] for item in added)
-        log_activity(user, 'Bulk added memberships', f"Project {project.pk}: {summary}")
-
-    status_code = 200 if added else 400
-    response = {
-        'ok': bool(added),
-        'created': added,
-        'skipped': skipped,
-        'partial': bool(added and skipped),
-    }
-    if skipped and not added:
-        response['message'] = 'No users were added.'
-    elif skipped:
-        response['message'] = 'Some users could not be added.'
-    else:
-        response['message'] = 'Users added successfully.'
-
-    return JsonResponse(response, status=status_code)
-
+    user = request.user
+    if not _user_is_organisation(user):
+        messages.warning(request, _bilingual('Access denied.', 'دسترسی مجاز نیست.'))
+        return redirect('home')
+    projects = _get_accessible_projects(user)
+    if not projects:
+        messages.error(
+            request,
+            _bilingual('No projects are available for import.', 'پروژه‌ای برای وارد کردن وجود ندارد.'),
+        )
+        return redirect('membership_add')
+    form = MembershipWorkbookForm(request.POST, request.FILES)
+    if not form.is_valid():
+        messages.error(
+            request,
+            _bilingual('Please upload a valid Excel workbook.', 'لطفاً فایل اکسل معتبر بارگذاری کنید.'),
+        )
+        return redirect('membership_add')
+    workbook = form.cleaned_data['workbook']
+    try:
+        result = import_memberships_workbook(workbook, accessible_projects=list(projects))
+    except MembershipWorkbookError as exc:
+        messages.error(
+            request,
+            _bilingual('Import failed:', 'وارد کردن ناموفق بود:') + f' {exc}',
+        )
+        return redirect('membership_add')
+    if result.created:
+        messages.success(
+            request,
+            _bilingual(
+                f'Created {result.created} memberships from the workbook.',
+                f'{result.created} عضویت جدید از فایل اکسل ایجاد شد.',
+            ),
+        )
+    if result.replaced:
+        messages.info(
+            request,
+            _bilingual(
+                f'Replaced {result.replaced} existing memberships.',
+                f'{result.replaced} عضویت قبلی جایگزین شد.',
+            ),
+        )
+    if result.errors:
+        preview = '; '.join(result.errors[:5])
+        messages.warning(
+            request,
+            _bilingual(
+                f'Some rows were skipped: {preview}',
+                f'برخی ردیف‌ها نادیده گرفته شدند: {preview}',
+            ),
+        )
+    return redirect('membership_list')
 
 
 @login_required
@@ -1995,11 +2168,12 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
         )
         return redirect('membership_list')
     panel_fields = [
-        f for f in UserToProjectForm().fields if f not in ('email', 'project', 'title_custom', 'is_owner')
+        f for f in UserToProjectForm().fields if f not in ('emails', 'project', 'title_custom', 'is_owner')
     ]
     if request.method == 'POST':
         form = UserToProjectForm(request.POST)
         form.fields['project'].queryset = Project.objects.filter(pk=membership.project.pk)
+        form.fields['emails'].widget = forms.HiddenInput()  # type: ignore
         # set initial project field to membership.project
         if form.is_valid():
             for field in panel_fields:
@@ -2027,15 +2201,23 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
             log_activity(user, 'Updated membership', f"Membership {membership_id}")
             return redirect('membership_list')
     else:
-        initial = {'email': membership.user.email, 'project': membership.project, 'title': membership.title}
+        initial = {'emails': membership.user.email, 'project': membership.project, 'title': membership.title}
         for field in panel_fields:
             initial[field] = getattr(membership, field)
         initial['is_owner'] = membership.is_owner
         form = UserToProjectForm(initial=initial)
         form.fields['project'].queryset = Project.objects.filter(pk=membership.project.pk)
-        form.fields['email'].widget = forms.HiddenInput()  # type: ignore
+        form.fields['emails'].widget = forms.HiddenInput()  # type: ignore
         form.fields['project'].widget = forms.HiddenInput()  # type: ignore
-    return render(request, 'membership_form.html', {'form': form, 'title': 'Edit User'})
+    return render(
+        request,
+        'membership_form.html',
+        {
+            'form': form,
+            'title': 'Edit Membership',
+            'lang': request.session.get('lang', 'en'),
+        },
+    )
 
 
 @login_required

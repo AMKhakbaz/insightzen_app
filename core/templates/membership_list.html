@@ -14,7 +14,10 @@
             After a project's deadline passes only the owner retains panel access.
         {% endif %}
     </p>
-    <a href="{% url 'membership_add' %}" class="btn" style="margin-bottom:1rem;">{% if lang == 'fa' %}افزودن کاربر به پروژه{% else %}Add User to Project{% endif %}</a>
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <a href="{% url 'membership_add' %}" class="btn">{% if lang == 'fa' %}افزودن کاربر به پروژه{% else %}Add User to Project{% endif %}</a>
+        <a href="{% url 'membership_export_workbook' %}" class="btn btn-outline">{% if lang == 'fa' %}دانلود اکسل{% else %}Download Excel{% endif %}</a>
+    </div>
 
     <div class="membership-message-panel" data-member-messaging data-member-endpoint="{% url 'membership_message_send' %}">
         <div class="membership-message-panel__intro">

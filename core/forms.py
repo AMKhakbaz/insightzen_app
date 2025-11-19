@@ -8,8 +8,12 @@ their respective models.
 
 from __future__ import annotations
 
+import re
+
 from django import forms
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator, validate_email
 
 from .models import DatabaseEntry, Membership, Project, ProjectCallResult
 
@@ -215,7 +219,17 @@ class UserToProjectForm(forms.Form):
         ('__custom__', 'Other / سایر'),
     ]
 
-    email = forms.EmailField(label='User Email', widget=forms.EmailInput(attrs={'class': 'form-control'}))
+    emails = forms.CharField(
+        label='User Emails',
+        widget=forms.Textarea(
+            attrs={
+                'class': 'form-control',
+                'rows': 4,
+                'placeholder': 'first@example.com, second@example.com',
+            }
+        ),
+        help_text='Enter one or more email addresses separated by commas or new lines.',
+    )
     project = forms.ModelChoiceField(
         queryset=Project.objects.none(),
         label='Project',
@@ -312,6 +326,43 @@ class UserToProjectForm(forms.Form):
         cleaned_data.pop('title_custom', None)
         cleaned_data['is_owner'] = bool(cleaned_data.get('is_owner'))
         return cleaned_data
+
+    def clean_emails(self) -> list[str]:
+        """Validate and normalise the submitted email addresses."""
+
+        raw_value = self.cleaned_data.get('emails', '')
+        if isinstance(raw_value, list):
+            parts = raw_value
+        else:
+            parts = re.split(r'[\n,]+', str(raw_value))
+        emails: list[str] = []
+        for part in parts:
+            email = part.strip()
+            if not email:
+                continue
+            try:
+                validate_email(email)
+            except ValidationError as exc:
+                raise ValidationError(f'Invalid email: {email}') from exc
+            emails.append(email.lower())
+        if not emails:
+            raise ValidationError('Please provide at least one email address.')
+        return emails
+
+
+class MembershipWorkbookForm(forms.Form):
+    """Simple form wrapper around the membership workbook upload."""
+
+    workbook = forms.FileField(
+        label='Membership Excel Workbook',
+        validators=[FileExtensionValidator(allowed_extensions=['xlsx', 'xls'])],
+        widget=forms.ClearableFileInput(
+            attrs={
+                'class': 'form-control',
+                'accept': '.xlsx,.xls',
+            }
+        ),
+    )
 
 
 # Form for creating or editing a database entry (Database Management panel)

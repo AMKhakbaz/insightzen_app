@@ -24,8 +24,28 @@
             <p class="stat-value">{{ stats.projects_active }}</p>
         </article>
         <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}پروژه‌های سررسید گذشته{% else %}Overdue Projects{% endif %}</p>
+            <p class="stat-value stat-value--warning">{{ stats.projects_overdue }}</p>
+        </article>
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}شروع طی ۱۴ روز{% else %}Starting Soon{% endif %}</p>
+            <p class="stat-value">{{ stats.projects_starting_soon }}</p>
+        </article>
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}سازمان‌ها{% else %}Organisations{% endif %}</p>
+            <p class="stat-value">{{ stats.organisations_total }}</p>
+        </article>
+        <article class="stat">
             <p class="stat-label">{% if lang == 'fa' %}اعضا{% else %}Memberships{% endif %}</p>
             <p class="stat-value">{{ stats.memberships_total }}</p>
+        </article>
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}پروژه بدون مالک{% else %}No Owner{% endif %}</p>
+            <p class="stat-value stat-value--warning">{{ stats.projects_missing_owner }}</p>
+        </article>
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}پروژه بدون سهمیه{% else %}No Quotas{% endif %}</p>
+            <p class="stat-value stat-value--warning">{{ stats.projects_missing_quota }}</p>
         </article>
         <article class="stat">
             <p class="stat-label">{% if lang == 'fa' %}پاسخگویان ثبت‌شده{% else %}Respondents{% endif %}</p>
@@ -40,6 +60,107 @@
             <p class="stat-value">{{ stats.unread_notifications }}</p>
         </article>
     </section>
+
+    {% if quick_actions %}
+    <section class="superadmin-panel superadmin-quick-actions">
+        <div class="superadmin-panel__header">
+            <h2>{% if lang == 'fa' %}دسترسی سریع{% else %}Quick Actions{% endif %}</h2>
+            <p class="muted">
+                {% if lang == 'fa' %}
+                    مسیرهای کلیدی برای مدیریت پروژه‌ها و اعضا.
+                {% else %}
+                    Jump directly to the management panels you open most.
+                {% endif %}
+            </p>
+        </div>
+        <div class="quick-actions-grid">
+            {% for action in quick_actions %}
+            <a href="{{ action.url }}" class="quick-action-card">
+                <span class="quick-action-card__icon" aria-hidden="true"><i data-feather="{{ action.icon }}"></i></span>
+                <span class="quick-action-card__label">{% if lang == 'fa' %}{{ action.label_fa }}{% else %}{{ action.label_en }}{% endif %}</span>
+                <span class="quick-action-card__hint">{% if lang == 'fa' %}{{ action.description_fa }}{% else %}{{ action.description_en }}{% endif %}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if projects_attention %}
+    <section class="superadmin-panel attention-panel">
+        <div class="superadmin-panel__header">
+            <h2>{% if lang == 'fa' %}پروژه‌های نیازمند توجه{% else %}Projects Needing Attention{% endif %}</h2>
+            <p class="muted">
+                {% if lang == 'fa' %}
+                    ترکیبی از ددلاین‌های گذشته، شروع‌های نزدیک و ناهماهنگی‌های پنل.
+                {% else %}
+                    Highlighted deadlines, upcoming starts, and panel anomalies.
+                {% endif %}
+            </p>
+        </div>
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>{% if lang == 'fa' %}نام{% else %}Name{% endif %}</th>
+                        <th>{% if lang == 'fa' %}شروع{% else %}Start{% endif %}</th>
+                        <th>{% if lang == 'fa' %}ددلاین{% else %}Deadline{% endif %}</th>
+                        <th>{% if lang == 'fa' %}هشدارها{% else %}Alerts{% endif %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in projects_attention %}
+                    <tr class="attention-row attention-row--{{ entry.severity }}">
+                        <td><a href="{% url 'project_edit' entry.project.pk %}">{{ entry.project.name }}</a></td>
+                        <td>{{ entry.project.start_date }}</td>
+                        <td>{{ entry.project.deadline }}</td>
+                        <td>
+                            <ul class="attention-tags">
+                                {% for reason in entry.reasons %}
+                                <li class="attention-tag">{% if lang == 'fa' %}{{ reason.fa }}{% else %}{{ reason.en }}{% endif %}</li>
+                                {% endfor %}
+                            </ul>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4">{% if lang == 'fa' %}موردی برای نمایش نیست.{% else %}Nothing to show.{% endif %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if alert_collections %}
+    <section class="superadmin-panel alerts-panel">
+        <div class="superadmin-panel__header">
+            <h2>{% if lang == 'fa' %}هشدارهای کلیدی{% else %}Key Alerts{% endif %}</h2>
+            <p class="muted">
+                {% if lang == 'fa' %}
+                    خلاصه‌ای از پروژه‌هایی که نیاز به اقدام فوری دارند.
+                {% else %}
+                    Snapshot of the projects that need fast follow-up.
+                {% endif %}
+            </p>
+        </div>
+        <div class="alert-card-grid">
+            {% for alert in alert_collections %}
+            <article class="alert-card">
+                <p class="alert-card__label">{% if lang == 'fa' %}{{ alert.label_fa }}{% else %}{{ alert.label_en }}{% endif %}</p>
+                <p class="alert-card__value">{{ alert.count }}</p>
+                <ul class="alert-card__list">
+                    {% if alert.items %}
+                        {% for project in alert.items %}
+                        <li><a href="{% url 'project_edit' project.pk %}">{{ project.name }}</a></li>
+                        {% endfor %}
+                    {% else %}
+                        <li class="muted">{% if lang == 'fa' %}موردی نیست.{% else %}All good.{% endif %}</li>
+                    {% endif %}
+                </ul>
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
     <div class="superadmin-grid">
         <section class="superadmin-panel">
             <h2>{% if lang == 'fa' %}پروژه‌های اخیر{% else %}Recent Projects{% endif %}</h2>
