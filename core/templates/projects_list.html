@@ -91,15 +91,6 @@
                         <a href="{% url 'project_edit' project.id %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">
                             {% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}
                         </a>
-                        <button type="button"
-                                class="btn btn-sm btn-outline"
-                                data-bulk-membership-open
-                                data-project-id="{{ project.id }}"
-                                data-project-name="{{ project.name }}"
-                                data-bulk-url="{% url 'membership_bulk_add' project.id %}"
-                                style="margin-right:0.25rem;">
-                            {% if lang == 'fa' %}افزودن اعضا{% else %}Assign Members{% endif %}
-                        </button>
                         <form method="post" action="{% url 'project_delete' project.id %}" style="display:inline;">
                             {% csrf_token %}
                             <button class="btn btn-danger btn-sm" onclick="return confirm('{% if lang == 'fa' %}آیا از حذف این پروژه مطمئن هستید؟{% else %}Are you sure you want to delete this project?{% endif %}')">
@@ -116,43 +107,5 @@
     </div>
 </div>
 
-<div class="bulk-membership-modal" id="bulk-membership-modal" hidden>
-    <div class="bulk-membership-modal__backdrop" data-bulk-membership-dismiss></div>
-    <div class="bulk-membership-modal__panel" role="dialog" aria-modal="true" aria-labelledby="bulk-membership-title">
-        <header class="bulk-membership-modal__header">
-            <h2 id="bulk-membership-title"></h2>
-            <button type="button" class="bulk-membership-modal__close" data-bulk-membership-dismiss aria-label="Close">&times;</button>
-        </header>
-        <div class="bulk-membership-modal__body">
-            <p class="bulk-membership-modal__hint" data-bulk-membership-hint></p>
-            <div class="bulk-membership-modal__columns">
-                <section class="bulk-membership-modal__section">
-                    <h3 class="bulk-membership-modal__section-title">{% if lang == 'fa' %}کاربران{% else %}Users{% endif %}</h3>
-                    <div class="bulk-membership-modal__user-list" data-bulk-membership-user-list>
-                        <p class="bulk-membership-modal__empty">{% if lang == 'fa' %}هیچ کاربری یافت نشد.{% else %}No users available.{% endif %}</p>
-                    </div>
-                </section>
-                <section class="bulk-membership-modal__section">
-                    <h3 class="bulk-membership-modal__section-title">{% if lang == 'fa' %}دسترسی به پنل‌ها{% else %}Panel access{% endif %}</h3>
-                <div class="bulk-membership-modal__panel-grid">
-                    {% for option in bulk_panel_options %}
-                        <label class="bulk-membership-modal__checkbox">
-                            <input type="checkbox" value="1" data-panel-field="{{ option.field }}">
-                            <span>{% if lang == 'fa' %}{{ option.label_fa }}{% else %}{{ option.label_en }}{% endif %}</span>
-                        </label>
-                    {% endfor %}
-                </div>
-            </section>
-        </div>
-            <div class="bulk-membership-modal__status" data-bulk-membership-status role="status" aria-live="polite"></div>
-        </div>
-        <footer class="bulk-membership-modal__footer">
-            <button type="button" class="btn btn-secondary" data-bulk-membership-dismiss>{% if lang == 'fa' %}انصراف{% else %}Cancel{% endif %}</button>
-            <button type="button" class="btn" data-bulk-membership-submit>{% if lang == 'fa' %}افزودن کاربران{% else %}Add Users{% endif %}</button>
-        </footer>
-    </div>
-</div>
 
-{{ available_user_options|json_script:"project-user-options" }}
-{{ project_member_map|json_script:"project-member-map" }}
 {% endblock %}

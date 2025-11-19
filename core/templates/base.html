@@ -32,7 +32,7 @@
                             <i data-feather="calendar" aria-hidden="true"></i>
                         </button>
                     </div>
-                    <div class="notification-center" data-notification-root>
+                    <div id="notifications" class="notification-center" data-notification-root>
                         <button type="button" class="notification-toggle" data-notification-toggle aria-haspopup="true" aria-expanded="false">
                             <i data-feather="bell" aria-hidden="true"></i>
                             <span class="notification-badge" data-notification-count hidden>0</span>
@@ -86,9 +86,10 @@
                 </button>
             </header>
             <div class="calendar-panel__body">
-                <div class="calendar-panel__calendar" data-calendar-container></div>
-                <div class="calendar-panel__sidebar">
-                    <form class="calendar-form" data-calendar-form>
+                <div class="calendar-panel__layout">
+                    <div class="calendar-panel__calendar" data-calendar-container></div>
+                    <div class="calendar-panel__sidebar">
+                        <form class="calendar-form" data-calendar-form>
                         <div class="calendar-form__status" data-calendar-status role="status" aria-live="polite"></div>
                         <label>
                             <span>{% if lang == 'fa' %}عنوان رویداد{% else %}Title{% endif %}</span>
@@ -130,7 +131,8 @@
                             <button type="button" class="btn btn-text" data-calendar-delete hidden>{% if lang == 'fa' %}حذف رویداد{% else %}Delete event{% endif %}</button>
                         </div>
                         <p class="calendar-form__info">{% if lang == 'fa' %}روی خانه‌های تقویم کلیک کنید تا تاریخ‌ها انتخاب شوند یا یک رویداد موجود را برای ویرایش برگزینید.{% else %}Click a date range on the calendar to prefill this form or select an existing event to update it.{% endif %}</p>
-                    </form>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>

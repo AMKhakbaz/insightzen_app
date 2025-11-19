@@ -8,15 +8,28 @@
     {% else %}
         {{ title }}
     {% endif %}</h1>
+    {% if form.emails and not form.emails.is_hidden %}
+    <div class="form-hint" style="margin-bottom:1rem;">
+        <p><strong>English:</strong> Enter one or more email addresses separated by commas or new lines. Each address will receive the same project access and panel flags.</p>
+        <p><strong>فارسی:</strong> چندین ایمیل را با ویرگول یا در خطوط جداگانه وارد کنید. تمام آدرس‌ها همین دسترسی و پنل‌ها را دریافت می‌کنند.</p>
+    </div>
+    {% endif %}
     <form method="post" id="membership-form">
         {% csrf_token %}
         {{ form.non_field_errors }}
-        {# Email field #}
+        {% if form.emails.is_hidden %}
+            {{ form.emails }}
+        {% else %}
+        {# Emails field #}
         <div>
-            {{ form.email.label_tag }}
-            {{ form.email }}
-            {{ form.email.errors }}
+            {{ form.emails.label_tag }}
+            {{ form.emails }}
+            {{ form.emails.errors }}
+            {% if form.emails.help_text %}
+                <small class="form-hint">{{ form.emails.help_text }}</small>
+            {% endif %}
         </div>
+        {% endif %}
         {# Project field #}
         <div>
             {{ form.project.label_tag }}
@@ -46,11 +59,8 @@
         <div class="form-check membership-owner-field">
             {{ form.is_owner }}
             <label for="id_is_owner">
-                {% if lang == 'fa' %}این کاربر مالک پروژه است{% else %}This user is the project owner{% endif %}
+                {% if lang == 'fa' %}مالک پروژه{% else %}Project owner{% endif %}
             </label>
-            <small class="form-hint">
-                {% if lang == 'fa' %}پس از اتمام ددلاین فقط مالک به پنل‌ها دسترسی خواهد داشت.{% else %}Only the owner can access panels after the deadline passes.{% endif %}
-            </small>
             {{ form.is_owner.errors }}
         </div>
         {# Panel permissions grouped by category.  Each group has a
@@ -118,6 +128,35 @@
             {% endif %}
         </button>
     </form>
+
+    {% if workbook_form %}
+    <section class="membership-upload-panel" style="margin-top:2rem;">
+        <h2>{% if lang == 'fa' %}بارگذاری فایل اکسل اعضا{% else %}Upload Membership Excel{% endif %}</h2>
+        <p>
+            <strong>English:</strong> Download the latest workbook, update the rows, and upload the edited file to replace or add memberships in bulk.
+        </p>
+        <p>
+            <strong>فارسی:</strong> فایل اکسل را دانلود کنید، ردیف‌ها را ویرایش یا اضافه کنید و همان فایل را بارگذاری کنید تا عضویت‌ها به‌صورت گروهی اضافه یا جایگزین شوند.
+        </p>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem;">
+            <a class="btn btn-outline" href="{{ workbook_template_url }}" target="_blank" rel="noopener">
+                {% if lang == 'fa' %}دانلود اکسل{% else %}Download Excel{% endif %}
+            </a>
+            <span class="form-hint">
+                {% if lang == 'fa' %}فایل باید با فرمت .xlsx یا .xls باشد.{% else %}Accepted formats: .xlsx or .xls.{% endif %}
+            </span>
+        </div>
+        <form method="post" action="{% url 'membership_import_workbook' %}" enctype="multipart/form-data" class="membership-upload-form">
+            {% csrf_token %}
+            <div>
+                {{ workbook_form.workbook.label_tag }}
+                {{ workbook_form.workbook }}
+                {{ workbook_form.workbook.errors }}
+            </div>
+            <button type="submit" class="btn" style="margin-top:1rem;">{% if lang == 'fa' %}بارگذاری اکسل{% else %}Upload Workbook{% endif %}</button>
+        </form>
+    </section>
+    {% endif %}
 
     <script>
     // Group toggle behaviour: when a group master checkbox is clicked,

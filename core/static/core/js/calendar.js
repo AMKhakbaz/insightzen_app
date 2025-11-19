@@ -43,10 +43,17 @@
     let currentEventId = null;
     let participantsLoaded = false;
 
+    function refreshCalendarSize() {
+      if (calendar) {
+        calendar.updateSize();
+      }
+    }
+
     function openPanel() {
       panel.hidden = false;
       requestAnimationFrame(() => {
         panel.classList.add('is-open');
+        setTimeout(refreshCalendarSize, 220);
       });
       toggle.setAttribute('aria-expanded', 'true');
       ensureCalendar();
@@ -59,6 +66,7 @@
       toggle.setAttribute('aria-expanded', 'false');
       setTimeout(() => {
         panel.hidden = true;
+        refreshCalendarSize();
       }, 180);
     }
 
@@ -102,6 +110,8 @@
         locale: lang,
         direction: lang === 'fa' ? 'rtl' : 'ltr',
         selectable: true,
+        handleWindowResize: true,
+        dayMaxEventRows: true,
         firstDay: lang === 'fa' ? 6 : 0,
         headerToolbar: {
           left: 'prev,next today',
@@ -168,6 +178,7 @@
         },
       });
       calendar.render();
+      refreshCalendarSize();
     }
 
     function populateForm(event) {
@@ -363,6 +374,16 @@
       if (event.key === 'Escape') {
         closePanel();
       }
+    });
+
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      if (resizeTimer) {
+        clearTimeout(resizeTimer);
+      }
+      resizeTimer = setTimeout(() => {
+        refreshCalendarSize();
+      }, 150);
     });
   });
 })();
