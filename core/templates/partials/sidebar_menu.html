@@ -1,10 +1,15 @@
+{% load static custom_tags %}
 <nav class="sidebar-menu">
     {% for section in sections %}
         {% if section.visible %}
             {% if section.collapsible %}
                 <details class="menu-group{% if section.has_active %} is-active{% endif %}"{% if section.is_open %} open{% endif %}>
                     <summary class="menu-summary{% if section.has_active %} is-active{% endif %}">
-                        <i class="menu-icon" data-feather="{{ section.icon }}" aria-hidden="true"></i>
+                        {% if section.icon %}
+                            <span class="menu-icon" aria-hidden="true">
+                                <img src="{% feather_icon section.icon %}" alt="">
+                            </span>
+                        {% endif %}
                         <span class="menu-label">
                             {% if lang == 'fa' %}
                                 {{ section.title.fa }}
@@ -12,14 +17,24 @@
                                 {{ section.title.en }}
                             {% endif %}
                         </span>
-                        <i class="menu-caret" data-feather="chevron-down" aria-hidden="true"></i>
+                        <span class="menu-caret" aria-hidden="true">
+                            <img src="{% feather_icon 'chevron-down' %}" alt="">
+                        </span>
                     </summary>
                     <ul class="menu-list">
                         {% for item in section.items %}
                             {% if item.visible %}
                                 <li>
                                     <a href="{{ item.url }}" class="menu-link{% if item.disabled %} disabled{% endif %}{% if item.is_active %} is-active{% endif %}"{% if item.disabled %} aria-disabled="true"{% endif %}{% if item.is_active %} aria-current="page"{% endif %}>
-                                        <i class="menu-icon" data-feather="{{ item.icon }}" aria-hidden="true"></i>
+                                        {% if item.icon == 'home' %}
+                                            <span class="menu-icon" aria-hidden="true">
+                                                <img src="{% static 'core/icons/home.svg' %}" alt="">
+                                            </span>
+                                        {% elif item.icon %}
+                                            <span class="menu-icon" aria-hidden="true">
+                                                <img src="{% feather_icon item.icon %}" alt="">
+                                            </span>
+                                        {% endif %}
                                         <span class="menu-label">
                                             {% if lang == 'fa' %}
                                                 {{ item.label.fa }}
@@ -40,7 +55,15 @@
                             {% if item.visible %}
                                 <li>
                                     <a href="{{ item.url }}" class="menu-link{% if item.disabled %} disabled{% endif %}{% if item.is_active %} is-active{% endif %}"{% if item.disabled %} aria-disabled="true"{% endif %}{% if item.is_active %} aria-current="page"{% endif %}>
-                                        <i class="menu-icon" data-feather="{{ item.icon }}" aria-hidden="true"></i>
+                                        {% if item.icon == 'home' %}
+                                            <span class="menu-icon" aria-hidden="true">
+                                                <img src="{% static 'core/icons/home.svg' %}" alt="">
+                                            </span>
+                                        {% elif item.icon %}
+                                            <span class="menu-icon" aria-hidden="true">
+                                                <img src="{% feather_icon item.icon %}" alt="">
+                                            </span>
+                                        {% endif %}
                                         <span class="menu-label">
                                             {% if lang == 'fa' %}
                                                 {{ item.label.fa }}

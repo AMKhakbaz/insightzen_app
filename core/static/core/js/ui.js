@@ -19,9 +19,38 @@ document.addEventListener('DOMContentLoaded', function () {
   // Sidebar collapse persistence
   const body = document.body;
   const menuToggle = document.getElementById('menu-toggle');
+  const sidebarOverlay = document.querySelector('[data-sidebar-overlay]');
+
   if (menuToggle) {
     const STORAGE_KEY = 'sidebarCollapsed';
     const mobileQuery = window.matchMedia('(max-width: 992px)');
+    const menuIcons = {
+      open: menuToggle.querySelector('[data-menu-icon="open"]'),
+      close: menuToggle.querySelector('[data-menu-icon="close"]'),
+    };
+
+    const updateMenuIconState = () => {
+      if (!menuIcons.open || !menuIcons.close) {
+        return;
+      }
+      const isCollapsed = body.classList.contains('sidebar-collapsed');
+      menuIcons.open.hidden = !isCollapsed;
+      menuIcons.close.hidden = isCollapsed;
+    };
+
+    const updateOverlayState = () => {
+      if (!sidebarOverlay) {
+        return;
+      }
+      const shouldShow = !body.classList.contains('sidebar-collapsed') && mobileQuery.matches;
+      sidebarOverlay.classList.toggle('is-active', shouldShow);
+      sidebarOverlay.setAttribute('aria-hidden', (!shouldShow).toString());
+      if (shouldShow) {
+        sidebarOverlay.removeAttribute('hidden');
+      } else {
+        sidebarOverlay.setAttribute('hidden', 'hidden');
+      }
+    };
 
     const updateAriaExpanded = () => {
       const expanded = !body.classList.contains('sidebar-collapsed');
@@ -29,39 +58,41 @@ document.addEventListener('DOMContentLoaded', function () {
       menuToggle.setAttribute('aria-controls', 'sidebar');
     };
 
-    const applyInitialSidebarState = () => {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored === 'true') {
-        body.classList.add('sidebar-collapsed');
-      } else if (stored === 'false') {
-        body.classList.remove('sidebar-collapsed');
-      } else if (mobileQuery.matches) {
-        body.classList.add('sidebar-collapsed');
-      } else {
-        body.classList.remove('sidebar-collapsed');
+    const setSidebarCollapsed = (collapsed, { persist = true } = {}) => {
+      body.classList.toggle('sidebar-collapsed', collapsed);
+      if (persist) {
+        localStorage.setItem(STORAGE_KEY, collapsed ? 'true' : 'false');
       }
       updateAriaExpanded();
+      updateMenuIconState();
+      updateOverlayState();
     };
 
-    applyInitialSidebarState();
+    const getInitialCollapsedState = () => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored === 'true') {
+        return true;
+      }
+      if (stored === 'false') {
+        return false;
+      }
+      return mobileQuery.matches;
+    };
+
+    setSidebarCollapsed(getInitialCollapsedState(), { persist: false });
 
     menuToggle.addEventListener('click', function () {
-      body.classList.toggle('sidebar-collapsed');
       const isCollapsed = body.classList.contains('sidebar-collapsed');
-      localStorage.setItem(STORAGE_KEY, isCollapsed ? 'true' : 'false');
-      updateAriaExpanded();
+      setSidebarCollapsed(!isCollapsed);
     });
 
     const handleViewportChange = (event) => {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored === null) {
-        if (event.matches) {
-          body.classList.add('sidebar-collapsed');
-        } else {
-          body.classList.remove('sidebar-collapsed');
-        }
+        setSidebarCollapsed(event.matches, { persist: false });
+      } else {
+        updateOverlayState();
       }
-      updateAriaExpanded();
     };
 
     if (typeof mobileQuery.addEventListener === 'function') {
@@ -69,6 +100,35 @@ document.addEventListener('DOMContentLoaded', function () {
     } else if (typeof mobileQuery.addListener === 'function') {
       mobileQuery.addListener(handleViewportChange);
     }
+
+    if (sidebarOverlay) {
+      sidebarOverlay.addEventListener('click', () => {
+        if (!body.classList.contains('sidebar-collapsed')) {
+          setSidebarCollapsed(true);
+        }
+      });
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !body.classList.contains('sidebar-collapsed')) {
+        setSidebarCollapsed(true);
+      }
+    });
+
+    const syncOnStorageChange = () => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored === 'true') {
+        setSidebarCollapsed(true, { persist: false });
+      } else if (stored === 'false') {
+        setSidebarCollapsed(false, { persist: false });
+      }
+    };
+
+    window.addEventListener('storage', (event) => {
+      if (event.key === STORAGE_KEY) {
+        syncOnStorageChange();
+      }
+    });
   }
   // Only allow one sidebar group (details element) open at a time
   const detailEls = document.querySelectorAll('.sidebar nav details');

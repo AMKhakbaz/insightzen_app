@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from django import template
+from django.templatetags.static import static
 from django.urls import NoReverseMatch, reverse
 
 register = template.Library()
+
+_ICON_NAME_SANITIZER = re.compile(r"[^a-z0-9_-]")
 
 # New filter to access a dictionary value by key in templates
 @register.filter
@@ -110,6 +114,18 @@ def panel_names(membership, panel_labels) -> str:
         return ', '.join(labels)
     except Exception:
         return ''
+
+
+@register.simple_tag
+def feather_icon(name: str | None) -> str:
+    """Return the static path for a bundled Feather icon."""
+
+    if not name:
+        return ''
+    normalized = _ICON_NAME_SANITIZER.sub('', str(name).lower())
+    if not normalized:
+        return ''
+    return static(f'core/icons/feather/{normalized}.svg')
 
 
 def _resolve_url(name: str | None) -> str:

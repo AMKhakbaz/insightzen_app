@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load custom_tags %}
 {% block title %}{% if lang == 'fa' %}داشبورد سوپراَد‌مین{% else %}Super Admin Dashboard{% endif %}{% endblock %}
 {% block content %}
 <div class="card superadmin-dashboard">
@@ -76,7 +77,9 @@
         <div class="quick-actions-grid">
             {% for action in quick_actions %}
             <a href="{{ action.url }}" class="quick-action-card">
-                <span class="quick-action-card__icon" aria-hidden="true"><i data-feather="{{ action.icon }}"></i></span>
+                <span class="quick-action-card__icon" aria-hidden="true">
+                    <img src="{% feather_icon action.icon %}" alt="">
+                </span>
                 <span class="quick-action-card__label">{% if lang == 'fa' %}{{ action.label_fa }}{% else %}{{ action.label_en }}{% endif %}</span>
                 <span class="quick-action-card__hint">{% if lang == 'fa' %}{{ action.description_fa }}{% else %}{{ action.description_en }}{% endif %}</span>
             </a>
