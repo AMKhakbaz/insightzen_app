@@ -167,6 +167,58 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
                 },
             ],
         },
+    ]
+
+    if is_superuser:
+        sections.append(
+            {
+                'key': 'superadmin',
+                'title': {'en': 'Super Admin', 'fa': 'سوپراَد‌مین'},
+                'icon': 'shield',
+                'collapsible': True,
+                'default_open': True,
+                'visible': True,
+                'items': [
+                    {
+                        'icon': 'monitor',
+                        'label': {'en': 'Dashboard', 'fa': 'داشبورد'},
+                        'url': _resolve_url('superadmin_dashboard'),
+                        'disabled': False,
+                        'visible': True,
+                    },
+                    {
+                        'icon': 'layers',
+                        'label': {'en': 'All Projects', 'fa': 'همه پروژه‌ها'},
+                        'url': _resolve_url('project_list'),
+                        'disabled': False,
+                        'visible': True,
+                    },
+                    {
+                        'icon': 'users',
+                        'label': {'en': 'Memberships', 'fa': 'اعضا'},
+                        'url': _resolve_url('membership_list'),
+                        'disabled': False,
+                        'visible': True,
+                    },
+                    {
+                        'icon': 'database',
+                        'label': {'en': 'Respondent Bank Sync', 'fa': 'همگام‌سازی بانک پاسخگو'},
+                        'url': _resolve_url('database_list'),
+                        'disabled': False,
+                        'visible': True,
+                    },
+                    {
+                        'icon': 'bell',
+                        'label': {'en': 'Notifications & Logs', 'fa': 'اعلان‌ها و لاگ‌ها'},
+                        'url': _resolve_url('activity_logs'),
+                        'disabled': False,
+                        'visible': True,
+                    },
+                ],
+            }
+        )
+
+    sections.extend([
         {
             'key': 'management',
             'title': {'en': 'Management', 'fa': 'مدیریت'},
@@ -366,12 +418,12 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
                     'icon': 'list',
                     'label': {'en': 'Activity Logs', 'fa': 'لاگ فعالیت‌ها'},
                     'url': _resolve_url('activity_logs'),
-                    'disabled': not has_org,
+                    'disabled': not (has_org or is_superuser),
                     'visible': True,
                 },
             ],
         },
-    ]
+    ])
 
     for section in sections:
         items = section.get('items', [])

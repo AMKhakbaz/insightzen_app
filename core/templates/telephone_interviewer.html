@@ -30,65 +30,11 @@
         }
     });
     </script>
-    {% if selected_project %}
-        <div class="sample-upload-guide" style="margin-bottom:1rem;">
-            <strong>{% if lang == 'fa' %}منبع نمونه: {% else %}Sample source:{% endif %}</strong>
-            {% if sample_source == 'upload' %}
-                <span>
-                    {% if lang == 'fa' %}
-                        این پروژه از فایل اکسل اختصاصی استفاده می‌کند. برای بروزرسانی لیست، از بخش تنظیمات پروژه فایل جدید را بارگذاری کنید.
-                    {% else %}
-                        This project draws from an uploaded Excel workbook. Upload a fresh file from the project settings whenever the calling list changes.
-                    {% endif %}
-                </span>
-                <div style="margin-top:0.35rem;font-size:0.85rem;">
-                    {% if sample_metadata.accepted_rows %}
-                        {% if lang == 'fa' %}
-                            {{ sample_metadata.accepted_rows }} ردیف معتبر از {{ sample_metadata.total_rows }} ردیف شناسایی شده است (آخرین بروزرسانی {{ selected_project.sample_upload_refreshed_at|date:'Y-m-d H:i'|default:'—' }}).
-                        {% else %}
-                            {{ sample_metadata.accepted_rows }} of {{ sample_metadata.total_rows }} rows passed validation (last refresh {{ selected_project.sample_upload_refreshed_at|date:'Y-m-d H:i'|default:'—' }}).
-                        {% endif %}
-                    {% else %}
-                        {% if lang == 'fa' %}فایلی بارگذاری نشده است یا ردیف معتبری یافت نشد.{% else %}No valid rows were found in the uploaded file yet.{% endif %}
-                    {% endif %}
-                </div>
-                <div style="margin-top:0.35rem;font-size:0.85rem;">
-                    {% if lang == 'fa' %}ستون‌های موردنیاز: {% else %}Required headers:{% endif %}
-                    {% for header in required_headers %}
-                        <code>{{ header }}</code>{% if not forloop.last %}, {% endif %}
-                    {% endfor %}
-                </div>
-            {% else %}
-                <span>
-                    {% if lang == 'fa' %}
-                        نمونه تماس از بانک پاسخگوی مرکزی انتخاب می‌شود و به صورت خودکار تکمیل می‌گردد.
-                    {% else %}
-                        Numbers rotate from the respondent bank and replenish automatically as quotas progress.
-                    {% endif %}
-                </span>
-            {% endif %}
-        </div>
-        <div class="sample-upload-guide" style="margin-bottom:1rem;">
-            <strong>{% if lang == 'fa' %}کدهای وضعیت:{% else %}Status codes:{% endif %}</strong>
-            {% if call_result_mode == 'custom' %}
-                <span>
-                    {% if lang == 'fa' %}این پروژه از کدهای سفارشی استفاده می‌کند که در فایل CSV/اکسل بارگذاری‌شده تعریف شده‌اند.{% else %}This project relies on a custom CSV/Excel upload that defines the call outcomes.{% endif %}
-                </span>
-            {% elif call_result_selection == 'custom' %}
-                <span>
-                    {% if lang == 'fa' %}کدهای پیش‌فرض سیستم در حال استفاده هستند زیرا فایل سفارشی یافت نشد. لطفاً در بخش تنظیمات پروژه فایل معتبر بارگذاری کنید.{% else %}The default system codes are being used because a valid custom upload was not found. Please upload a valid file in the project settings.{% endif %}
-                </span>
-            {% else %}
-                <span>
-                    {% if lang == 'fa' %}کدهای پیش‌فرض InsightZen برای تشخیص موفقیت تماس استفاده می‌شوند.{% else %}The built-in InsightZen codes determine whether a call is successful.{% endif %}
-                </span>
-            {% endif %}
-            <div style="margin-top:0.35rem;font-size:0.85rem;">
-                {% if lang == 'fa' %}ستون‌های لازم برای فایل سفارشی: {% else %}Required headers for custom files:{% endif %}
-                {% for header in call_result_headers %}
-                    <code>{{ header }}</code>{% if not forloop.last %}, {% endif %}
-                {% endfor %}
-            </div>
+    {% if selected_project and sample_source == 'upload' %}
+        <div style="margin-bottom:1rem;">
+            <a class="btn btn-secondary btn-sm" href="{% url 'project_dataset_append' selected_project.pk %}">
+                {% if lang == 'fa' %}افزودن داده جدید{% else %}Append Dataset{% endif %}
+            </a>
         </div>
     {% endif %}
     {% if selected_project %}
@@ -131,8 +77,8 @@
                     <input type="number" name="age" class="form-control" style="width:120px;" min="0" max="120" value="{{ prefill_age|default_if_none:'' }}">
                 </div>
                 <div>
-                    <label>{% if lang == 'fa' %}سال تولد{% else %}Birth Year{% endif %}</label>
-                    <input type="number" name="birth_year" class="form-control" style="width:120px;" min="1900" max="2100" value="{{ prefill_birth_year|default_if_none:'' }}">
+                    <label>{% if lang == 'fa' %}سال تولد (جلالی){% else %}Birth Year (Jalali){% endif %}</label>
+                    <input type="number" name="birth_year" class="form-control" style="width:120px;" min="1300" max="1410" value="{{ prefill_birth_year|default_if_none:'' }}">
                 </div>
                 <div>
                     <label>{% if lang == 'fa' %}شهر{% else %}City{% endif %}</label>
@@ -140,10 +86,96 @@
                 </div>
             </div>
             <button type="submit" class="btn" style="margin-top:0.5rem;">{% if lang == 'fa' %}ثبت{% else %}Submit{% endif %}</button>
+            <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const ageInput = document.querySelector('input[name="age"]');
+                const birthInput = document.querySelector('input[name="birth_year"]');
+                if (!ageInput || !birthInput) {
+                    return;
+                }
+
+                const AGE_MIN = 0;
+                const AGE_MAX = 120;
+                const BIRTH_MIN = 1300;
+                const BIRTH_MAX = 1410;
+                const digitMap = {
+                    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+                    '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9'
+                };
+                const persianYearFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric' });
+                const currentPersianYear = parseInt(
+                    persianYearFormatter.format(new Date()).replace(/[۰-۹]/g, function(digit) {
+                        return digitMap[digit] || digit;
+                    }),
+                    10
+                );
+
+                let isSyncing = false;
+
+                function clamp(value, min, max) {
+                    return Math.min(Math.max(value, min), max);
+                }
+
+                function normalizeInputValue(inputEl, min, max) {
+                    const raw = inputEl.value.trim();
+                    if (!raw) {
+                        return null;
+                    }
+                    const numeric = parseInt(raw, 10);
+                    if (isNaN(numeric)) {
+                        return null;
+                    }
+                    const clamped = clamp(numeric, min, max);
+                    if (clamped !== numeric) {
+                        inputEl.value = clamped;
+                    }
+                    return clamped;
+                }
+
+                function syncFromAge() {
+                    if (isSyncing) {
+                        return;
+                    }
+                    const normalizedAge = normalizeInputValue(ageInput, AGE_MIN, AGE_MAX);
+                    if (normalizedAge === null) {
+                        return;
+                    }
+                    isSyncing = true;
+                    const birthYear = clamp(currentPersianYear - normalizedAge, BIRTH_MIN, BIRTH_MAX);
+                    birthInput.value = birthYear;
+                    isSyncing = false;
+                }
+
+                function syncFromBirth() {
+                    if (isSyncing) {
+                        return;
+                    }
+                    const normalizedBirth = normalizeInputValue(birthInput, BIRTH_MIN, BIRTH_MAX);
+                    if (normalizedBirth === null) {
+                        return;
+                    }
+                    isSyncing = true;
+                    const age = clamp(currentPersianYear - normalizedBirth, AGE_MIN, AGE_MAX);
+                    ageInput.value = age;
+                    isSyncing = false;
+                }
+
+                ['input', 'change'].forEach(function(evt) {
+                    ageInput.addEventListener(evt, syncFromAge);
+                    birthInput.addEventListener(evt, syncFromBirth);
+                });
+
+                if (birthInput.value.trim()) {
+                    syncFromBirth();
+                } else if (ageInput.value.trim()) {
+                    syncFromAge();
+                }
+            });
+            </script>
         </form>
         {% else %}
             {% if sample_source == 'upload' %}
-                <p>{% if lang == 'fa' %}فایلی حاوی شماره تماس در این پروژه یافت نشد. لطفاً در صفحه ویرایش پروژه فایل اکسل شامل ستون‌های {{ required_headers|join:', ' }} را بارگذاری کنید.{% else %}No uploaded contacts are available for this project. Please upload an Excel file with the required headers ({{ required_headers|join:', ' }}) from the project settings.{% endif %}</p>
+                <p>{% if lang == 'fa' %}فایلی حاوی شماره تماس در این پروژه یافت نشد. لطفاً با استفاده از گزینه «افزودن داده جدید» فایل اکسل شامل ستون‌های {{ required_headers|join:', ' }} را بارگذاری کنید.{% else %}No uploaded contacts are available for this project. Use the “Append Dataset” action to upload an Excel file with the required headers ({{ required_headers|join:', ' }}).{% endif %}</p>
             {% else %}
                 <p>{% if lang == 'fa' %}موردی برای تماس یافت نشد.{% else %}No available respondent found for the selected project.{% endif %}</p>
             {% endif %}

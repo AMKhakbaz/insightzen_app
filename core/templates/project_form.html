@@ -107,6 +107,13 @@
                         </div>
                     {% endwith %}
                 {% endif %}
+                {% if project.pk %}
+                    <div style="margin-top:0.75rem;">
+                        <a class="btn btn-secondary btn-sm" href="{% url 'project_dataset_append' project.pk %}">
+                            {% if lang == 'fa' %}افزودن ردیف جدید{% else %}Append New Rows{% endif %}
+                        </a>
+                    </div>
+                {% endif %}
             </div>
             {% endwith %}
         </div>

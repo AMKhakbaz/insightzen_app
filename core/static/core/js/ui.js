@@ -83,4 +83,41 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
   });
+
+  const passwordToggleButtons = document.querySelectorAll('[data-password-toggle]');
+  const updatePasswordToggleState = (button, input, showIcon, hideIcon) => {
+    const isVisible = input.type === 'text';
+    button.setAttribute('aria-pressed', isVisible.toString());
+    if (showIcon) {
+      showIcon.hidden = isVisible;
+    }
+    if (hideIcon) {
+      hideIcon.hidden = !isVisible;
+    }
+  };
+
+  passwordToggleButtons.forEach((button) => {
+    const field = button.closest('.password-field');
+    if (!field) {
+      return;
+    }
+    const input = field.querySelector('input');
+    if (!input) {
+      return;
+    }
+    const showIcon = button.querySelector('[data-password-toggle-show]');
+    const hideIcon = button.querySelector('[data-password-toggle-hide]');
+
+    button.addEventListener('click', () => {
+      const shouldShow = input.type === 'password';
+      try {
+        input.type = shouldShow ? 'text' : 'password';
+      } catch (error) {
+        return;
+      }
+      updatePasswordToggleState(button, input, showIcon, hideIcon);
+    });
+
+    updatePasswordToggleState(button, input, showIcon, hideIcon);
+  });
 });

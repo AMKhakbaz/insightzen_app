@@ -20,6 +20,7 @@ urlpatterns = [
     path('logout/', views.logout_view, name='logout'),
     path('register/', views.register, name='register'),
     path('payment/', views.payment, name='payment'),
+    path('superadmin/', views.superadmin_dashboard, name='superadmin_dashboard'),
     # Language toggle
     path('lang/<str:lang>/', views.toggle_language, name='toggle_language'),
     # Home dashboard
@@ -28,6 +29,7 @@ urlpatterns = [
     path('projects/', views.project_list, name='project_list'),
     path('projects/add/', views.project_add, name='project_add'),
     path('projects/<int:project_id>/edit/', views.project_edit, name='project_edit'),
+    path('projects/<int:project_id>/dataset/append/', views.project_dataset_append, name='project_dataset_append'),
     # Delete project
     path('projects/<int:pk>/delete/', views.project_delete, name='project_delete'),
     # User management

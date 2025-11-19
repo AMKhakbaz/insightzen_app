@@ -75,8 +75,12 @@ except Exception:
 from core.services.sample_uploads import (
     SAMPLE_REQUIRED_HEADERS,
     SampleUploadError,
+    append_project_respondent_bank,
+    append_project_sample_upload,
     ingest_project_sample_upload,
 )
+
+PAYMENT_SECURITY_PHRASE = 'Sa00Ad25'
 from core.services.call_results import (
     CALL_RESULT_REQUIRED_HEADERS,
     CallResultUploadError,
@@ -93,6 +97,7 @@ from core.services.gender_utils import (
 from .forms import (
     LoginForm,
     ProjectForm,
+    ProjectSampleAppendForm,
     RegistrationForm,
     UserToProjectForm,
     DatabaseEntryForm,
@@ -188,7 +193,25 @@ def payment(request: HttpRequest) -> HttpResponse:
     pending = request.session.get('pending_registration')
     if not pending:
         return redirect('register')
+
+    lang = request.session.get('lang', 'en')
+    context = {
+        'security_phrase_hint': PAYMENT_SECURITY_PHRASE,
+        'security_phrase_value': '',
+    }
+
     if request.method == 'POST':
+        security_phrase = request.POST.get('security_phrase', '').strip()
+        context['security_phrase_value'] = security_phrase
+        if security_phrase != PAYMENT_SECURITY_PHRASE:
+            error_message = (
+                'عبارت امنیتی نادرست است. لطفاً دوباره تلاش کنید.'
+                if lang == 'fa'
+                else 'Incorrect security phrase. Please try again.'
+            )
+            messages.error(request, error_message)
+            return render(request, 'payment.html', context)
+
         email = pending['email']
         full_name = pending['full_name']
         phone = pending['phone']
@@ -199,7 +222,7 @@ def payment(request: HttpRequest) -> HttpResponse:
         del request.session['pending_registration']
         messages.success(request, 'Payment successful. Your organisation account has been created.')
         return redirect('login')
-    return render(request, 'payment.html')
+    return render(request, 'payment.html', context)
 
 
 def login_view(request: HttpRequest) -> HttpResponse:
@@ -242,7 +265,55 @@ def home(request: HttpRequest) -> HttpResponse:
     return render(request, 'home.html', {'profile': profile})
 
 
+@login_required
+def superadmin_dashboard(request: HttpRequest) -> HttpResponse:
+    """Display an overview dashboard for super administrators."""
+
+    user = request.user
+    if not getattr(user, 'is_superuser', False):
+        messages.error(request, 'Access denied: super admin privileges are required.')
+        return redirect('home')
+
+    today = timezone.now().date()
+    stats = {
+        'projects_total': Project.objects.count(),
+        'projects_active': Project.objects.filter(deadline__gte=today).count(),
+        'memberships_total': Membership.objects.count(),
+        'respondents_total': Person.objects.count(),
+        'mobiles_total': Mobile.objects.count(),
+        'unread_notifications': Notification.objects.filter(is_read=False).count(),
+    }
+    recent_projects = Project.objects.order_by('-start_date')[:6]
+    recent_logs = ActivityLog.objects.select_related('user').all()[:10]
+    unread_notifications = (
+        Notification.objects.select_related('recipient')
+        .filter(is_read=False)
+        .order_by('-created_at')[:10]
+    )
+    panel_overview: List[Dict[str, Any]] = []
+    for field, label_en, label_fa in MEMBERSHIP_PANEL_DEFINITIONS:
+        panel_overview.append(
+            {
+                'field': field,
+                'label_en': label_en,
+                'label_fa': label_fa,
+                'count': Membership.objects.filter(**{field: True}).count(),
+            }
+        )
+
+    context = {
+        'stats': stats,
+        'recent_projects': recent_projects,
+        'recent_logs': recent_logs,
+        'unread_notifications': unread_notifications,
+        'panel_overview': panel_overview,
+    }
+    return render(request, 'superadmin_dashboard.html', context)
+
+
 def _user_is_organisation(user: User) -> bool:
+    if getattr(user, 'is_superuser', False):
+        return True
     profile = getattr(user, 'profile', None)
     return bool(profile and profile.organization)
 
@@ -256,6 +327,8 @@ def _localise_text(lang: str, english: str, persian: str) -> str:
 def _project_deadline_locked_for_user(project: Project, user: User) -> bool:
     """Return True when the project's deadline has passed for this user."""
 
+    if getattr(user, 'is_superuser', False):
+        return False
     today = timezone.now().date()
     if today <= project.deadline:
         return False
@@ -266,6 +339,8 @@ def _project_deadline_locked_for_user(project: Project, user: User) -> bool:
 def _user_has_panel(user: User, panel: str) -> bool:
     """Check whether the user has access to a panel respecting deadlines."""
 
+    if getattr(user, 'is_superuser', False):
+        return True
     memberships = Membership.objects.filter(user=user)
     if not memberships.exists() and _user_is_organisation(user):
         return True
@@ -276,6 +351,8 @@ def _user_has_panel(user: User, panel: str) -> bool:
 def _ensure_project_deadline_access(request: HttpRequest, project: Project) -> bool:
     """Ensure the current user may access the project after its deadline."""
 
+    if getattr(request.user, 'is_superuser', False):
+        return True
     if not _project_deadline_locked_for_user(project, request.user):
         return True
     messages.error(
@@ -1345,6 +1422,8 @@ def _get_accessible_projects(user: User, panel: str | None = None) -> List[Proje
     permission are returned.  Organisation users see all projects for
     which they have a membership (typically all that they created).
     """
+    if getattr(user, 'is_superuser', False):
+        return list(Project.objects.all().order_by('pk'))
     qs = Project.objects.filter(memberships__user=user)
     if panel:
         filter_kwargs = {f"memberships__{panel}": True}
@@ -1570,6 +1649,67 @@ def project_edit(request: HttpRequest, project_id: int) -> HttpResponse:
     else:
         form = ProjectForm(instance=project)
     return render(request, 'project_form.html', _project_form_context(form, 'Edit Project'))
+
+
+@login_required
+def project_dataset_append(request: HttpRequest, project_id: int) -> HttpResponse:
+    """Allow authorised users to append new respondent rows mid-project."""
+
+    lang = request.session.get('lang', 'en')
+    project = get_object_or_404(Project, pk=project_id)
+    membership = (
+        Membership.objects.filter(project=project, user=request.user)
+        .select_related('project')
+        .first()
+    )
+    if not membership:
+        messages.error(request, 'Access denied: you are not a member of this project.')
+        return redirect('project_list')
+    if not (
+        membership.is_owner
+        or membership.database_management
+        or membership.telephone_interviewer
+    ):
+        messages.error(request, 'Access denied: this upload is limited to owners or database/telephone panel members.')
+        return redirect('project_list')
+    if not project.status:
+        messages.error(request, 'Dataset uploads are only allowed while the project is collecting data.')
+        return redirect('project_list')
+
+    sample_metadata = project.sample_upload_metadata or {}
+    if request.method == 'POST':
+        form = ProjectSampleAppendForm(request.POST, request.FILES)
+        if form.is_valid():
+            workbook = form.cleaned_data['workbook']
+            try:
+                if project.sample_source == Project.SampleSource.UPLOAD:
+                    result = append_project_sample_upload(project, uploaded_file=workbook)
+                else:
+                    result = append_project_respondent_bank(project, uploaded_file=workbook)
+            except SampleUploadError as exc:
+                form.add_error('workbook', str(exc))
+            else:
+                if project.sample_source == Project.SampleSource.DATABASE:
+                    generate_call_samples(project, replenish=True)
+                success_text = _localise_text(
+                    lang,
+                    f'Appended {result.appended_rows} new rows (skipped {result.duplicate_rows} duplicates).',
+                    f'{result.appended_rows} ردیف جدید اضافه شد و {result.duplicate_rows} ردیف تکراری حذف شد.',
+                )
+                messages.success(request, success_text)
+                return redirect('project_dataset_append', project_id=project.pk)
+    else:
+        form = ProjectSampleAppendForm()
+
+    context = {
+        'form': form,
+        'project': project,
+        'lang': lang,
+        'sample_source': project.sample_source,
+        'required_headers': SAMPLE_REQUIRED_HEADERS,
+        'sample_metadata': sample_metadata,
+    }
+    return render(request, 'project_dataset_append.html', context)
 
 
 @login_required

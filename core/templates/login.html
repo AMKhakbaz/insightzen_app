@@ -12,7 +12,18 @@
         {{ form.email }}
         {{ form.email.errors }}
         {{ form.password.label_tag }}
-        {{ form.password }}
+        <div class="password-field">
+            {{ form.password }}
+            <button type="button" class="password-toggle" data-password-toggle aria-pressed="false">
+                <span class="sr-only">{% if lang == 'fa' %}تغییر نمایش رمز عبور{% else %}Toggle password visibility{% endif %}</span>
+                <span class="password-toggle__icon" data-password-toggle-show>
+                    <i data-feather="eye" aria-hidden="true"></i>
+                </span>
+                <span class="password-toggle__icon" data-password-toggle-hide hidden>
+                    <i data-feather="eye-off" aria-hidden="true"></i>
+                </span>
+            </button>
+        </div>
         {{ form.password.errors }}
         <button type="submit" class="btn">{% if lang == 'fa' %}ورود{% else %}Login{% endif %}</button>
     </form>

@@ -6,14 +6,35 @@
     <h1>{% if lang == 'fa' %}پرداخت{% else %}Payment{% endif %}</h1>
     <p style="margin-bottom:1rem;">
         {% if lang == 'fa' %}
-            برای تکمیل ثبت‌نام سازمانی خود، روی دکمه زیر کلیک کنید.
+            برای تکمیل ثبت‌نام سازمانی خود، عبارت امنیتی را وارد کرده و پرداخت را تایید کنید.
         {% else %}
-            To complete your organisation registration, please confirm your payment.
+            To finish your organisation registration, enter the security phrase and confirm the payment.
         {% endif %}
     </p>
-    <form method="post">
+    <form method="post" class="payment-form" style="text-align:left;">
         {% csrf_token %}
-        <button type="submit" class="btn btn-secondary">{% if lang == 'fa' %}تایید پرداخت{% else %}Confirm Payment{% endif %}</button>
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label for="security-phrase" class="form-label">
+                {% if lang == 'fa' %}عبارت امنیتی{% else %}Security Phrase{% endif %}
+            </label>
+            <input type="text"
+                   id="security-phrase"
+                   name="security_phrase"
+                   required
+                   value="{{ security_phrase_value|default:'' }}"
+                   class="form-control"
+                   style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:4px;" />
+            <small class="form-hint" style="display:block;margin-top:0.25rem;color:#666;">
+                {% if lang == 'fa' %}
+                    لطفاً عبارت «{{ security_phrase_hint }}» را به‌عنوان تایید امنیتی وارد کنید.
+                {% else %}
+                    Please type "{{ security_phrase_hint }}" to verify your organisation payment.
+                {% endif %}
+            </small>
+        </div>
+        <button type="submit" class="btn btn-secondary" style="width:100%;">
+            {% if lang == 'fa' %}تایید پرداخت{% else %}Confirm Payment{% endif %}
+        </button>
     </form>
 </div>
 {% endblock %}
