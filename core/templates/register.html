@@ -21,10 +21,32 @@
             {{ form.organization }} {{ form.organization.label_tag }}
         </div>
         {{ form.password.label_tag }}
-        {{ form.password }}
+        <div class="password-field">
+            {{ form.password }}
+            <button type="button" class="password-toggle" data-password-toggle aria-pressed="false">
+                <span class="sr-only">{% if lang == 'fa' %}تغییر نمایش رمز عبور{% else %}Toggle password visibility{% endif %}</span>
+                <span class="password-toggle__icon" data-password-toggle-show>
+                    <i data-feather="eye" aria-hidden="true"></i>
+                </span>
+                <span class="password-toggle__icon" data-password-toggle-hide hidden>
+                    <i data-feather="eye-off" aria-hidden="true"></i>
+                </span>
+            </button>
+        </div>
         {{ form.password.errors }}
         {{ form.confirm_password.label_tag }}
-        {{ form.confirm_password }}
+        <div class="password-field">
+            {{ form.confirm_password }}
+            <button type="button" class="password-toggle" data-password-toggle aria-pressed="false">
+                <span class="sr-only">{% if lang == 'fa' %}تغییر نمایش رمز عبور{% else %}Toggle password visibility{% endif %}</span>
+                <span class="password-toggle__icon" data-password-toggle-show>
+                    <i data-feather="eye" aria-hidden="true"></i>
+                </span>
+                <span class="password-toggle__icon" data-password-toggle-hide hidden>
+                    <i data-feather="eye-off" aria-hidden="true"></i>
+                </span>
+            </button>
+        </div>
         {{ form.confirm_password.errors }}
         <button type="submit" class="btn">{% if lang == 'fa' %}ثبت‌نام{% else %}Register{% endif %}</button>
     </form>

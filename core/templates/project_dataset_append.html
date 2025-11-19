@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}افزودن دیتاست{% else %}Append Dataset{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:640px;margin:2rem auto;">
+    <h1>{% if lang == 'fa' %}افزودن دیتاست جدید{% else %}Append New Respondents{% endif %}</h1>
+    <p class="card-intro">
+        {% if sample_source == 'upload' %}
+            {% if lang == 'fa' %}
+                فایل اکسل جدید را بارگذاری کنید تا ردیف‌های تازه بدون حذف موارد قبلی به این پروژه اضافه شوند.
+            {% else %}
+                Upload an Excel workbook to append more rows to this project's calling list without deleting the existing data.
+            {% endif %}
+        {% else %}
+            {% if lang == 'fa' %}
+                شماره‌های جدید به بانک پاسخگوی مرکزی افزوده می‌شوند و پس از چند لحظه در سهمیه‌های پروژه در دسترس خواهند بود.
+            {% else %}
+                The uploaded rows will be copied into the respondent bank so the project can immediately draw from the expanded pool.
+            {% endif %}
+        {% endif %}
+    </p>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div>
+            {{ form.workbook.label_tag }}
+            {{ form.workbook }}
+            {{ form.workbook.errors }}
+            <p class="form-hint">
+                {% if lang == 'fa' %}فرمت xlsx/xls پشتیبانی می‌شود و ستون‌های مورد نیاز باید موجود باشند.{% else %}Accepted formats: .xlsx/.xls with all required headers present.{% endif %}
+            </p>
+        </div>
+        <button type="submit" class="btn" style="margin-top:0.5rem;">
+            {% if lang == 'fa' %}بارگذاری{% else %}Upload{% endif %}
+        </button>
+    </form>
+    <div class="sample-upload-guide" style="margin-top:1rem;">
+        <strong>{% if lang == 'fa' %}ستون‌های ضروری{% else %}Required columns{% endif %}</strong>
+        <ul style="margin:0.35rem 0 0;padding-left:1.25rem;">
+            {% for header in required_headers %}
+                <li><code>{{ header }}</code></li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% if sample_metadata.appended_rows %}
+        <div class="sample-upload-meta" style="margin-top:1rem;">
+            <span>
+                <strong>{% if lang == 'fa' %}ردیف‌های افزوده{% else %}Appended Rows{% endif %}</strong>
+                {{ sample_metadata.appended_rows }}
+            </span>
+            <span>
+                <strong>{% if lang == 'fa' %}تکراری حذف‌شده{% else %}Duplicates Removed{% endif %}</strong>
+                {{ sample_metadata.duplicate_rows|default:0 }}
+            </span>
+            <span>
+                <strong>{% if lang == 'fa' %}آخرین فایل{% else %}Latest File{% endif %}</strong>
+                {{ project.sample_upload_refreshed_at|date:'Y-m-d H:i'|default:'—' }}
+            </span>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

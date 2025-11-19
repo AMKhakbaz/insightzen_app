@@ -185,6 +185,14 @@ class ProjectForm(forms.ModelForm):
         return [p for p in parts if p]
 
 
+class ProjectSampleAppendForm(forms.Form):
+    """Form used to append additional respondent rows to an active project."""
+
+    workbook = forms.FileField(
+        label='Additional Sample Workbook',
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xlsx,.xls'}),
+    )
+
 class UserToProjectForm(forms.Form):
     """Form for assigning a user to a project with panel permissions.
 

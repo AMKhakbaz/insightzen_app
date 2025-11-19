@@ -37,8 +37,12 @@ def language(request) -> Dict[str, Any]:
     user = getattr(request, 'user', None)
     if user and user.is_authenticated:
         profile = getattr(user, 'profile', None)
+        # Super admins see everything regardless of membership/org affiliation.
+        if getattr(user, 'is_superuser', False):
+            for pf in panel_fields:
+                panels_enabled[pf] = True
         # Organisation users have access to everything
-        if profile and profile.organization:
+        elif profile and profile.organization:
             for pf in panel_fields:
                 panels_enabled[pf] = True
         else:

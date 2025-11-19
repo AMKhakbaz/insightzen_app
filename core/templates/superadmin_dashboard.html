@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}داشبورد سوپراَد‌مین{% else %}Super Admin Dashboard{% endif %}{% endblock %}
+{% block content %}
+<div class="card superadmin-dashboard">
+    <header class="card-header">
+        <div>
+            <h1 class="card-title">{% if lang == 'fa' %}داشبورد سوپراَد‌مین{% else %}Super Admin Dashboard{% endif %}</h1>
+            <p class="card-subtitle">
+                {% if lang == 'fa' %}
+                    نمایی سریع از پروژه‌ها، اعضا و هشدارهای سامانه برای بررسی ادمین کل.
+                {% else %}
+                    A quick overview of projects, memberships, and global alerts for platform administrators.
+                {% endif %}
+            </p>
+        </div>
+    </header>
+    <section class="superadmin-stats-grid">
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}کل پروژه‌ها{% else %}Total Projects{% endif %}</p>
+            <p class="stat-value">{{ stats.projects_total }}</p>
+        </article>
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}پروژه‌های فعال{% else %}Active Projects{% endif %}</p>
+            <p class="stat-value">{{ stats.projects_active }}</p>
+        </article>
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}اعضا{% else %}Memberships{% endif %}</p>
+            <p class="stat-value">{{ stats.memberships_total }}</p>
+        </article>
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}پاسخگویان ثبت‌شده{% else %}Respondents{% endif %}</p>
+            <p class="stat-value">{{ stats.respondents_total }}</p>
+        </article>
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}شماره‌های فعال{% else %}Mobiles{% endif %}</p>
+            <p class="stat-value">{{ stats.mobiles_total }}</p>
+        </article>
+        <article class="stat">
+            <p class="stat-label">{% if lang == 'fa' %}اعلان‌های خوانده‌نشده{% else %}Unread Notifications{% endif %}</p>
+            <p class="stat-value">{{ stats.unread_notifications }}</p>
+        </article>
+    </section>
+    <div class="superadmin-grid">
+        <section class="superadmin-panel">
+            <h2>{% if lang == 'fa' %}پروژه‌های اخیر{% else %}Recent Projects{% endif %}</h2>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>{% if lang == 'fa' %}نام{% else %}Name{% endif %}</th>
+                        <th>{% if lang == 'fa' %}شروع{% else %}Start{% endif %}</th>
+                        <th>{% if lang == 'fa' %}ددلاین{% else %}Deadline{% endif %}</th>
+                        <th>{% if lang == 'fa' %}منبع نمونه{% else %}Sample Source{% endif %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in recent_projects %}
+                    <tr>
+                        <td><a href="{% url 'project_edit' project.pk %}">{{ project.name }}</a></td>
+                        <td>{{ project.start_date }}</td>
+                        <td>{{ project.deadline }}</td>
+                        <td>
+                            {% if project.sample_source == 'upload' %}
+                                {% if lang == 'fa' %}آپلود{% else %}Upload{% endif %}
+                            {% else %}
+                                {% if lang == 'fa' %}بانک پاسخگو{% else %}Respondent Bank{% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4">{% if lang == 'fa' %}پروژه‌ای یافت نشد.{% else %}No projects found.{% endif %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        <section class="superadmin-panel">
+            <h2>{% if lang == 'fa' %}فعالیت‌های اخیر{% else %}Recent Activity{% endif %}</h2>
+            <ul class="timeline">
+                {% for log in recent_logs %}
+                <li>
+                    <strong>{{ log.timestamp|date:"Y-m-d H:i" }}</strong>
+                    <div>
+                        <span>{{ log.user }} — {{ log.action }}</span>
+                        {% if log.details %}<p class="muted">{{ log.details }}</p>{% endif %}
+                    </div>
+                </li>
+                {% empty %}
+                <li>{% if lang == 'fa' %}لاگی ثبت نشده است.{% else %}No activity logs recorded.{% endif %}</li>
+                {% endfor %}
+            </ul>
+        </section>
+        <section class="superadmin-panel">
+            <h2>{% if lang == 'fa' %}اعلان‌های خوانده‌نشده{% else %}Unread Notifications{% endif %}</h2>
+            <ul class="notification-list">
+                {% for notification in unread_notifications %}
+                <li>
+                    <div><strong>{{ notification.recipient }}</strong></div>
+                    <p>{{ notification.message }}</p>
+                    <span class="muted">{{ notification.created_at|date:"Y-m-d H:i" }}</span>
+                </li>
+                {% empty %}
+                <li>{% if lang == 'fa' %}اعلان خوانده‌نشده‌ای وجود ندارد.{% else %}No unread notifications.{% endif %}</li>
+                {% endfor %}
+            </ul>
+        </section>
+    </div>
+    <section class="superadmin-panel">
+        <h2>{% if lang == 'fa' %}پنل‌ها و سطوح دسترسی{% else %}Panel Access Overview{% endif %}</h2>
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>{% if lang == 'fa' %}پنل{% else %}Panel{% endif %}</th>
+                        <th>{% if lang == 'fa' %}تعداد اعضای دارای دسترسی{% else %}Members with Access{% endif %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for panel in panel_overview %}
+                    <tr>
+                        <td>{% if lang == 'fa' %}{{ panel.label_fa }}{% else %}{{ panel.label_en }}{% endif %}</td>
+                        <td>{{ panel.count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
