@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}{% if lang == 'fa' %}ویرایش کیفی داده{% else %}Quality Control Edit{% endif %}{% endblock %}
 
 {% block content %}
@@ -103,7 +104,10 @@
                             <td class="qc-row-actions">
                                 {% if row.submission_id %}
                                     <button type="button" class="btn btn-sm btn-secondary" data-entry-id="{{ selected_entry.pk }}" data-enketo-edit="{{ row.submission_id }}" data-loading-text="{% if lang == 'fa' %}در حال دریافت لینک…{% else %}Requesting link…{% endif %}" data-success-text="{% if lang == 'fa' %}فرم در تب جدید باز شد{% else %}Edit form opened in a new tab{% endif %}" data-error-text="{% if lang == 'fa' %}دریافت لینک با خطا مواجه شد{% else %}Unable to fetch edit link{% endif %}">
-                                        {% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}
+                                        <span class="btn__icon" aria-hidden="true">
+                                            <img src="{% static 'core/icons/edit.svg' %}" alt="">
+                                        </span>
+                                        <span>{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</span>
                                     </button>
                                     <span class="qc-row-status" data-status></span>
                                 {% else %}

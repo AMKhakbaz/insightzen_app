@@ -39,6 +39,9 @@
     --font-size-h1: 2rem;
     --font-size-h2: 1.625rem;
     --font-size-h3: 1.375rem;
+
+    --sidebar-width: 260px;
+    --sidebar-collapsed-width: 74px;
 }
 
 body {
@@ -93,10 +96,16 @@ body.rtl {
 .wrapper {
     display: flex;
     min-height: 100vh;
+    width: 100%;
+}
+
+body.rtl .wrapper {
+    flex-direction: row-reverse;
 }
 
 .sidebar {
-    width: 260px;
+    flex: 0 0 var(--sidebar-width);
+    width: var(--sidebar-width);
     background: var(--color-surface);
     border-right: 1px solid var(--color-border);
     padding: clamp(1.5rem, 5vh, 3rem) 1.25rem 2rem;
@@ -106,6 +115,30 @@ body.rtl {
     justify-content: flex-start;
     box-shadow: inset -1px 0 0 var(--color-border-soft);
     transition: transform 0.3s ease, background-color 0.3s ease, width 0.3s ease, box-shadow 0.3s ease;
+    z-index: 1000;
+}
+
+body.rtl .sidebar {
+    border-right: none;
+    border-left: 1px solid var(--color-border);
+    box-shadow: inset 1px 0 0 var(--color-border-soft);
+}
+
+.sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 7, 10, 0.6);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    z-index: 900;
+}
+
+.sidebar-overlay.is-active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .sidebar nav {
@@ -167,7 +200,7 @@ body.rtl {
 }
 
 .sidebar nav .menu-caret {
-    margin-left: auto;
+    margin-inline-start: auto;
     transition: transform 0.2s ease;
 }
 
@@ -221,6 +254,13 @@ body.rtl {
     min-width: 20px;
     display: inline-flex;
     justify-content: center;
+}
+
+.sidebar nav .menu-icon img,
+.sidebar nav .menu-caret img {
+    width: 1rem;
+    height: 1rem;
+    display: block;
 }
 
 .sidebar nav .menu-group--single .menu-link {
@@ -655,6 +695,20 @@ body.rtl {
     font-weight: var(--font-weight-medium);
     letter-spacing: 0.2px;
     transition: background-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.btn__icon {
+    width: 1rem;
+    height: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn__icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
 @keyframes btn-spinner-rotate {
@@ -1860,6 +1914,14 @@ body.rtl .table-toolbar__export {
     transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
+.menu-toggle__icon,
+.calendar-toggle__icon,
+.notification-toggle__icon {
+    width: 1.35rem;
+    height: 1.35rem;
+    display: block;
+}
+
 .notification-toggle:hover,
 .notification-toggle:focus-visible,
 .notification-toggle[aria-expanded="true"] {
@@ -2336,15 +2398,24 @@ body.rtl .calendar-panel__layout {
     .sidebar {
         position: fixed;
         top: 0;
-        left: 0;
         bottom: 0;
+        left: 0;
+        right: auto;
         height: 100dvh;
-        width: min(78vw, 280px);
+        width: min(78vw, var(--sidebar-width));
         max-width: 320px;
         transform: translateX(-100%);
         padding: clamp(3.75rem, 12vh, 5rem) 1.25rem 2rem;
         box-shadow: 0 24px 48px rgba(5, 7, 10, 0.45);
-        z-index: 1000;
+        border-right: none;
+        z-index: 1100;
+    }
+
+    body.rtl .sidebar {
+        left: auto;
+        right: 0;
+        transform: translateX(100%);
+        border-left: none;
         border-right: none;
     }
 
@@ -2360,25 +2431,24 @@ body.rtl .calendar-panel__layout {
         box-shadow: none;
     }
 
-    body:not(.sidebar-collapsed) {
-        overflow: hidden;
+    .sidebar-overlay {
+        display: block;
     }
 
-    body::before {
-        content: '';
-        position: fixed;
-        inset: 0;
-        background: rgba(5, 7, 10, 0.55);
-        opacity: 0;
-        visibility: hidden;
-        transition: opacity 0.3s ease, visibility 0.3s ease;
-        pointer-events: none;
-        z-index: 900;
-    }
-
-    body:not(.sidebar-collapsed)::before {
+    body:not(.sidebar-collapsed) .sidebar-overlay {
         opacity: 1;
         visibility: visible;
+        pointer-events: auto;
+    }
+
+    body.sidebar-collapsed .sidebar-overlay {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+    }
+
+    body:not(.sidebar-collapsed) {
+        overflow: hidden;
     }
 
     .main {
@@ -2403,9 +2473,12 @@ body.rtl .calendar-panel__layout {
 /* Sidebar collapsed state */
 @media (min-width: 993px) {
     body.sidebar-collapsed .sidebar {
-        width: 72px;
+        width: var(--sidebar-collapsed-width);
+        flex: 0 0 var(--sidebar-collapsed-width);
         transform: none;
-        padding: 1.5rem 0.75rem;
+        padding-inline: 0.75rem;
+        padding-block-start: 1.5rem;
+        padding-block-end: 2rem;
     }
 
     body.sidebar-collapsed .sidebar nav .menu-label {
@@ -2416,8 +2489,7 @@ body.rtl .calendar-panel__layout {
     body.sidebar-collapsed .sidebar nav .menu-link {
         justify-content: center;
         gap: 0.5rem;
-        padding-left: 0.75rem;
-        padding-right: 0.75rem;
+        padding-inline: 0.75rem;
     }
 
     body.sidebar-collapsed .sidebar nav .menu-summary {
@@ -2428,6 +2500,10 @@ body.rtl .calendar-panel__layout {
     body.sidebar-collapsed .sidebar nav .menu-caret {
         display: none;
     }
+
+    .sidebar-overlay {
+        display: none !important;
+    }
 }
 
 /* Menu toggle button */
@@ -2436,7 +2512,7 @@ body.rtl .calendar-panel__layout {
     border: none;
     color: var(--color-text);
     font-size: 1.5rem;
-    margin-right: 1rem;
+    margin-inline-end: 1rem;
     cursor: pointer;
     transition: color 0.2s ease, transform 0.15s ease;
 }
@@ -2444,6 +2520,24 @@ body.rtl .calendar-panel__layout {
 .menu-toggle:hover {
     color: var(--color-accent);
     transform: scale(1.05);
+}
+
+.menu-toggle__icon {
+    width: 1.75rem;
+    height: 1.75rem;
+    display: none;
+}
+
+.menu-toggle__icon--close {
+    display: block;
+}
+
+body.sidebar-collapsed .menu-toggle__icon--close {
+    display: none;
+}
+
+body.sidebar-collapsed .menu-toggle__icon--open {
+    display: block;
 }
 
 /* Reduce motion preference */
@@ -2608,9 +2702,10 @@ body.rtl .calendar-panel__layout {
     color: var(--color-primary, #2563eb);
 }
 
-.quick-action-card__icon svg {
+.quick-action-card__icon img {
     width: 1.35rem;
     height: 1.35rem;
+    object-fit: contain;
 }
 
 .quick-action-card__label {

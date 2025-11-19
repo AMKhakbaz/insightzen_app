@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}{% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}{% endblock %}
 
 {% block content %}
@@ -67,7 +68,10 @@
                     <td>{% if entry.status %}<span class="text-success">✓</span>{% else %}<span class="text-danger">×</span>{% endif %}</td>
                     <td>
                         <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary">
-                            {% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}
+                            <span class="btn__icon" aria-hidden="true">
+                                <img src="{% static 'core/icons/edit.svg' %}" alt="">
+                            </span>
+                            <span>{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</span>
                         </a>
                         <form action="{% url 'database_update' entry.pk %}" method="post" style="display:inline;">
                             {% csrf_token %}
@@ -75,7 +79,12 @@
                         </form>
                         <form action="{% url 'database_delete' entry.pk %}" method="post" style="display:inline;" onsubmit="return confirm('{% if lang == 'fa' %}آیا مطمئن هستید؟{% else %}Are you sure?{% endif %}');">
                             {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-outline">{% if lang == 'fa' %}حذف{% else %}Delete{% endif %}</button>
+                            <button type="submit" class="btn btn-sm btn-outline">
+                                <span class="btn__icon" aria-hidden="true">
+                                    <img src="{% static 'core/icons/delete.svg' %}" alt="">
+                                </span>
+                                <span>{% if lang == 'fa' %}حذف{% else %}Delete{% endif %}</span>
+                            </button>
                         </form>
                         <a href="{% url 'database_view' entry.pk %}" class="btn btn-sm btn-outline">{% if lang == 'fa' %}نمایش داده‌ها{% else %}View Data{% endif %}</a>
                     </td>
