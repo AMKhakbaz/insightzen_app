@@ -2,26 +2,99 @@
 {% block title %}{% if lang == 'fa' %}خانه{% else %}Home{% endif %}{% endblock %}
 
 {% block content %}
-<div class="card">
-    <h1>{% if lang == 'fa' %}خوش آمدید{% else %}Welcome{% endif %}, {{ user.first_name }}!</h1>
-    <p>
-        {% if lang == 'fa' %}
-            در اینجا می‌توانید اطلاعات حساب خود و پروژه‌های مرتبط را مشاهده کنید.
-        {% else %}
-            Here you can see your account information and related projects.
-        {% endif %}
-    </p>
-    {% if profile %}
-    <div class="table-responsive" style="max-width:600px;">
-        <table class="table">
-            <tr><th>{% if lang == 'fa' %}نام کامل{% else %}Full Name{% endif %}</th><td>{{ user.first_name }}</td></tr>
-            <tr><th>{% if lang == 'fa' %}ایمیل{% else %}Email{% endif %}</th><td>{{ user.username }}</td></tr>
-            <tr><th>{% if lang == 'fa' %}تلفن{% else %}Phone{% endif %}</th><td>{{ profile.phone }}</td></tr>
-            <tr><th>{% if lang == 'fa' %}نوع حساب{% else %}Account Type{% endif %}</th>
-                <td>{% if profile.organization %}{% if lang == 'fa' %}سازمانی{% else %}Organization{% endif %}{% else %}{% if lang == 'fa' %}عادی{% else %}Individual{% endif %}{% endif %}</td></tr>
-            <tr><th>{% if lang == 'fa' %}تاریخ ثبت‌نام{% else %}Register Date{% endif %}</th><td>{{ profile.register_date }}</td></tr>
-        </table>
+<div class="card" data-dashboard-root data-endpoint="{% url 'interviewer_dashboard_data' %}">
+    <div class="card-header" style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:center;">
+        <div>
+            <p class="eyebrow">{% if lang == 'fa' %}عملکرد مصاحبه تلفنی{% else %}Telephone interviewing{% endif %}</p>
+            <h1 style="margin:0;">{% if lang == 'fa' %}داشبورد تماس‌های شما{% else %}Your calling dashboard{% endif %}</h1>
+            <p style="margin:0.5rem 0 0;max-width:38rem;">
+                {% if lang == 'fa' %}
+                    نمایی جمع‌وجور از تعداد کل تماس‌ها، میزان موفقیت و پروژه‌های گذشته. فیلتر «همه»
+                    مجموع داده‌های شما را در همه پروژه‌ها نشان می‌دهد.
+                {% else %}
+                    A compact view of your total calls, success rate, and past projects. Use the “All” filter to see
+                    totals across every project you have called.
+                {% endif %}
+            </p>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:0.25rem;min-width:220px;">
+            <span class="eyebrow">{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</span>
+            <select class="form-control" data-dashboard-project>
+                {% for opt in dashboard_payload.project_options %}
+                    <option value="{{ opt.id }}" {% if opt.id == dashboard_payload.selected_project %}selected{% endif %}>
+                        {{ opt.label }}
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
     </div>
-    {% endif %}
+
+    <div class="stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-top:1rem;">
+        <div class="stat-card">
+            <p class="eyebrow">{% if lang == 'fa' %}کل تماس‌ها{% else %}Total calls{% endif %}</p>
+            <strong class="stat-value" data-total-calls>{{ dashboard_payload.summary.total_calls }}</strong>
+        </div>
+        <div class="stat-card">
+            <p class="eyebrow">{% if lang == 'fa' %}تماس‌های موفق{% else %}Successful calls{% endif %}</p>
+            <strong class="stat-value" data-success-calls>{{ dashboard_payload.summary.success_calls }}</strong>
+        </div>
+        <div class="stat-card">
+            <p class="eyebrow">{% if lang == 'fa' %}موفقیت{% else %}Success rate{% endif %}</p>
+            <strong class="stat-value"><span data-success-rate>{{ dashboard_payload.summary.success_rate }}</span>%</strong>
+        </div>
+    </div>
+
+    <div class="dashboard-layout" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;margin-top:1.5rem;align-items:start;">
+        <div class="chart-card" style="background:var(--surface-2,#0f172a);padding:1rem;border-radius:12px;box-shadow:var(--shadow-sm,0 4px 24px rgba(0,0,0,0.12));">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:0.5rem;">
+                <p class="eyebrow" style="margin:0;">{% if lang == 'fa' %}نمودار موفقیت{% else %}Success donut{% endif %}</p>
+                <span class="badge" style="background:#0ea5e9;color:white;">{% if lang == 'fa' %}به‌روز{% else %}Live{% endif %}</span>
+            </div>
+            <canvas data-dashboard-chart height="220" aria-label="{% if lang == 'fa' %}نمودار دونات موفقیت تماس{% else %}Call success donut chart{% endif %}"></canvas>
+            <div style="display:flex;gap:1.5rem;margin-top:1rem;flex-wrap:wrap;">
+                <div>
+                    <p style="margin:0;font-size:0.9rem;color:#cbd5e1;">{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}</p>
+                    <strong style="color:#22c55e;" data-success-percent>{{ dashboard_payload.chart.success_percentage }}%</strong>
+                </div>
+                <div>
+                    <p style="margin:0;font-size:0.9rem;color:#cbd5e1;">{% if lang == 'fa' %}ناموفق{% else %}Unsuccessful{% endif %}</p>
+                    <strong style="color:#ec4899;" data-failed-percent>{{ dashboard_payload.chart.failed_percentage }}%</strong>
+                </div>
+            </div>
+        </div>
+        <div class="summary-card" style="background:var(--surface-2,#0f172a);padding:1rem;border-radius:12px;box-shadow:var(--shadow-sm,0 4px 24px rgba(0,0,0,0.12));">
+            <p class="eyebrow" style="margin-top:0;">{% if lang == 'fa' %}پروژه برتر{% else %}Top performer{% endif %}</p>
+            <p data-top-summary style="margin:0 0 1rem;line-height:1.5;">{{ dashboard_payload.top_summary }}</p>
+            <table class="table" style="margin:0;">
+                <tbody>
+                    <tr>
+                        <th scope="row">{% if lang == 'fa' %}پروژه انتخابی{% else %}Selected project{% endif %}</th>
+                        <td data-selected-label>{{ dashboard_payload.selected_label }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">{% if lang == 'fa' %}کل تماس‌ها{% else %}Total calls{% endif %}</th>
+                        <td data-total-calls>{{ dashboard_payload.summary.total_calls }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">{% if lang == 'fa' %}موفق{% else %}Successful{% endif %}</th>
+                        <td data-success-calls>{{ dashboard_payload.summary.success_calls }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">{% if lang == 'fa' %}ناموفق{% else %}Unsuccessful{% endif %}</th>
+                        <td data-failed-calls>{{ dashboard_payload.summary.failed_calls }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">{% if lang == 'fa' %}درصد موفقیت{% else %}Success rate{% endif %}</th>
+                        <td><span data-success-rate>{{ dashboard_payload.summary.success_rate }}</span>%</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ dashboard_payload|json_script:"dashboard-data" }}
+<script src="{% static 'core/js/home_dashboard.js' %}"></script>
 {% endblock %}

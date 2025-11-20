@@ -22,40 +22,174 @@
     <p class="card-intro">
         {% if lang == 'fa' %}پس از پایان ددلاین هر پروژه، فقط مالک می‌تواند این داشبورد را مشاهده کند.{% else %}After a project's deadline passes, only the owner can review this dashboard.{% endif %}
     </p>
-    <div class="filters" style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
-        <div style="min-width:220px;">
-            <label for="project-select">{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</label><br>
-            <select id="project-select" class="form-select" multiple style="min-width:220px;max-height:150px;">
-                {% for p in projects %}
-                    <option value="{{ p.pk }}" {% if p.pk in filters.project_ids %}selected{% endif %}>{{ p.name }}</option>
-                {% endfor %}
-            </select>
-            <small class="form-hint">
+    <style>
+        .filters-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+            align-items: start;
+        }
+        .filter-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            background: var(--color-surface-muted);
+            border: 1px solid var(--color-border);
+            border-radius: 0.75rem;
+            padding: 0.75rem 0.85rem;
+        }
+        .filter-label {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-weight: var(--font-weight-medium);
+        }
+        .input-shell {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 0.6rem;
+            padding: 0.35rem 0.55rem;
+        }
+        .input-shell:focus-within {
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 2px var(--color-accent-soft);
+        }
+        .input-shell .input-prefix {
+            color: var(--color-text-muted);
+            font-size: 0.95em;
+            white-space: nowrap;
+        }
+        .input-shell select,
+        .input-shell input {
+            background: transparent;
+            border: none;
+            color: var(--color-text);
+            width: 100%;
+            padding: 0.35rem 0.15rem;
+        }
+        .input-shell select:focus,
+        .input-shell input:focus {
+            outline: none;
+        }
+        .selection-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+        .selection-chip {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 999px;
+            padding: 0.15rem 0.55rem;
+            font-size: var(--font-size-sm);
+            color: var(--color-text-muted);
+        }
+    </style>
+    <div class="filters-panel" role="region" aria-label="{% if lang == 'fa' %}فیلترها{% else %}Filters{% endif %}">
+        <div class="filter-field">
+            <div class="filter-label">
+                <span aria-hidden="true">📁</span>
+                <label for="project-select">{% if lang == 'fa' %}پروژه‌ها{% else %}Projects{% endif %}</label>
+            </div>
+            <p class="form-hint" style="margin:0;">
                 {% if lang == 'fa' %}
-                    برای انتخاب چند پروژه کلیدهای Ctrl (یا Cmd در مک) را نگه دارید؛ خالی گذاشتن یعنی همه پروژه‌ها.
+                    چند پروژه را انتخاب یا با صفحه‌کلید بین آن‌ها حرکت کنید؛ خالی گذاشتن یعنی همه پروژه‌ها.
                 {% else %}
-                    Hold Ctrl (or Cmd on macOS) to choose multiple projects, or leave empty for all.
+                    Choose one or more projects (keyboard friendly); leave blank to include every project.
                 {% endif %}
-            </small>
+            </p>
+            <div class="input-shell">
+                <span class="input-prefix">{% if lang == 'fa' %}تمام پروژه‌ها{% else %}All projects{% endif %}</span>
+                <select id="project-select" class="form-select" multiple style="min-height:120px;" aria-describedby="project-hint">
+                    {% for p in projects %}
+                        <option value="{{ p.pk }}" {% if p.pk in filters.project_ids %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="selection-chips" id="project-hint" aria-live="polite">
+                {% if filters.project_ids %}
+                    {% for p in projects %}
+                        {% if p.pk in filters.project_ids %}
+                            <span class="selection-chip">{{ p.name }}</span>
+                        {% endif %}
+                    {% endfor %}
+                {% else %}
+                    <span class="selection-chip">{% if lang == 'fa' %}همه پروژه‌ها فعال هستند{% else %}All projects included{% endif %}</span>
+                {% endif %}
+            </div>
         </div>
-        <div>
-            <label for="start-date">{% if lang == 'fa' %}از{% else %}From{% endif %}</label><br>
-            <input type="datetime-local" id="start-date" class="form-control" value="{{ filters.start|default:'' }}">
+        <div class="filter-field">
+            <div class="filter-label">
+                <span aria-hidden="true">⏱</span>
+                <label for="start-date">{% if lang == 'fa' %}بازه زمانی{% else %}Date range{% endif %}</label>
+            </div>
+            <p class="form-hint" style="margin:0;">
+                {% if lang == 'fa' %}
+                    محدوده دلخواه را مشخص کنید؛ خالی یعنی از ابتدا تا امروز.
+                {% else %}
+                    Set an optional window; leave blank to include all available dates.
+                {% endif %}
+            </p>
+            <div class="input-shell">
+                <span class="input-prefix">{% if lang == 'fa' %}از{% else %}From{% endif %}</span>
+                <input type="datetime-local" id="start-date" class="form-control" value="{{ filters.start|default:'' }}" placeholder="2024-01-01 08:00">
+            </div>
+            <div class="input-shell">
+                <span class="input-prefix">{% if lang == 'fa' %}تا{% else %}To{% endif %}</span>
+                <input type="datetime-local" id="end-date" class="form-control" value="{{ filters.end|default:'' }}" placeholder="2024-12-31 17:00">
+            </div>
         </div>
-        <div>
-            <label for="end-date">{% if lang == 'fa' %}تا{% else %}To{% endif %}</label><br>
-            <input type="datetime-local" id="end-date" class="form-control" value="{{ filters.end|default:'' }}">
+        <div class="filter-field">
+            <div class="filter-label">
+                <span aria-hidden="true">👥</span>
+                <label for="user-select">{% if lang == 'fa' %}پرسشگران{% else %}Interviewers{% endif %}</label>
+            </div>
+            <p class="form-hint" style="margin:0;">
+                {% if lang == 'fa' %}
+                    چند پرسشگر را انتخاب یا با صفحه‌کلید بین گزینه‌ها حرکت کنید؛ خالی یعنی همه پرسشگران.
+                {% else %}
+                    Pick one or many interviewers (keyboard friendly); leave empty to include every caller.
+                {% endif %}
+            </p>
+            <div class="input-shell">
+                <span class="input-prefix">{% if lang == 'fa' %}همه{% else %}All{% endif %}</span>
+                <select id="user-select" class="form-select" multiple style="min-height:120px;" aria-describedby="user-hint">
+                    {% for u in users %}
+                        <option value="{{ u.pk }}" {% if u.pk in filters.user_ids %}selected{% endif %}>{{ u.first_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="selection-chips" id="user-hint" aria-live="polite">
+                {% if filters.user_ids %}
+                    {% for u in users %}
+                        {% if u.pk in filters.user_ids %}
+                            <span class="selection-chip">{{ u.first_name }}</span>
+                        {% endif %}
+                    {% endfor %}
+                {% else %}
+                    <span class="selection-chip">{% if lang == 'fa' %}همه پرسشگران فعال هستند{% else %}All interviewers included{% endif %}</span>
+                {% endif %}
+            </div>
         </div>
-        <div>
-            <label for="user-select">{% if lang == 'fa' %}پرسشگران{% else %}Interviewers{% endif %}</label><br>
-            <select id="user-select" class="form-select" multiple style="min-width:200px;max-height:130px;">
-                {% for u in users %}
-                    <option value="{{ u.pk }}" {% if u.pk in filters.user_ids %}selected{% endif %}>{{ u.first_name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div style="display:flex;align-items:flex-end;">
-            <button id="export-btn" class="btn btn-secondary" type="button" style="height:38px;">
+        <div class="filter-field" style="justify-content:space-between;gap:0.75rem;">
+            <div>
+                <div class="filter-label">
+                    <span aria-hidden="true">⬇️</span>
+                    <span>{% if lang == 'fa' %}دریافت خروجی{% else %}Export options{% endif %}</span>
+                </div>
+                <p class="form-hint" style="margin:0;">
+                    {% if lang == 'fa' %}
+                        خروجی اکسل با فیلترهای بالا در دسترس است.
+                    {% else %}
+                        Download an Excel extract that respects all filters above.
+                    {% endif %}
+                </p>
+            </div>
+            <button id="export-btn" class="btn btn-secondary" type="button" style="width:100%;">
                 {% if lang == 'fa' %}خروجی اکسل{% else %}Export Excel{% endif %}
             </button>
         </div>
