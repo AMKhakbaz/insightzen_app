@@ -273,7 +273,138 @@ def toggle_language(request: HttpRequest, lang: str) -> HttpResponse:
 def home(request: HttpRequest) -> HttpResponse:
     """Display a simple dashboard for the logged in user."""
     profile = getattr(request.user, 'profile', None)
-    return render(request, 'home.html', {'profile': profile})
+    lang = request.session.get('lang', 'en')
+    dashboard_payload = _build_interviewer_dashboard_payload(request.user, lang)
+    return render(
+        request,
+        'home.html',
+        {
+            'profile': profile,
+            'dashboard_payload': dashboard_payload,
+            'lang': lang,
+        },
+    )
+
+
+def _compute_call_totals(total_calls: int, success_calls: int) -> Tuple[int, float]:
+    """Return unsuccessful call count and success rate percentage."""
+
+    failed_calls = max(total_calls - success_calls, 0)
+    success_rate = round((success_calls / total_calls) * 100.0, 1) if total_calls else 0.0
+    return failed_calls, success_rate
+
+
+def _build_interviewer_dashboard_payload(
+    user: User, lang: str, project_id: Optional[str] | None = None
+) -> Dict[str, Any]:
+    """Aggregate telephone interviewer metrics for the dashboard."""
+
+    call_qs = Interview.objects.filter(user=user)
+    project_stats_qs = call_qs.values('project_id', 'project__name').annotate(
+        total_calls=Count('id'), success_calls=Count('id', filter=Q(status=True))
+    )
+
+    project_rows: List[Dict[str, Any]] = []
+    for idx, row in enumerate(project_stats_qs.order_by('-success_calls', 'project__name')):
+        total_calls = int(row['total_calls'])
+        success_calls = int(row['success_calls'])
+        failed_calls, success_rate = _compute_call_totals(total_calls, success_calls)
+        project_rows.append(
+            {
+                'id': row['project_id'],
+                'name': row['project__name'],
+                'total_calls': total_calls,
+                'success_calls': success_calls,
+                'failed_calls': failed_calls,
+                'success_rate': success_rate,
+                'rank': idx + 1,
+            }
+        )
+
+    selected_id: Optional[int] = None
+    if project_id:
+        try:
+            parsed = int(project_id)
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed and any(p['id'] == parsed for p in project_rows):
+            selected_id = parsed
+
+    filtered_qs = call_qs.filter(project_id=selected_id) if selected_id else call_qs
+    total_calls = filtered_qs.count()
+    success_calls = filtered_qs.filter(status=True).count()
+    failed_calls, success_rate = _compute_call_totals(total_calls, success_calls)
+
+    top_project = project_rows[0] if project_rows else None
+    if top_project:
+        if lang == 'fa':
+            top_summary = (
+                f"پروژه برتر: {top_project['name']} (رتبه {top_project['rank']} با "
+                f"{top_project['success_calls']} تماس موفق)"
+            )
+        else:
+            top_summary = (
+                f"Top project: {top_project['name']} (rank #{top_project['rank']} with "
+                f"{top_project['success_calls']} successful calls)"
+            )
+    else:
+        top_summary = (
+            'هنوز تماسی ثبت نشده است.'
+            if lang == 'fa'
+            else 'No call activity has been recorded yet.'
+        )
+
+    project_options: List[Dict[str, Any]] = [
+        {
+            'id': '',
+            'name': 'all',
+            'label': 'همه پروژه‌ها' if lang == 'fa' else 'All projects',
+        }
+    ]
+    for project in sorted(project_rows, key=lambda p: p['name'] or ''):
+        project_options.append({'id': project['id'], 'name': project['name'], 'label': project['name']})
+
+    selected_label = project_options[0]['label']
+    if selected_id:
+        for opt in project_options:
+            if opt['id'] == selected_id:
+                selected_label = opt['label']
+                break
+
+    payload: Dict[str, Any] = {
+        'summary': {
+            'total_calls': total_calls,
+            'success_calls': success_calls,
+            'failed_calls': failed_calls,
+            'success_rate': success_rate,
+        },
+        'chart': {
+            'success_calls': success_calls,
+            'failed_calls': failed_calls,
+            'success_percentage': success_rate,
+            'failed_percentage': round(100.0 - success_rate, 1) if total_calls else 0.0,
+        },
+        'projects': project_rows,
+        'project_options': project_options,
+        'selected_project': selected_id,
+        'selected_label': selected_label,
+        'top_summary': top_summary,
+        'labels': {
+            'success': 'تماس موفق' if lang == 'fa' else 'Successful calls',
+            'unsuccessful': 'ناموفق' if lang == 'fa' else 'Unsuccessful',
+        },
+    }
+    return payload
+
+
+@login_required
+def interviewer_dashboard_data(request: HttpRequest) -> JsonResponse:
+    """Expose telephone interviewer totals for the current user as JSON."""
+
+    lang = request.session.get('lang', 'en')
+    project_id = request.GET.get('project')
+    payload = _build_interviewer_dashboard_payload(request.user, lang, project_id)
+    return JsonResponse(payload)
 
 
 @login_required

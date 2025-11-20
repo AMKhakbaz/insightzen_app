@@ -11,7 +11,6 @@
     {% if form.emails and not form.emails.is_hidden %}
     <div class="form-hint" style="margin-bottom:1rem;">
         <p><strong>English:</strong> Enter one or more email addresses separated by commas or new lines. Each address will receive the same project access and panel flags.</p>
-        <p><strong>فارسی:</strong> چندین ایمیل را با ویرگول یا در خطوط جداگانه وارد کنید. تمام آدرس‌ها همین دسترسی و پنل‌ها را دریافت می‌کنند.</p>
     </div>
     {% endif %}
     <form method="post" id="membership-form">
@@ -132,11 +131,8 @@
     {% if workbook_form %}
     <section class="membership-upload-panel" style="margin-top:2rem;">
         <h2>{% if lang == 'fa' %}بارگذاری فایل اکسل اعضا{% else %}Upload Membership Excel{% endif %}</h2>
-        <p>
-            <strong>English:</strong> Download the latest workbook, update the rows, and upload the edited file to replace or add memberships in bulk.
-        </p>
-        <p>
-            <strong>فارسی:</strong> فایل اکسل را دانلود کنید، ردیف‌ها را ویرایش یا اضافه کنید و همان فایل را بارگذاری کنید تا عضویت‌ها به‌صورت گروهی اضافه یا جایگزین شوند.
+        <p class="form-hint" style="font-size:0.95rem;color:var(--muted);margin-top:0.25rem;">
+            Download the latest workbook, update the rows, and upload the edited file to replace or add memberships in bulk.
         </p>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem;">
             <a class="btn btn-outline" href="{{ workbook_template_url }}" target="_blank" rel="noopener">

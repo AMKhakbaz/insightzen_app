@@ -25,6 +25,7 @@ urlpatterns = [
     path('lang/<str:lang>/', views.toggle_language, name='toggle_language'),
     # Home dashboard
     path('', views.home, name='home'),
+    path('api/interviewer/dashboard/', views.interviewer_dashboard_data, name='interviewer_dashboard_data'),
     # Project management
     path('projects/', views.project_list, name='project_list'),
     path('projects/add/', views.project_add, name='project_add'),
