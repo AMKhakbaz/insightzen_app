@@ -56,6 +56,9 @@ TEMPLATES = [
         'DIRS': [os.path.join(BASE_DIR, 'core', 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
+            'builtins': [
+                'django.templatetags.static',
+            ],
             'context_processors': [
                 'django.template.context_processors.debug',
                 'django.template.context_processors.request',
