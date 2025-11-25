@@ -79,7 +79,7 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         # Managed PostgreSQL instance that ships with the appliance.
-        'NAME': os.getenv('PGDATABASE', 'insightzen2'),
+        'NAME': os.getenv('PGDATABASE', 'insightzen3'),
         'USER': os.getenv('PGUSER', 'insightzen'),
         'PASSWORD': os.getenv('PGPASSWORD', 'K8RwWAPT5F7-?mrMBzR<'),
         'HOST': os.getenv('PGHOST', '185.204.171.78'),
