@@ -50,6 +50,11 @@ urlpatterns = [
     # Coding & Category (Qualitative coding) analysis
     path('coding/', views.coding, name='coding'),
     path('coding/analyze/', views.coding_analyze, name='coding_analyze'),
+    path('qc/management/', views.qc_management_view, name='qc_management'),
+    path('qc/management/config/', views.qc_management_config, name='qc_management_config'),
+    path('qc/performance/', views.qc_performance_dashboard, name='qc_performance_dashboard'),
+    path('qc/review/', views.qc_review, name='qc_review'),
+    path('ai/product-matrix/', views.product_matrix_ai, name='product_matrix_ai'),
 
     # Quota management
     path('quota/', views.quota_management, name='quota_management'),

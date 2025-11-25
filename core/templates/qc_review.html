@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% load i18n static %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex align-items-center mb-3">
+    <img src="{% static 'core/icons/feather/eye.svg' %}" alt="" class="me-2" width="24" height="24">
+    <h1 class="h4 mb-0">{% if lang == 'fa' %}بازبینی داده{% else %}Review Data{% endif %}</h1>
+  </div>
+  <p class="text-muted">{% if lang == 'fa' %}مرور و ارزیابی داده‌های گردآوری‌شده.{% else %}Review and assess collected data.{% endif %}</p>
+</div>
+{% endblock %}

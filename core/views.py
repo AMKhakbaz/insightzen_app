@@ -138,9 +138,12 @@ MEMBERSHIP_PANEL_DEFINITIONS: List[Tuple[str, str, str]] = [
     ('focus_group_panel', 'Focus Group Panel', 'پنل گروه کانونی'),
     ('qc_management', 'QC Management', 'مدیریت QC'),
     ('qc_performance', 'QC Performance', 'کارایی QC'),
+    ('review_data', 'Review Data', 'بازبینی داده'),
+    ('edit_data', 'Edit Data', 'ویرایش داده'),
     ('voice_review', 'Voice Review', 'بازبینی صدا'),
     ('callback_qc', 'Callback QC', 'QC تماس برگشتی'),
-    ('coding', 'Coding', 'کدگذاری'),
+    ('coding', 'Coding AI', 'کدگذاری هوش مصنوعی'),
+    ('product_matrix_ai', 'Product Matrix AI', 'ماتریس محصول هوش مصنوعی'),
     ('statistical_health_check', 'Statistical Health Check', 'بررسی سلامت آماری'),
     ('tabulation', 'Tabulation', 'جدول‌بندی'),
     ('statistics', 'Statistics', 'آمار'),
@@ -1231,7 +1234,11 @@ def _build_database_view_export_dataset(request: HttpRequest, params: Dict[str, 
 def _build_qc_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
     lang = request.session.get('lang', 'en')
     user = request.user
-    if not (_user_has_panel(user, 'qc_management') or _user_has_panel(user, 'qc_performance')):
+    if not (
+        _user_has_panel(user, 'qc_management')
+        or _user_has_panel(user, 'qc_performance')
+        or _user_has_panel(user, 'edit_data')
+    ):
         raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
     entry_id = _resolve_entry_param(params, ('entry', 'entryId'))
     entry = get_object_or_404(DatabaseEntry, pk=entry_id)
@@ -1249,6 +1256,280 @@ def _build_qc_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Di
         rows.append({column: _normalise_record_value(record.get(column, '')) for column in column_names})
     filename = f"qc-entry-{entry.pk}"
     return {'columns': columns, 'rows': rows, 'filename': filename}
+
+
+@login_required
+def _default_qc_measure(columns: List[str]) -> List[Dict[str, Any]]:
+    """Return a basic QC measure tree derived from available columns."""
+
+    if not columns:
+        return [
+            {'id': 'qc-1', 'label': 'QC Item', 'field': '', 'children': []},
+        ]
+    tree: List[Dict[str, Any]] = []
+    for idx, column in enumerate(columns[:8]):
+        tree.append({'id': f'qc-{idx + 1}', 'label': column, 'field': column, 'children': []})
+    return tree
+
+
+def _flatten_measure_leaves(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return a flat list of measurement leaves preserving order."""
+
+    leaves: List[Dict[str, Any]] = []
+
+    def walk(node: Dict[str, Any]) -> None:
+        children = node.get('children') or []
+        if children:
+            for child in children:
+                walk(child)
+            return
+        leaves.append(
+            {
+                'id': str(node.get('id') or ''),
+                'label': str(node.get('label') or node.get('field') or ''),
+                'field': str(node.get('field') or node.get('label') or ''),
+            }
+        )
+
+    for node in nodes:
+        walk(node)
+    return leaves
+
+
+def _load_qc_measure_structure(request: HttpRequest, entry: DatabaseEntry | None, columns: List[str]) -> List[Dict[str, Any]]:
+    """Load the saved QC measure structure for an entry or return a default tree."""
+
+    stored = None
+    if entry:
+        stored = (request.session.get('qc_measure') or {}).get(str(entry.pk))
+    if stored:
+        return stored
+    return _default_qc_measure(columns)
+
+
+@login_required
+def qc_management_view(request: HttpRequest) -> HttpResponse:
+    """Interactive workspace for QC measure design and assignments."""
+
+    user = request.user
+    lang = request.session.get('lang', 'en')
+    if not _user_has_panel(user, 'qc_management'):
+        messages.error(request, _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+        return redirect('home')
+
+    project_qs = Project.objects.all()
+    if not (_user_is_organisation(user) or getattr(user, 'is_superuser', False)):
+        project_qs = project_qs.filter(memberships__user=user, memberships__qc_management=True)
+    projects = list(project_qs.distinct().order_by('name'))
+
+    selected_project: Optional[Project] = None
+    selected_entry: Optional[DatabaseEntry] = None
+    entries: List[DatabaseEntry] = []
+    assignment_rows: List[Dict[str, Any]] = []
+    assignment_filters: List[Dict[str, Any]] = []
+    assignment_columns: List[Dict[str, Any]] = []
+    qc_measure_tree: List[Dict[str, Any]] = []
+    measure_leaves: List[Dict[str, Any]] = []
+    snapshot = None
+    total_records = 0
+    total_pages = 1
+    page = 1
+    page_size = 25
+    page_sizes = [25, 50, 100]
+    start_index = 0
+    end_index = 0
+    has_previous = False
+    has_next = False
+    search_term = (request.GET.get('search') or '').strip()
+
+    project_param = request.GET.get('project')
+    if project_param:
+        for project in projects:
+            if str(project.pk) == project_param:
+                selected_project = project
+                break
+
+    if selected_project:
+        entries = list(DatabaseEntry.objects.filter(project=selected_project).order_by('db_name'))
+        entry_param = request.GET.get('entry')
+        if entry_param:
+            for entry in entries:
+                if str(entry.pk) == entry_param:
+                    selected_entry = entry
+                    break
+
+    if selected_entry:
+        snapshot = load_entry_snapshot(selected_entry)
+        columns = infer_columns(snapshot.records)
+        qc_measure_tree = _load_qc_measure_structure(request, selected_entry, columns)
+        measure_leaves = _flatten_measure_leaves(qc_measure_tree)
+        if not measure_leaves:
+            measure_leaves = _flatten_measure_leaves(_default_qc_measure(columns))
+
+        for idx, leaf in enumerate(measure_leaves):
+            filter_val = (request.GET.get(f'filter_{idx}') or '').strip()
+            assignment_filters.append({'index': idx, 'label': leaf['label'], 'value': filter_val})
+
+        column_filters = {leaf['field']: f['value'] for leaf, f in zip(measure_leaves, assignment_filters) if f['value']}
+        search_terms = [term for term in search_term.lower().split() if term]
+
+        filtered_records: List[Tuple[Dict[str, Any], Dict[str, str]]] = []
+        for record in snapshot.records:
+            value_map: Dict[str, str] = {}
+            for leaf in measure_leaves:
+                raw_value = record.get(leaf['field'], '')
+                value_map[leaf['field']] = _normalise_record_value(raw_value)
+            combined_text = ' '.join(value_map.values()).lower()
+            if search_terms and not all(term in combined_text for term in search_terms):
+                continue
+            matches = True
+            for col, filter_text in column_filters.items():
+                if not _matches_filter_value(value_map.get(col, ''), filter_text):
+                    matches = False
+                    break
+            if matches:
+                filtered_records.append((record, value_map))
+
+        total_records = len(filtered_records)
+        try:
+            requested_size = int(request.GET.get('page_size', page_size))
+        except (TypeError, ValueError):
+            requested_size = page_size
+        if requested_size in page_sizes:
+            page_size = requested_size
+        total_pages = max(1, ceil(total_records / page_size))
+        try:
+            requested_page = int(request.GET.get('page', 1))
+        except (TypeError, ValueError):
+            requested_page = 1
+        page = min(max(1, requested_page), total_pages)
+        start_index = (page - 1) * page_size
+        end_index = min(start_index + page_size, total_records)
+        has_previous = page > 1
+        has_next = page < total_pages
+        page_slice = filtered_records[start_index:end_index]
+
+        assignment_columns = [
+            {'name': 'Select', 'sort_type': 'text', 'is_select': True},
+        ]
+        assignment_columns.extend(
+            [
+                {
+                    'name': leaf['label'],
+                    'sort_type': _detect_sort_type(snapshot.records, leaf['field']),
+                    'field': leaf['field'],
+                }
+                for leaf in measure_leaves
+            ]
+        )
+
+        for record, value_map in page_slice:
+            submission_id = _extract_submission_id(record) or ''
+            rows = [value_map.get(leaf['field'], '') for leaf in measure_leaves]
+            assignment_rows.append({
+                'id': submission_id,
+                'values': rows,
+            })
+
+    context = {
+        'projects': projects,
+        'selected_project': selected_project,
+        'entries': entries,
+        'selected_entry': selected_entry,
+        'qc_measure_tree': qc_measure_tree,
+        'measure_leaves': measure_leaves,
+        'assignment_columns': assignment_columns,
+        'assignment_rows': assignment_rows,
+        'assignment_filters': assignment_filters,
+        'page': page,
+        'page_size': page_size,
+        'page_sizes': page_sizes,
+        'total_pages': total_pages,
+        'total_records': total_records,
+        'start_index': start_index + 1 if total_records else 0,
+        'end_index': end_index,
+        'has_previous': has_previous,
+        'has_next': has_next,
+        'search_term': search_term,
+        'lang': lang,
+    }
+    return render(request, 'qc_management.html', context)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def qc_management_config(request: HttpRequest) -> JsonResponse:
+    """Return or persist QC measure configuration for a database entry."""
+
+    user = request.user
+    lang = request.session.get('lang', 'en')
+    if not _user_has_panel(user, 'qc_management'):
+        return JsonResponse({'error': _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.')}, status=403)
+
+    try:
+        entry_id = int(request.GET.get('entry') or request.POST.get('entry') or 0)
+    except (TypeError, ValueError):
+        entry_id = 0
+    entry = get_object_or_404(DatabaseEntry, pk=entry_id)
+
+    if not (_user_is_organisation(user) or getattr(user, 'is_superuser', False)):
+        if not Membership.objects.filter(user=user, project=entry.project, qc_management=True).exists():
+            return JsonResponse({'error': _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.')}, status=403)
+
+    snapshot = load_entry_snapshot(entry)
+    columns = infer_columns(snapshot.records)
+
+    if request.method == 'GET':
+        measure = _load_qc_measure_structure(request, entry, columns)
+        return JsonResponse({'measure': measure, 'columns': columns, 'total_records': len(snapshot.records)})
+
+    try:
+        payload = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({'error': _localise_text(lang, 'Invalid payload.', 'داده ارسالی نامعتبر است.')}, status=400)
+
+    measure = payload.get('measure')
+    if not isinstance(measure, list):
+        return JsonResponse({'error': _localise_text(lang, 'Invalid measure structure.', 'ساختار اندازه‌گیری نادرست است.')}, status=400)
+
+    session_store = request.session.get('qc_measure') or {}
+    session_store[str(entry.pk)] = measure
+    request.session['qc_measure'] = session_store
+    request.session.modified = True
+    return JsonResponse({'ok': True, 'saved_for': entry.pk})
+
+
+@login_required
+def qc_performance_dashboard(request: HttpRequest) -> HttpResponse:
+    """Placeholder dashboard for QC performance insights."""
+
+    lang = request.session.get('lang', 'en')
+    if not _user_has_panel(request.user, 'qc_performance'):
+        messages.error(request, _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+        return redirect('home')
+    return render(request, 'qc_performance.html', {'lang': lang})
+
+
+@login_required
+def qc_review(request: HttpRequest) -> HttpResponse:
+    """Entry point for reviewing submitted data."""
+
+    lang = request.session.get('lang', 'en')
+    if not _user_has_panel(request.user, 'review_data'):
+        messages.error(request, _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+        return redirect('home')
+    return render(request, 'qc_review.html', {'lang': lang})
+
+
+@login_required
+def product_matrix_ai(request: HttpRequest) -> HttpResponse:
+    """Landing page for AI-driven product matrix features."""
+
+    lang = request.session.get('lang', 'en')
+    if not _user_has_panel(request.user, 'product_matrix_ai'):
+        messages.error(request, _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+        return redirect('home')
+    return render(request, 'product_matrix_ai.html', {'lang': lang})
 
 
 def _build_quota_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -3505,13 +3786,21 @@ def qc_edit(request: HttpRequest) -> HttpResponse:
 
     user = request.user
     lang = request.session.get('lang', 'en')
-    if not (_user_has_panel(user, 'qc_management') or _user_has_panel(user, 'qc_performance')):
+    if not (
+        _user_has_panel(user, 'qc_management')
+        or _user_has_panel(user, 'qc_performance')
+        or _user_has_panel(user, 'edit_data')
+    ):
         messages.error(request, 'Access denied: you do not have quality control permissions.')
         return redirect('home')
 
     project_qs = Project.objects.filter(memberships__user=user)
     if not _user_is_organisation(user):
-        project_qs = project_qs.filter(Q(memberships__qc_management=True) | Q(memberships__qc_performance=True))
+        project_qs = project_qs.filter(
+            Q(memberships__qc_management=True)
+            | Q(memberships__qc_performance=True)
+            | Q(memberships__edit_data=True)
+        )
     accessible_projects = list(project_qs.distinct().order_by('name'))
 
     selected_project: Optional[Project] = None
@@ -3647,10 +3936,15 @@ def qc_edit_link(request: HttpRequest, entry_id: int) -> JsonResponse:
     entry = get_object_or_404(DatabaseEntry, pk=entry_id)
     project = entry.project
     lang = request.session.get('lang', 'en')
-    if not (_user_is_organisation(user) or Membership.objects.filter(
-        user=user,
-        project=project,
-    ).filter(Q(qc_management=True) | Q(qc_performance=True)).exists()):
+    if not (
+        _user_is_organisation(user)
+        or Membership.objects.filter(
+            user=user,
+            project=project,
+        )
+        .filter(Q(qc_management=True) | Q(qc_performance=True) | Q(edit_data=True))
+        .exists()
+    ):
         message = 'Access denied.' if lang != 'fa' else 'دسترسی مجاز نیست.'
         return JsonResponse({'error': message}, status=403)
 

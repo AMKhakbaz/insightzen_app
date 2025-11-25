@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% load i18n static %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex align-items-center mb-3">
+    <img src="{% static 'core/icons/feather/activity.svg' %}" alt="" class="me-2" width="24" height="24">
+    <h1 class="h4 mb-0">{% if lang == 'fa' %}کارایی QC{% else %}QC Performance{% endif %}</h1>
+  </div>
+  <p class="text-muted">{% if lang == 'fa' %}نمای کلی کارایی کنترل کیفیت.{% else %}Overview of quality control performance.{% endif %}</p>
+</div>
+{% endblock %}

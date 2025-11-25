@@ -1,0 +1,28 @@
+<ul class="qc-measure-list" data-measure-list>
+    {% for node in nodes %}
+        <li class="qc-measure-item" data-measure-id="{{ node.id }}" data-measure-field="{{ node.field }}">
+            <div class="qc-measure-item__body" draggable="true" data-draggable>
+                <div class="qc-measure-item__icon" aria-hidden="true"></div>
+                <div class="qc-measure-item__content">
+                    <span class="qc-measure-item__label">{{ node.label }}</span>
+                    <small class="qc-measure-item__field">{{ node.field }}</small>
+                </div>
+                <div class="qc-measure-item__actions">
+                    <button type="button" class="btn btn-text btn-sm" data-add-child>
+                        {% if lang == 'fa' %}افزودن زیرآیتم{% else %}Add child{% endif %}
+                    </button>
+                    <button type="button" class="btn btn-text btn-sm" data-remove-item>
+                        {% if lang == 'fa' %}حذف{% else %}Remove{% endif %}
+                    </button>
+                </div>
+            </div>
+            {% if node.children %}
+                {% include 'partials/qc_measure_list.html' with nodes=node.children lang=lang %}
+            {% endif %}
+        </li>
+    {% empty %}
+        <li class="qc-measure-item qc-measure-item--empty" data-empty>
+            {% if lang == 'fa' %}هنوز آیتمی تعریف نشده است.{% else %}No QC measure items defined yet.{% endif %}
+        </li>
+    {% endfor %}
+</ul>

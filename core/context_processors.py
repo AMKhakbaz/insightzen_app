@@ -28,8 +28,9 @@ def language(request) -> Dict[str, Any]:
     panel_fields = [
         'database_management', 'quota_management', 'collection_management',
         'collection_performance', 'telephone_interviewer', 'fieldwork_interviewer',
-        'focus_group_panel', 'qc_management', 'qc_performance', 'voice_review',
-        'callback_qc', 'coding', 'statistical_health_check', 'tabulation',
+        'focus_group_panel', 'qc_management', 'qc_performance', 'review_data', 'edit_data',
+        'voice_review', 'callback_qc', 'coding', 'product_matrix_ai',
+        'statistical_health_check', 'tabulation',
         'statistics', 'funnel_analysis', 'conjoint_analysis', 'segmentation_analysis'
     ]
     for pf in panel_fields:
