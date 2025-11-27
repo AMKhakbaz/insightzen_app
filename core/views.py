@@ -1258,7 +1258,6 @@ def _build_qc_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Di
     return {'columns': columns, 'rows': rows, 'filename': filename}
 
 
-@login_required
 def _default_qc_measure(columns: List[str]) -> List[Dict[str, Any]]:
     """Return a basic QC measure tree derived from available columns."""
 
