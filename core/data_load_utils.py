@@ -1,10 +1,10 @@
 """Utility helpers for pulling the respondent bank from the main database.
 
-During the first ``runserver`` execution we prompt the operator to
-optionally sync the respondent bank (``Person``/``Mobile`` rows) from the
-primary PostgreSQL instance.  The helpers in this module encapsulate the
-connection details and copy logic so ``CoreConfig`` can simply call
-``load_people_and_mobile``.
+These helpers encapsulate the connection details and copy logic for syncing
+the respondent bank (``Person``/``Mobile`` rows) from the primary PostgreSQL
+instance.  They are used by management commands such as
+``import_respondent_bank`` to keep application startup free of database work
+or interactive prompts.
 """
 
 from __future__ import annotations

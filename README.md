@@ -19,3 +19,14 @@ point at a different database.
 
 Export any of these variables (for example via a `.env` file) before running the
 Django management commands to override the defaults.
+
+## Loading the respondent bank
+
+To populate the local `Person` and `Mobile` tables from the primary PostgreSQL
+source, run the dedicated management command after applying migrations:
+
+```bash
+python manage.py import_respondent_bank  # add --no-input to skip confirmation
+```
+
+Pass `--force` if you need to import even when data already exists.
