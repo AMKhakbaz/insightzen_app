@@ -6,11 +6,10 @@ application. By grouping related logic into this app, the codebase stays
 organised and easier to maintain.
 
 The ``default_app_config`` attribute below tells Django to use our
-custom ``CoreConfig`` class.  ``CoreConfig`` implements a ``ready()``
-method which prompts the developer on first run to optionally load
-sample data from a remote PostgreSQL database into the local
-``Person`` and ``Mobile`` tables.  Without this line, Django would
-fallback to a default configuration and the prompt would never run.
+custom ``CoreConfig`` class.  ``CoreConfig`` is intentionally
+lightweight; tasks such as loading the respondent bank now live in
+management commands (see ``import_respondent_bank``) so application
+startup never prompts for input or queries the database unexpectedly.
 """
 
 default_app_config = 'core.apps.CoreConfig'
