@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Membership, Profile, Project, Quota
+from core.models import CallSample, Membership, Mobile, Person, Profile, Project, Quota
 
 
 class QuotaManagementViewTests(TestCase):
@@ -75,3 +75,43 @@ class QuotaManagementViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertGreater(Quota.objects.filter(project=self.project).count(), 0)
+
+    def test_post_quota_with_existing_call_samples(self) -> None:
+        """Quota save should succeed even when call samples already exist."""
+
+        quota = Quota.objects.create(
+            project=self.project,
+            city='Tehran',
+            age_start=18,
+            age_end=65,
+            gender='male',
+            target_count=10,
+        )
+        person = Person.objects.create(
+            national_code='NC001',
+            full_name='Ali Reza',
+            birth_year=1990,
+            city_name='Tehran',
+            gender='male',
+        )
+        mobile = Mobile.objects.create(mobile='09120000000', person=person)
+        CallSample.objects.create(project=self.project, quota=quota, person=person, mobile=mobile)
+
+        payload = {
+            'project': str(self.project.pk),
+            'enable_city': 'on',
+            'enable_age': 'on',
+            'enable_gender': 'on',
+            'city_data': json.dumps([{'city': 'Tehran', 'quota': 100}]),
+            'age_data': json.dumps([{'start': 18, 'end': 65, 'quota': 100}]),
+            'gender_data': json.dumps([
+                {'value': 'male', 'quota': 50},
+                {'value': 'female', 'quota': 50},
+            ]),
+        }
+
+        response = self.client.post(reverse('quota_management'), payload, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreater(Quota.objects.filter(project=self.project).count(), 0)
+        self.assertEqual(CallSample.objects.filter(project=self.project).count(), 0)

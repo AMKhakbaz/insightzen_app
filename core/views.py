@@ -2827,6 +2827,7 @@ def quota_management(request: HttpRequest) -> HttpResponse:
             messages.error(request, str(exc))
             return redirect('quota_management')
 
+        CallSample.objects.filter(project=project).delete()
         Quota.objects.filter(project=project).delete()
         sample_size = int(project.sample_size)
         quota_cells: List[Tuple[Optional[str], Optional[int], Optional[int], Optional[str], int]] = []
