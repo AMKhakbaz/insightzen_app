@@ -52,6 +52,7 @@ urlpatterns = [
     path('coding/analyze/', views.coding_analyze, name='coding_analyze'),
     path('qc/management/', views.qc_management_view, name='qc_management'),
     path('qc/management/config/', views.qc_management_config, name='qc_management_config'),
+    path('qc/management/assign/', views.qc_assignment_assign, name='qc_assignment_assign'),
     path('qc/performance/', views.qc_performance_dashboard, name='qc_performance_dashboard'),
     path('qc/review/', views.qc_review, name='qc_review'),
     path('ai/product-matrix/', views.product_matrix_ai, name='product_matrix_ai'),

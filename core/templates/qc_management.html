@@ -188,6 +188,15 @@
                                 <input type="hidden" name="filter_{{ filter.index }}" value="{{ filter.value }}">
                             {% endfor %}
                         </form>
+
+                        <div class="qc-assignment__assign">
+                            <label class="form-label" for="qc-assign-email">{% if lang == 'fa' %}اختصاص به{% else %}Assign to{% endif %}</label>
+                            <div class="qc-assignment__assign-row d-flex align-items-center gap-2">
+                                <input type="email" id="qc-assign-email" name="assign_email" class="form-control" placeholder="{% if lang == 'fa' %}example@email.com{% else %}example@email.com{% endif %}">
+                                <button type="button" class="btn btn-primary" data-assign-button data-endpoint="{{ qc_assignment_endpoint }}" data-entry="{{ selected_entry.pk }}">{% if lang == 'fa' %}Assign{% else %}Assign{% endif %}</button>
+                            </div>
+                            <div class="qc-assignment__assign-status text-muted mt-2" data-assign-status role="status" aria-live="polite"></div>
+                        </div>
                     {% else %}
                         <p class="qc-empty">{% if lang == 'fa' %}برای نمایش جدول ابتدا ساختار ستون‌ها را تعریف کنید.{% else %}Define QC measure columns to generate the assignment table.{% endif %}</p>
                     {% endif %}
