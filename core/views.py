@@ -54,6 +54,7 @@ from core.services.database_cache import (
 )
 from core.services.persian_dates import calculate_age_from_birth_info
 from core.services.notifications import (
+    create_notification,
     ensure_project_deadline_notifications,
     localised_message,
     mark_notifications_read,
@@ -1450,6 +1451,7 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         'has_previous': has_previous,
         'has_next': has_next,
         'search_term': search_term,
+        'qc_assignment_endpoint': reverse('qc_assignment_assign'),
         'lang': lang,
     }
     return render(request, 'qc_management.html', context)
@@ -1496,6 +1498,156 @@ def qc_management_config(request: HttpRequest) -> JsonResponse:
     request.session['qc_measure'] = session_store
     request.session.modified = True
     return JsonResponse({'ok': True, 'saved_for': entry.pk})
+
+
+@login_required
+@require_POST
+def qc_assignment_assign(request: HttpRequest) -> JsonResponse:
+    """Assign QC submission rows to a project member and notify them."""
+
+    lang = request.session.get('lang', 'en')
+    user = request.user
+
+    if not _user_has_panel(user, 'qc_management'):
+        return JsonResponse({'error': _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.')}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({'error': _localise_text(lang, 'Invalid payload.', 'داده ارسالی نامعتبر است.')}, status=400)
+
+    try:
+        entry_id = int(payload.get('entry') or 0)
+    except (TypeError, ValueError):
+        entry_id = 0
+    email = (payload.get('email') or '').strip()
+    submissions_raw = payload.get('submissions')
+
+    if not entry_id:
+        return JsonResponse({'error': _localise_text(lang, 'Database entry is required.', 'شناسه پایگاه لازم است.')}, status=400)
+    if not email:
+        return JsonResponse({'error': _localise_text(lang, 'Email is required.', 'ایمیل الزامی است.')}, status=400)
+    if not isinstance(submissions_raw, list):
+        return JsonResponse(
+            {
+                'error': _localise_text(
+                    lang,
+                    'At least one submission must be selected.',
+                    'حداقل یک رکورد باید انتخاب شود.',
+                )
+            },
+            status=400,
+        )
+
+    submissions = [str(item).strip() for item in submissions_raw if str(item).strip()]
+    if not submissions:
+        return JsonResponse(
+            {
+                'error': _localise_text(
+                    lang,
+                    'At least one submission must be selected.',
+                    'حداقل یک رکورد باید انتخاب شود.',
+                )
+            },
+            status=400,
+        )
+
+    entry = get_object_or_404(DatabaseEntry, pk=entry_id)
+
+    if not (_user_is_organisation(user) or getattr(user, 'is_superuser', False)):
+        if not Membership.objects.filter(user=user, project=entry.project, qc_management=True).exists():
+            return JsonResponse({'error': _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.')}, status=403)
+        if _project_deadline_locked_for_user(entry.project, user):
+            return JsonResponse(
+                {
+                    'error': _localise_text(
+                        lang,
+                        'Project deadline has passed. Only the owner may assign.',
+                        'ددلاین پروژه گذشته است و تنها مالک می‌تواند تخصیص دهد.',
+                    )
+                },
+                status=403,
+            )
+
+    snapshot = load_entry_snapshot(entry)
+    available_ids = {_extract_submission_id(record) for record in snapshot.records}
+    missing = [sid for sid in submissions if sid not in available_ids]
+    if missing:
+        return JsonResponse(
+            {
+                'error': _localise_text(
+                    lang,
+                    'Some submissions were not found for this entry.',
+                    'برخی رکوردهای انتخاب‌شده در این پایگاه یافت نشد.',
+                )
+            },
+            status=404,
+        )
+
+    recipient = (
+        User.objects.filter(email__iexact=email).first()
+        or User.objects.filter(username__iexact=email).first()
+    )
+    if not recipient:
+        return JsonResponse(
+            {
+                'error': _localise_text(
+                    lang,
+                    'User not found for the provided email.',
+                    'کاربری با این ایمیل یافت نشد.',
+                )
+            },
+            status=404,
+        )
+
+    if not Membership.objects.filter(user=recipient, project=entry.project).exists():
+        return JsonResponse(
+            {
+                'error': _localise_text(
+                    lang,
+                    'Recipient is not a member of this project.',
+                    'گیرنده عضو این پروژه نیست.',
+                )
+            },
+            status=400,
+        )
+
+    actor_label = user.get_full_name() or user.username
+    submission_count = len(submissions)
+    message_en = (
+        f'You have {submission_count} QC record(s) assigned for project "{entry.project.name}".'
+    )
+    message_fa = f'{submission_count} رکورد برای کنترل کیفیت پروژه «{entry.project.name}» به شما ارجاع شد.'
+
+    create_notification(
+        recipient,
+        message_en=message_en,
+        message_fa=message_fa,
+        event_type=Notification.EventType.CUSTOM_MESSAGE,
+        project=entry.project,
+        extra_metadata={
+            'entry_id': entry.pk,
+            'project_id': entry.project_id,
+            'submission_ids': submissions,
+            'assigned_by': actor_label,
+        },
+    )
+
+    ActivityLog.objects.create(
+        user=user,
+        action='qc_assignment',
+        details=json.dumps(
+            {
+                'entry': entry.pk,
+                'project': entry.project_id,
+                'assigned_to': recipient.pk,
+                'submission_ids': submissions,
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    return JsonResponse({'ok': True, 'assigned_count': submission_count, 'recipient': recipient.pk})
 
 
 @login_required

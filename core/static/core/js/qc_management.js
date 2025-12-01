@@ -3,6 +3,10 @@
   const saveButton = document.querySelector('[data-save-measure]');
   const addRootButton = document.querySelector('[data-add-root]');
   const statusEl = document.querySelector('[data-measure-status]');
+  const assignmentTable = document.querySelector('[data-filter-context="qc_management_assignment"]');
+  const assignEmailInput = document.getElementById('qc-assign-email');
+  const assignButton = document.querySelector('[data-assign-button]');
+  const assignStatus = document.querySelector('[data-assign-status]');
 
   function csrfToken() {
     const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
@@ -202,6 +206,106 @@
     statusEl.dataset.state = state || '';
   }
 
+  function setAssignStatus(message, state) {
+    if (!assignStatus) return;
+    assignStatus.textContent = message || '';
+    assignStatus.dataset.state = state || '';
+  }
+
+  function selectedAssignments() {
+    if (!assignmentTable) return [];
+    return Array.from(
+      assignmentTable.querySelectorAll('tbody input[type="checkbox"]:checked'),
+    )
+      .map((box) => box.value)
+      .filter((value) => value);
+  }
+
+  async function handleAssignClick() {
+    if (!assignButton) return;
+    const endpoint = assignButton.dataset.endpoint;
+    const entry = assignButton.dataset.entry;
+    const email = (assignEmailInput?.value || '').trim();
+    const selected = selectedAssignments();
+
+    if (!endpoint || !entry) {
+      setAssignStatus(
+        document.documentElement.lang === 'fa'
+          ? 'آدرس تخصیص در دسترس نیست.'
+          : 'Assignment endpoint is unavailable.',
+        'error',
+      );
+      return;
+    }
+
+    if (!email) {
+      setAssignStatus(
+        document.documentElement.lang === 'fa'
+          ? 'ایمیل را وارد کنید.'
+          : 'Please enter an email address.',
+        'error',
+      );
+      return;
+    }
+
+    if (!selected.length) {
+      setAssignStatus(
+        document.documentElement.lang === 'fa'
+          ? 'هیچ ردیفی انتخاب نشده است.'
+          : 'No rows selected.',
+        'error',
+      );
+      return;
+    }
+
+    setAssignStatus(
+      document.documentElement.lang === 'fa' ? 'در حال تخصیص…' : 'Assigning…',
+      'pending',
+    );
+
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken(),
+        },
+        body: JSON.stringify({
+          entry,
+          email,
+          submissions: selected,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        throw new Error(data.error || 'Request failed');
+      }
+      setAssignStatus(
+        document.documentElement.lang === 'fa'
+          ? 'تخصیص با موفقیت انجام شد.'
+          : 'Assignments sent successfully.',
+        'success',
+      );
+      if (assignEmailInput) assignEmailInput.value = '';
+      assignmentTable
+        ?.querySelectorAll('tbody input[type="checkbox"]:checked')
+        .forEach((box) => {
+          // eslint-disable-next-line no-param-reassign
+          box.checked = false;
+        });
+      setTimeout(() => setAssignStatus('', ''), 3500);
+    } catch (err) {
+      setAssignStatus(
+        document.documentElement.lang === 'fa'
+          ? 'تخصیص انجام نشد.'
+          : 'Assignment failed.',
+        'error',
+      );
+      // eslint-disable-next-line no-console
+      console.error(err);
+    }
+  }
+
   async function saveStructure() {
     if (!saveButton || !measureRoot) return;
     const endpoint = saveButton.dataset.endpoint;
@@ -238,6 +342,9 @@
   }
   if (saveButton) {
     saveButton.addEventListener('click', saveStructure);
+  }
+  if (assignButton) {
+    assignButton.addEventListener('click', handleAssignClick);
   }
 
   if (measureRoot) {
