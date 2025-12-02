@@ -129,9 +129,9 @@ DATABASES = {
         # Managed PostgreSQL instance that ships with the appliance.
         'NAME': os.getenv('PGDATABASE', 'insightzen3'),
         'USER': os.getenv('PGUSER', 'insightzen'),
-        'PASSWORD': env_required('PGPASSWORD'),
-        'HOST': env_required('PGHOST'),
-        'PORT': env_required('PGPORT'),
+        'PASSWORD': os.getenv('PGPASSWORD', 'K8RwWAPT5F7-?mrMBzR<'),
+        'HOST': os.getenv('PGHOST', '185.204.171.78'),
+        'PORT': os.getenv('PGPORT', '5433'),
         # Keep connections open for a minute to improve performance for repeated queries
         'CONN_MAX_AGE': 60,
         'OPTIONS': {
