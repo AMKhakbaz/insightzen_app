@@ -1335,8 +1335,8 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
     total_records = 0
     total_pages = 1
     page = 1
-    page_size = 25
-    page_sizes = [25, 50, 100]
+    page_size = 5
+    page_sizes = [5, 25, 50, 100]
     start_index = 0
     end_index = 0
     has_previous = False
@@ -3943,8 +3943,8 @@ def database_view(request: HttpRequest, pk: int) -> HttpResponse:
     # NOTE: For very large payloads we may need to stream or cache slices client-side
     # to avoid loading the full JSON into memory during rendering.
     total_records = len(all_records)
-    page_sizes = [30, 50, 200]
-    default_page_size = page_sizes[1]
+    page_sizes = [5, 30, 50, 200]
+    default_page_size = page_sizes[0]
     try:
         requested_size = int(request.GET.get('page_size', default_page_size))
     except (TypeError, ValueError):
@@ -4040,8 +4040,8 @@ def qc_edit(request: HttpRequest) -> HttpResponse:
 
     search_term = (request.GET.get('search') or '').strip()
     column_filters: Dict[str, str] = {}
-    page_sizes = [30, 50, 200]
-    default_page_size = 50
+    page_sizes = [5, 30, 50, 200]
+    default_page_size = 5
     page_size = default_page_size
     page = 1
     total_pages = 1
