@@ -8,27 +8,27 @@
  */
 
 :root {
-    /* Midnight indigo base with pastel blue and orchid accents */
-    --color-bg: #0c0f1f;
-    --color-bg-subtle: #11142a;
-    --color-surface: #151935;
-    --color-surface-elevated: #1c2045;
-    --color-surface-muted: #131732;
-    --color-border: #262c52;
-    --color-divider: rgba(207, 217, 255, 0.2);
-    --color-border-soft: rgba(38, 44, 82, 0.45);
-    --color-shadow-soft: 0 30px 110px rgba(10, 14, 36, 0.28), 0 16px 48px rgba(165, 199, 255, 0.12);
-    --color-text: #eef0ff;
-    --color-text-muted: #b7bedc;
-    --color-text-subtle: #8f96b6;
-    --color-text-secondary: #d7dcf2;
-    --color-accent: #a5c7ff;
-    --color-accent-strong: #c6a4ff;
-    --color-accent-soft: rgba(165, 199, 255, 0.18);
-    --color-accent-secondary: #f6d571;
-    --color-accent-secondary-soft: rgba(246, 213, 113, 0.16);
-    --color-danger: #d46b70;
-    --color-danger-strong: #e17f85;
+    /* Charcoal base with soft blue highlights */
+    --color-bg: #212121;
+    --color-bg-subtle: #252525;
+    --color-surface: #303030;
+    --color-surface-elevated: #414141;
+    --color-surface-muted: #414141;
+    --color-border: #414141;
+    --color-divider: rgba(65, 65, 65, 0.7);
+    --color-border-soft: rgba(65, 65, 65, 0.45);
+    --color-shadow-soft: 0 30px 110px rgba(0, 0, 0, 0.28), 0 16px 48px rgba(0, 0, 0, 0.18);
+    --color-text: #ffffff;
+    --color-text-muted: #d8d8d8;
+    --color-text-subtle: #bfbfbf;
+    --color-text-secondary: #e8e8e8;
+    --color-accent: #9cd4fc;
+    --color-accent-strong: #c1e4ff;
+    --color-accent-soft: rgba(156, 212, 252, 0.18);
+    --color-accent-secondary: #9cd4fc;
+    --color-accent-secondary-soft: rgba(156, 212, 252, 0.16);
+    --color-danger: #ff5757;
+    --color-danger-strong: #ff6f6f;
     --color-success: #4ac99b;
 
     --font-family-base: 'Inter', 'Segoe UI', 'Helvetica Neue', sans-serif;
