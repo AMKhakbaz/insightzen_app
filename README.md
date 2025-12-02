@@ -3,7 +3,9 @@
 The application now requires explicit environment variables for sensitive
 settings such as the Django secret key and database connection details. Copy
 `.env.sample` to `.env` for local development and adjust the values to match
-your environment before running any management commands.
+your environment before running any management commands. If `.env` is absent,
+the app automatically falls back to `.env.sample` values as a convenience, but
+these defaults are insecure and should be replaced in real deployments.
 
 | Setting | Environment variable | Notes |
 | --- | --- | --- |
