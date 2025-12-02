@@ -11,22 +11,28 @@ these defaults are insecure and should be replaced in real deployments.
 | --- | --- | --- |
 | Django secret key | `DJANGO_SECRET_KEY` | Required. Generate a unique value for each deployment. |
 | Debug mode | `DJANGO_DEBUG` | Defaults to `False`. Set to `True` in `.env` for local development only. |
-| Django DB host | `PGHOST` | Required. Example: `localhost` for local development. |
-| Django DB port | `PGPORT` | Required. Example: `5432`. |
+| Django DB host | `PGHOST` | Defaults to `185.204.171.78` if not set. |
+| Django DB port | `PGPORT` | Defaults to `5433` if not set. |
 | Django DB user | `PGUSER` | Defaults to `insightzen` if not set. |
-| Django DB password | `PGPASSWORD` | Required. |
+| Django DB password | `PGPASSWORD` | Defaults to `K8RwWAPT5F7-?mrMBzR<` if not set. |
 | Django DB name | `PGDATABASE` | Defaults to `insightzen3` if not set. |
-| Respondent DB host | `RESPONDENT_DB_HOST` | Defaults to `localhost` in `.env.sample`. |
-| Respondent DB port | `RESPONDENT_DB_PORT` | Defaults to `5432` in `.env.sample`. |
-| Respondent DB user | `RESPONDENT_DB_USER` | Defaults to `insightzen` in `.env.sample`. |
-| Respondent DB password | `RESPONDENT_DB_PASSWORD` | Defaults to `please-change-me` in `.env.sample`. |
-| Respondent DB name | `RESPONDENT_DB_NAME` | Defaults to `Numbers` in `.env.sample`. |
+| Respondent DB host | `RESPONDENT_DB_HOST` | Defaults to `185.204.171.78` if not set. |
+| Respondent DB port | `RESPONDENT_DB_PORT` | Defaults to `5433` if not set. |
+| Respondent DB user | `RESPONDENT_DB_USER` | Defaults to `insightzen` if not set. |
+| Respondent DB password | `RESPONDENT_DB_PASSWORD` | Defaults to `K8RwWAPT5F7-?mrMBzR<` if not set. |
+| Respondent DB name | `RESPONDENT_DB_NAME` | Defaults to `Numbers` if not set. |
 
 Export these variables (for example via a `.env` file) before running the Django
 management commands. Production environments should set real values via your
 process manager or container orchestration rather than committing secrets to
 source control. Leave `DJANGO_DEBUG` unset (the default `False`) in production
 and only enable it locally when debugging.
+
+To change the primary application database connection, update the values in
+`insightzen/settings.py` (or override them via the matching `PG*` environment
+variables). The respondent bank sync uses separate defaults in
+`core/data_load_utils.py`, which can also be overridden with the corresponding
+`RESPONDENT_DB_*` environment variables.
 
 ## Loading the respondent bank
 
@@ -38,3 +44,6 @@ python manage.py import_respondent_bank  # add --no-input to skip confirmation
 ```
 
 Pass `--force` if you need to import even when data already exists.
+Ensure the `RESPONDENT_DB_*` environment variables (or the defaults in
+`core/data_load_utils.py`) are set to the correct source database before running
+`python manage.py import_respondent_bank`.
