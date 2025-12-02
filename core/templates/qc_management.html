@@ -45,6 +45,17 @@
                     {% endfor %}
                 </select>
             </div>
+            <div class="qc-toolbar__field">
+                <label for="phone-column-select">{% if lang == 'fa' %}ستون شماره تماس{% else %}Phone column{% endif %}</label>
+                <select id="phone-column-select" name="phone_num" {% if not selected_entry %}disabled{% endif %} onchange="this.form.page.value = 1; this.form.submit();">
+                    <option value="" {% if not phone_num %}selected{% endif %}>
+                        {% if lang == 'fa' %}انتخاب ستون{% else %}Select column{% endif %}
+                    </option>
+                    {% for col in entry_columns %}
+                        <option value="{{ col }}" {% if col == phone_num %}selected{% endif %}>{{ col }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <div class="qc-toolbar__field qc-toolbar__field--grow">
                 <label for="qc-search">{% if lang == 'fa' %}جست‌وجوی متنی{% else %}Search{% endif %}</label>
                 <input id="qc-search" type="search" name="search" value="{{ search_term }}" placeholder="{% if lang == 'fa' %}عبارت مورد نظر{% else %}Search assignments{% endif %}">
@@ -109,7 +120,7 @@
                 <div class="card-body">
                     {% if assignment_columns %}
                         <div class="table-responsive qc-table-wrapper">
-                            <table class="table" data-table="interactive" data-filter-context="qc_management_assignment" data-empty-text="{% if lang == 'fa' %}سطر مطابق فیلتر یافت نشد.{% else %}No rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+                            <table class="table table-hover align-middle qc-assignment-table" data-table="interactive" data-filter-context="qc_management_assignment" data-empty-text="{% if lang == 'fa' %}سطر مطابق فیلتر یافت نشد.{% else %}No rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
                                 <thead>
                                     <tr>
                                         {% for col in assignment_columns %}
@@ -183,6 +194,7 @@
                             <input type="hidden" name="project" value="{% if selected_project %}{{ selected_project.pk }}{% endif %}">
                             <input type="hidden" name="entry" value="{% if selected_entry %}{{ selected_entry.pk }}{% endif %}">
                             <input type="hidden" name="search" value="{{ search_term }}">
+                            <input type="hidden" name="phone_num" value="{{ phone_num }}">
                             <input type="hidden" name="page_size" value="{{ page_size }}">
                             {% for filter in assignment_filters %}
                                 <input type="hidden" name="filter_{{ filter.index }}" value="{{ filter.value }}">
