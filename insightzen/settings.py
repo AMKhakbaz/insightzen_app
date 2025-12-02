@@ -10,6 +10,7 @@ with SQLite as the database backend.
 from __future__ import annotations
 
 import os
+import warnings
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -33,7 +34,22 @@ def load_env_file(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
-load_env_file(BASE_DIR / ".env")
+# Prefer a local .env file but fall back to .env.sample for convenience when the
+# project is first checked out. The sample values are intentionally insecure and
+# should be overridden in real deployments.
+env_path = BASE_DIR / ".env"
+sample_env_path = BASE_DIR / ".env.sample"
+
+if env_path.exists():
+    load_env_file(env_path)
+elif sample_env_path.exists():
+    warnings.warn(
+        ".env not found; using values from .env.sample. Create a .env file to "
+        "override these defaults.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    load_env_file(sample_env_path)
 
 
 def env_required(name: str) -> str:
