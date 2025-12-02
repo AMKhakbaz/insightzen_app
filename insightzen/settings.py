@@ -12,15 +12,47 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load environment variables from a local .env file for development setups.
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+
+    for line in path.read_text().splitlines():
+        if not line or line.strip().startswith("#"):
+            continue
+
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+load_env_file(BASE_DIR / ".env")
+
+
+def env_required(name: str) -> str:
+    """Fetch a required environment variable or raise a helpful error."""
+
+    value = os.getenv(name)
+    if not value:
+        raise ImproperlyConfigured(
+            f"Set the {name} environment variable (see .env.sample for defaults)."
+        )
+    return value
+
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-CHANGE_ME_TO_A_RANDOM_SECRET_KEY'
+SECRET_KEY = env_required("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Default to disabled unless explicitly enabled via DJANGO_DEBUG.
+DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in ("true", "1", "yes")
 
 ALLOWED_HOSTS: list[str] = ["185.204.171.78", "panel.insightzen.ir", "localhost", "127.0.0.1"]
 
@@ -81,9 +113,9 @@ DATABASES = {
         # Managed PostgreSQL instance that ships with the appliance.
         'NAME': os.getenv('PGDATABASE', 'insightzen3'),
         'USER': os.getenv('PGUSER', 'insightzen'),
-        'PASSWORD': os.getenv('PGPASSWORD', 'K8RwWAPT5F7-?mrMBzR<'),
-        'HOST': os.getenv('PGHOST', '185.204.171.78'),
-        'PORT': os.getenv('PGPORT', '5433'),
+        'PASSWORD': env_required('PGPASSWORD'),
+        'HOST': env_required('PGHOST'),
+        'PORT': env_required('PGPORT'),
         # Keep connections open for a minute to improve performance for repeated queries
         'CONN_MAX_AGE': 60,
         'OPTIONS': {
