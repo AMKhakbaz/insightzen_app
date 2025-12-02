@@ -1330,6 +1330,7 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
     assignment_columns: List[Dict[str, Any]] = []
     qc_measure_tree: List[Dict[str, Any]] = []
     measure_leaves: List[Dict[str, Any]] = []
+    entry_columns: List[str] = []
     snapshot = None
     total_records = 0
     total_pages = 1
@@ -1341,6 +1342,7 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
     has_previous = False
     has_next = False
     search_term = (request.GET.get('search') or '').strip()
+    phone_num = (request.GET.get('phone_num') or '').strip()
 
     project_param = request.GET.get('project')
     if project_param:
@@ -1361,6 +1363,9 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
     if selected_entry:
         snapshot = load_entry_snapshot(selected_entry)
         columns = infer_columns(snapshot.records)
+        entry_columns = columns
+        if phone_num and phone_num not in columns:
+            phone_num = ''
         qc_measure_tree = _load_qc_measure_structure(request, selected_entry, columns)
         measure_leaves = _flatten_measure_leaves(qc_measure_tree)
         if not measure_leaves:
@@ -1373,11 +1378,61 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         column_filters = {leaf['field']: f['value'] for leaf, f in zip(measure_leaves, assignment_filters) if f['value']}
         search_terms = [term for term in search_term.lower().split() if term]
 
+        phone_values: List[str] = []
+        if phone_num:
+            phone_values = [
+                _normalise_record_value(record.get(phone_num, '')).strip()
+                for record in snapshot.records
+            ]
+
+        mobile_map: Dict[str, Optional[str]] = {}
+        if phone_values:
+            mobile_map = {
+                item['mobile']: str(item['person_id']) if item['person_id'] is not None else None
+                for item in Mobile.objects.filter(mobile__in=phone_values).values('mobile', 'person_id')
+            }
+
+        joined_rows: List[Dict[str, Any]] = []
+        joined_lookup: Dict[str, Dict[str, Any]] = {}
+
+        for idx, record in enumerate(snapshot.records):
+            submission_id = _extract_submission_id(record) or f"row-{idx}"
+            phone_value = _normalise_record_value(record.get(phone_num, '')).strip() if phone_num else ''
+            person_id = mobile_map.get(phone_value) if phone_num else None
+            key = f"person:{person_id}" if person_id is not None else f"submission:{submission_id}"
+            payload = {
+                'record': record,
+                'person_id': person_id,
+                'phone_value': phone_value,
+                'interview': None,
+                'submission_id': submission_id,
+            }
+            joined_rows.append(payload)
+            joined_lookup.setdefault(key, payload)
+
+        for interview in Interview.objects.filter(project=selected_project).values('id', 'person_id'):
+            person_id = interview.get('person_id')
+            key = f"person:{person_id}" if person_id is not None else f"interview:{interview['id']}"
+            if key in joined_lookup:
+                if joined_lookup[key].get('interview') is None:
+                    joined_lookup[key]['interview'] = interview
+                continue
+            payload = {
+                'record': {},
+                'person_id': person_id,
+                'phone_value': '',
+                'interview': interview,
+                'submission_id': f"interview-{interview['id']}",
+            }
+            joined_rows.append(payload)
+            joined_lookup[key] = payload
+
         filtered_records: List[Tuple[Dict[str, Any], Dict[str, str]]] = []
-        for record in snapshot.records:
+        for row in joined_rows:
+            record_data = row.get('record') or {}
             value_map: Dict[str, str] = {}
             for leaf in measure_leaves:
-                raw_value = record.get(leaf['field'], '')
+                raw_value = record_data.get(leaf['field'], '')
                 value_map[leaf['field']] = _normalise_record_value(raw_value)
             combined_text = ' '.join(value_map.values()).lower()
             if search_terms and not all(term in combined_text for term in search_terms):
@@ -1388,7 +1443,7 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
                     matches = False
                     break
             if matches:
-                filtered_records.append((record, value_map))
+                filtered_records.append((row, value_map))
 
         total_records = len(filtered_records)
         try:
@@ -1424,7 +1479,7 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         )
 
         for record, value_map in page_slice:
-            submission_id = _extract_submission_id(record) or ''
+            submission_id = record.get('submission_id', '') or ''
             rows = [value_map.get(leaf['field'], '') for leaf in measure_leaves]
             assignment_rows.append({
                 'id': submission_id,
@@ -1438,6 +1493,8 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         'selected_entry': selected_entry,
         'qc_measure_tree': qc_measure_tree,
         'measure_leaves': measure_leaves,
+        'entry_columns': entry_columns,
+        'phone_num': phone_num,
         'assignment_columns': assignment_columns,
         'assignment_rows': assignment_rows,
         'assignment_filters': assignment_filters,
