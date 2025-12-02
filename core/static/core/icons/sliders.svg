@@ -1,1 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="500" zoomAndPan="magnify" viewBox="0 0 375 374.999991" height="500" preserveAspectRatio="xMidYMid meet" version="1.0"><path fill="#ffffff" d="M 62.109375 87.902344 C 38.898438 116.773438 26.636719 151.578125 26.636719 188.542969 C 26.636719 277.242188 98.796875 349.40625 187.5 349.40625 C 224.476562 349.40625 259.285156 337.140625 288.148438 313.921875 L 298.128906 305.902344 L 70.132812 77.914062 Z M 62.109375 87.902344 " fill-opacity="1" fill-rule="nonzero"/><path fill="#ffffff" d="M 298.128906 71.179688 L 288.148438 63.160156 C 259.285156 39.941406 224.476562 27.679688 187.5 27.679688 C 150.519531 27.679688 115.710938 39.941406 86.847656 63.160156 L 76.867188 71.179688 L 187.5 181.808594 Z M 298.128906 71.179688 " fill-opacity="1" fill-rule="nonzero"/><path fill="#ffffff" d="M 312.886719 87.902344 L 304.863281 77.914062 L 194.230469 188.542969 L 304.863281 299.167969 L 312.886719 289.179688 C 336.097656 260.308594 348.363281 225.503906 348.363281 188.542969 C 348.363281 151.578125 336.097656 116.773438 312.886719 87.902344 Z M 312.886719 87.902344 " fill-opacity="1" fill-rule="nonzero"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#c6d6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <line x1="5" y1="6" x2="19" y2="6" />
+  <line x1="5" y1="12" x2="19" y2="12" />
+  <line x1="5" y1="18" x2="19" y2="18" />
+  <circle cx="9" cy="6" r="1.6" fill="#c6a4ff" stroke="none" />
+  <circle cx="15" cy="12" r="1.6" fill="#86d8bf" stroke="none" />
+  <circle cx="11.5" cy="18" r="1.6" fill="#f6d571" stroke="none" />
+</svg>
