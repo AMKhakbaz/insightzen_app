@@ -75,9 +75,9 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         # Database name defaults to 'insightzen' but can be overridden via environment variable
-        'NAME': os.getenv('PGDATABASE', 'insightzen'),
+        'NAME': os.getenv('PGDATABASE', 'insightzen3'),
         # Database user defaults to 'postgres' but can be overridden via environment variable
-        'USER': os.getenv('PGUSER', 'insightzen3'),
+        'USER': os.getenv('PGUSER', 'insightzen'),
         # Password for the database user; empty by default for local setups
         'PASSWORD': os.getenv('PGPASSWORD', 'K8RwWAPT5F7-?mrMBzR<'),
         # Host and port for PostgreSQL connection
