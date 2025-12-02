@@ -77,12 +77,12 @@ DATABASES = {
         # Database name defaults to 'insightzen' but can be overridden via environment variable
         'NAME': os.getenv('PGDATABASE', 'insightzen'),
         # Database user defaults to 'postgres' but can be overridden via environment variable
-        'USER': os.getenv('PGUSER', 'insightzen3'),
+        'USER': os.getenv('PGUSER', 'postgres'),
         # Password for the database user; empty by default for local setups
-        'PASSWORD': os.getenv('PGPASSWORD', 'K8RwWAPT5F7-?mrMBzR<'),
+        'PASSWORD': os.getenv('PGPASSWORD', ''),
         # Host and port for PostgreSQL connection
-        'HOST': os.getenv('PGHOST', '185.204.171.78'),
-        'PORT': os.getenv('PGPORT', '5433'),
+        'HOST': os.getenv('PGHOST', '127.0.0.1'),
+        'PORT': os.getenv('PGPORT', '5432'),
         # Keep connections open for a minute to improve performance for repeated queries
         'CONN_MAX_AGE': 60,
         'OPTIONS': {
