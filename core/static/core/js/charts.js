@@ -107,6 +107,9 @@ document.addEventListener('DOMContentLoaded', function () {
     return val && val.trim() ? val.trim() : fallback;
   }
 
+  const annotationColor = getCssVar('--color-text', '#111');
+  const gridLineColor = getCssVar('--color-border', '#d0d5dd');
+
   function collectFilters() {
     const projectSelect = document.getElementById('project-select');
     const userSelect = document.getElementById('user-select');
@@ -557,27 +560,27 @@ document.addEventListener('DOMContentLoaded', function () {
                 x: {
                   stacked: true,
                   grid: {
-                    color: getCssVar('--border-color', '#2a3551'),
+                    color: gridLineColor,
                   },
                   ticks: {
-                    color: getCssVar('--text-color', '#e2e8f0'),
+                    color: annotationColor,
                   },
                 },
                 y: {
                   stacked: true,
                   beginAtZero: true,
                   grid: {
-                    color: getCssVar('--border-color', '#2a3551'),
+                    color: gridLineColor,
                   },
                   ticks: {
-                    color: getCssVar('--text-color', '#e2e8f0'),
+                    color: annotationColor,
                   },
                 },
               },
               plugins: {
                 legend: {
                   labels: {
-                    color: getCssVar('--text-color', '#e2e8f0'),
+                    color: annotationColor,
                   },
                 },
               },
@@ -617,7 +620,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 legend: {
                   position: 'bottom',
                   labels: {
-                    color: getCssVar('--text-color', '#e2e8f0'),
+                    color: annotationColor,
                   },
                 },
                 tooltip: {
@@ -677,7 +680,7 @@ document.addEventListener('DOMContentLoaded', function () {
                   legend: {
                     position: 'bottom',
                     labels: {
-                      color: getCssVar('--text-color', '#e2e8f0'),
+                      color: annotationColor,
                     },
                   },
                 },
@@ -733,10 +736,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 scales: {
                   x: {
                     grid: {
-                      color: getCssVar('--border-color', '#2a3551'),
+                      color: gridLineColor,
                     },
                     ticks: {
-                      color: getCssVar('--text-color', '#e2e8f0'),
+                      color: annotationColor,
                       maxRotation: 0,
                       minRotation: 0,
                       autoSkip: true,
@@ -746,17 +749,17 @@ document.addEventListener('DOMContentLoaded', function () {
                   y: {
                     beginAtZero: true,
                     grid: {
-                      color: getCssVar('--border-color', '#2a3551'),
+                      color: gridLineColor,
                     },
                     ticks: {
-                      color: getCssVar('--text-color', '#e2e8f0'),
+                      color: annotationColor,
                     },
                   },
                 },
                 plugins: {
                   legend: {
                     labels: {
-                      color: getCssVar('--text-color', '#e2e8f0'),
+                      color: annotationColor,
                     },
                   },
                 },
@@ -804,26 +807,26 @@ document.addEventListener('DOMContentLoaded', function () {
               scales: {
                 x: {
                   grid: {
-                    color: getCssVar('--border-color', '#2a3551'),
+                    color: gridLineColor,
                   },
                   ticks: {
-                    color: getCssVar('--text-color', '#e2e8f0'),
+                    color: annotationColor,
                   },
                 },
                 y: {
                   beginAtZero: true,
                   grid: {
-                    color: getCssVar('--border-color', '#2a3551'),
+                    color: gridLineColor,
                   },
                   ticks: {
-                    color: getCssVar('--text-color', '#e2e8f0'),
+                    color: annotationColor,
                   },
                 },
               },
               plugins: {
                 legend: {
                   labels: {
-                    color: getCssVar('--text-color', '#e2e8f0'),
+                    color: annotationColor,
                   },
                 },
               },

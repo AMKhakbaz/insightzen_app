@@ -289,6 +289,102 @@
     }));
   }
 
+  function createContentViewer() {
+    let container = null;
+    let body = null;
+    let title = null;
+    let closeButton = null;
+
+    const hide = () => {
+      if (!container || container.hidden) {
+        return;
+      }
+      container.classList.remove('is-visible');
+      container.setAttribute('aria-hidden', 'true');
+      container.hidden = true;
+    };
+
+    const show = ({ title: heading, content }) => {
+      if (typeof document === 'undefined') {
+        return;
+      }
+      if (!container) {
+        container = document.createElement('div');
+        container.className = 'table-content-viewer';
+        container.setAttribute('role', 'dialog');
+        container.setAttribute('aria-modal', 'true');
+        container.setAttribute('aria-label', 'Cell value');
+        container.hidden = true;
+
+        const dialog = document.createElement('div');
+        dialog.className = 'table-content-viewer__dialog';
+
+        const header = document.createElement('div');
+        header.className = 'table-content-viewer__header';
+
+        title = document.createElement('h3');
+        title.className = 'table-content-viewer__title';
+
+        closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'table-content-viewer__close';
+        closeButton.setAttribute('aria-label', 'Close');
+        closeButton.innerHTML = '&times;';
+
+        header.appendChild(title);
+        header.appendChild(closeButton);
+
+        body = document.createElement('div');
+        body.className = 'table-content-viewer__body';
+
+        const footer = document.createElement('div');
+        footer.className = 'table-content-viewer__footer';
+
+        const footerClose = document.createElement('button');
+        footerClose.type = 'button';
+        footerClose.className = 'btn btn-secondary';
+        footerClose.textContent = 'Close';
+        footer.appendChild(footerClose);
+
+        dialog.appendChild(header);
+        dialog.appendChild(body);
+        dialog.appendChild(footer);
+        container.appendChild(dialog);
+        document.body.appendChild(container);
+
+        container.addEventListener('click', (event) => {
+          if (event.target === container || event.target === closeButton) {
+            hide();
+          }
+        });
+        footerClose.addEventListener('click', hide);
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            hide();
+          }
+        });
+      }
+
+      if (title) {
+        title.textContent = heading || 'Cell value';
+      }
+      if (body) {
+        body.textContent = content || '';
+      }
+
+      container.hidden = false;
+      container.removeAttribute('aria-hidden');
+      requestAnimationFrame(() => container.classList.add('is-visible'));
+      if (closeButton) {
+        closeButton.focus({ preventScroll: true });
+      }
+    };
+
+    return { show, hide };
+  }
+
+  const tableContentViewer = createContentViewer();
+
   class InteractiveTable {
     constructor(table) {
       this.table = table;
@@ -336,6 +432,7 @@
       this.createToolbar();
       this.createAdvancedFilterUI();
       this.bindEvents();
+      this.bindContentViewer();
       this.loadSavedAdvancedFilters({ apply: false });
       this.applyFilters({ resetSort: false });
 
@@ -487,6 +584,38 @@
           this.toggleAdvancedFilters();
         });
       }
+    }
+
+    bindContentViewer() {
+      if (!this.table) {
+        return;
+      }
+      this.table.addEventListener('click', (event) => {
+        const cell = event.target.closest('td');
+        if (!cell || !this.table.contains(cell) || !cell.closest('tbody')) {
+          return;
+        }
+        if (event.target.closest('a, button, input, select, textarea, label, [role="button"]')) {
+          return;
+        }
+
+        const contentTarget =
+          event.target.closest('.table-ellipsis, [data-table-fulltext]') || cell.querySelector('.table-ellipsis') || cell;
+        const fullText =
+          (contentTarget && (contentTarget.dataset.tableFulltext || contentTarget.getAttribute('title'))) ||
+          contentTarget.textContent ||
+          '';
+        const trimmed = normaliseText(fullText);
+        const isTruncated = contentTarget && contentTarget.scrollWidth > contentTarget.clientWidth;
+
+        if (!trimmed || (!isTruncated && !contentTarget?.dataset?.tableFulltext)) {
+          return;
+        }
+
+        const columnIndex = cell.cellIndex;
+        const label = this.columnMeta.get(columnIndex)?.label || this.messages.searchLabel || 'Cell value';
+        tableContentViewer.show({ title: label, content: fullText });
+      });
     }
 
     handleSort(button) {

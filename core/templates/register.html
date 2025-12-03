@@ -3,7 +3,7 @@
 {% block title %}{% if lang == 'fa' %}ثبت‌نام{% else %}Register{% endif %}{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width:600px;margin:2rem auto;">
+<div class="card auth-card" style="max-width:600px;margin:2rem auto;">
     <h1>{% if lang == 'fa' %}ثبت‌نام{% else %}Register{% endif %}</h1>
     <form method="post" novalidate>
         {% csrf_token %}

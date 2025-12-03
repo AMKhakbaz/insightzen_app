@@ -89,6 +89,14 @@
                     <td>{{ project.sample_size }}</td>
                     <td>{{ project.filled_samples }}</td>
                     <td style="white-space:nowrap;">
+                        {% if project.sample_source == 'upload' %}
+                        <a href="{% url 'project_dataset_append' project.id %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">
+                            <span class="btn__icon" aria-hidden="true">
+                                +
+                            </span>
+                            <span>{% if lang == 'fa' %}افزودن داده{% else %}Append Dataset{% endif %}</span>
+                        </a>
+                        {% endif %}
                         <a href="{% url 'project_edit' project.id %}" class="btn btn-sm btn-secondary" style="margin-right:0.25rem;">
                             <span class="btn__icon" aria-hidden="true">
                                 <img src="{% static 'core/icons/edit.svg' %}" alt="">
