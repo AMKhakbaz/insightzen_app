@@ -28,6 +28,20 @@ process manager or container orchestration rather than committing secrets to
 source control. Leave `DJANGO_DEBUG` unset (the default `False`) in production
 and only enable it locally when debugging.
 
+## Applying migrations on PostgreSQL deployments
+
+Enable the built-in PostgreSQL helpers in Django by ensuring
+`django.contrib.postgres` is in `INSTALLED_APPS` (already set in
+`insightzen/settings.py`). After updating deployments or local environments, run
+the migrations so Django can perform system checks without errors:
+
+```bash
+python manage.py migrate
+```
+
+Run this command against every PostgreSQL-backed environment after deploying
+changes or refreshing dependencies.
+
 To change the primary application database connection, update the values in
 `insightzen/settings.py` (or override them via the matching `PG*` environment
 variables). The respondent bank sync uses separate defaults in
