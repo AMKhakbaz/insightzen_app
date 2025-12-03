@@ -313,6 +313,7 @@ def home(request: HttpRequest) -> HttpResponse:
             'profile': profile,
             'dashboard_payload': dashboard_payload,
             'lang': lang,
+            'breadcrumbs': _build_breadcrumbs(lang),
         },
     )
 
