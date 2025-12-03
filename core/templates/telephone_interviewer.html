@@ -30,13 +30,6 @@
         }
     });
     </script>
-    {% if selected_project and sample_source == 'upload' %}
-        <div style="margin-bottom:1rem;">
-            <a class="btn btn-secondary btn-sm" href="{% url 'project_dataset_append' selected_project.pk %}">
-                {% if lang == 'fa' %}افزودن داده جدید{% else %}Append Dataset{% endif %}
-            </a>
-        </div>
-    {% endif %}
     {% if selected_project %}
         {% if person and mobile %}
         <form method="post">

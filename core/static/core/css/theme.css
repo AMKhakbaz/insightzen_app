@@ -30,6 +30,8 @@ body.theme-light {
     --color-danger: #ff5757;
     --color-danger-strong: #ff5757;
     --color-success: #22a242;
+    --color-icon: #000000;
+    --icon-filter: none;
 }
 
 body.theme-light .sidebar {
@@ -58,6 +60,17 @@ body.theme-light .btn-outline,
 body.theme-light .btn-secondary,
 body.theme-light .btn-text {
     color: var(--color-text);
+}
+
+body.theme-light .auth-card .btn,
+body.theme-light .auth-card .btn:hover,
+body.theme-light .auth-card .btn:active,
+body.theme-light .auth-card .btn:focus,
+body.theme-light .auth-card .btn:focus-visible {
+    background: #1c8cff;
+    border-color: #1c8cff;
+    color: #ffffff;
+    box-shadow: 0 12px 24px rgba(28, 140, 255, 0.24), 0 0 0 3px rgba(28, 140, 255, 0.14);
 }
 
 body.theme-dark {

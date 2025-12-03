@@ -2,6 +2,8 @@
 {% load static %}
 {% block title %}{% if lang == 'fa' %}خانه{% else %}Home{% endif %}{% endblock %}
 
+{% block breadcrumbs %}{% endblock %}
+
 {% block content %}
 <div class="card" data-dashboard-root data-endpoint="{% url 'interviewer_dashboard_data' %}">
     <div class="card-header" style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:center;">
@@ -46,7 +48,7 @@
     </div>
 
     <div class="dashboard-layout" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;margin-top:1.5rem;align-items:start;">
-        <div class="chart-card" style="background:var(--surface-2,#0f172a);padding:1rem;border-radius:12px;box-shadow:var(--shadow-sm,0 4px 24px rgba(0,0,0,0.12));">
+        <div class="chart-card" style="background:var(--color-surface-elevated);padding:1rem;border-radius:12px;box-shadow:var(--shadow-sm,0 4px 24px rgba(0,0,0,0.12));">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:0.5rem;">
                 <p class="eyebrow" style="margin:0;">{% if lang == 'fa' %}نمودار موفقیت{% else %}Success donut{% endif %}</p>
                 <span class="badge" style="background:#0ea5e9;color:white;">{% if lang == 'fa' %}به‌روز{% else %}Live{% endif %}</span>
@@ -63,7 +65,7 @@
                 </div>
             </div>
         </div>
-        <div class="summary-card" style="background:var(--surface-2,#0f172a);padding:1rem;border-radius:12px;box-shadow:var(--shadow-sm,0 4px 24px rgba(0,0,0,0.12));">
+        <div class="summary-card" style="background:var(--color-surface-elevated);padding:1rem;border-radius:12px;box-shadow:var(--shadow-sm,0 4px 24px rgba(0,0,0,0.12));">
             <p class="eyebrow" style="margin-top:0;">{% if lang == 'fa' %}پروژه برتر{% else %}Top performer{% endif %}</p>
             <p data-top-summary style="margin:0 0 1rem;line-height:1.5;">{{ dashboard_payload.top_summary }}</p>
             <table class="table" style="margin:0;">
