@@ -1,4 +1,4 @@
-{% with items|default:breadcrumbs as crumbs %}
+{% firstof items breadcrumbs "" as crumbs %}
 {% if crumbs %}
 <nav class="breadcrumb" aria-label="{% if lang == 'fa' %}مسیر صفحه{% else %}Breadcrumb{% endif %}" data-breadcrumb>
   <div class="breadcrumb__inner">
@@ -28,4 +28,3 @@
   </div>
 </nav>
 {% endif %}
-{% endwith %}
