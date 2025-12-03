@@ -248,6 +248,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
     """Authenticate a user via email and password."""
     if request.user.is_authenticated:
         return redirect('home')
+    lang = _get_lang(request)
     if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
@@ -260,7 +261,15 @@ def login_view(request: HttpRequest) -> HttpResponse:
             messages.error(request, 'Invalid email or password.')
     else:
         form = LoginForm()
-    return render(request, 'login.html', {'form': form})
+    return render(
+        request,
+        'login.html',
+        {
+            'form': form,
+            'lang': lang,
+            'breadcrumbs': [],
+        },
+    )
 
 
 def logout_view(request: HttpRequest) -> HttpResponse:
