@@ -349,7 +349,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
                 },
                 {
                     'icon': 'edit-3',
-                    'label': {'en': 'Edit Data', 'fa': 'ویرایش داده'},
+                    'label': {'en': 'General Edit', 'fa': 'ویرایش عمومی'},
                     'url': _resolve_url('qc_edit'),
                     'disabled': not panel_active('edit_data'),
                     'visible': True,

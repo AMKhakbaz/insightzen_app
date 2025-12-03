@@ -140,7 +140,7 @@ MEMBERSHIP_PANEL_DEFINITIONS: List[Tuple[str, str, str]] = [
     ('qc_management', 'QC Management', 'مدیریت QC'),
     ('qc_performance', 'QC Performance', 'کارایی QC'),
     ('review_data', 'Review Data', 'بازبینی داده'),
-    ('edit_data', 'Edit Data', 'ویرایش داده'),
+    ('edit_data', 'General Edit', 'ویرایش عمومی'),
     ('voice_review', 'Voice Review', 'بازبینی صدا'),
     ('callback_qc', 'Callback QC', 'QC تماس برگشتی'),
     ('coding', 'Coding AI', 'کدگذاری هوش مصنوعی'),
@@ -615,6 +615,23 @@ def _localise_text(lang: str, english: str, persian: str) -> str:
     """Return the appropriate string for the provided language code."""
 
     return persian if lang == 'fa' else english
+
+
+def _get_lang(request: HttpRequest) -> str:
+    """Return the preferred language code stored on the session."""
+
+    return request.session.get('lang', 'en')
+
+
+def _build_breadcrumbs(lang: str, *segments: Tuple[str, Optional[str]]) -> List[Dict[str, str]]:
+    """Construct a breadcrumb trail starting from the dashboard home page."""
+
+    breadcrumbs: List[Dict[str, str]] = [
+        {'label': _localise_text(lang, 'Home', 'خانه'), 'url': reverse('home')}
+    ]
+    for label, url in segments:
+        breadcrumbs.append({'label': label, 'url': url or ''})
+    return breadcrumbs
 
 
 def _project_deadline_locked_for_user(project: Project, user: User) -> bool:
@@ -1259,17 +1276,18 @@ def _build_qc_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Di
     return {'columns': columns, 'rows': rows, 'filename': filename}
 
 
-def _default_qc_measure(columns: List[str]) -> List[Dict[str, Any]]:
-    """Return a basic QC measure tree derived from available columns."""
+def _default_qc_measure(lang: str) -> List[Dict[str, Any]]:
+    """Return a single default QC measure node labeled for the current language."""
 
-    if not columns:
-        return [
-            {'id': 'qc-1', 'label': 'QC Item', 'field': '', 'children': []},
-        ]
-    tree: List[Dict[str, Any]] = []
-    for idx, column in enumerate(columns[:8]):
-        tree.append({'id': f'qc-{idx + 1}', 'label': column, 'field': column, 'children': []})
-    return tree
+    label = _localise_text(lang, 'Sample', 'نمونه')
+    return [
+        {
+            'id': 'qc-sample',
+            'label': label,
+            'field': 'sample',
+            'children': [],
+        }
+    ]
 
 
 def _flatten_measure_leaves(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1296,7 +1314,9 @@ def _flatten_measure_leaves(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     return leaves
 
 
-def _load_qc_measure_structure(request: HttpRequest, entry: DatabaseEntry | None, columns: List[str]) -> List[Dict[str, Any]]:
+def _load_qc_measure_structure(
+    request: HttpRequest, entry: DatabaseEntry | None, columns: List[str], lang: str
+) -> List[Dict[str, Any]]:
     """Load the saved QC measure structure for an entry or return a default tree."""
 
     stored = None
@@ -1304,7 +1324,7 @@ def _load_qc_measure_structure(request: HttpRequest, entry: DatabaseEntry | None
         stored = (request.session.get('qc_measure') or {}).get(str(entry.pk))
     if stored:
         return stored
-    return _default_qc_measure(columns)
+    return _default_qc_measure(lang)
 
 
 @login_required
@@ -1329,6 +1349,8 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
     assignment_filters: List[Dict[str, Any]] = []
     assignment_columns: List[Dict[str, Any]] = []
     qc_measure_tree: List[Dict[str, Any]] = []
+    default_qc_measure = _default_qc_measure(lang)
+    measure_saved = False
     measure_leaves: List[Dict[str, Any]] = []
     entry_columns: List[str] = []
     snapshot = None
@@ -1336,12 +1358,13 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
     total_pages = 1
     page = 1
     page_size = 5
+    min_page_size = 1
+    max_page_size = 500
     page_sizes = [5, 25, 50, 100]
     start_index = 0
     end_index = 0
     has_previous = False
     has_next = False
-    search_term = (request.GET.get('search') or '').strip()
     phone_num = (request.GET.get('phone_num') or '').strip()
 
     project_param = request.GET.get('project')
@@ -1364,79 +1387,126 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         snapshot = load_entry_snapshot(selected_entry)
         columns = infer_columns(snapshot.records)
         entry_columns = columns
+        stored_measure = (request.session.get('qc_measure') or {}).get(
+            str(selected_entry.pk)
+        )
         if phone_num and phone_num not in columns:
             phone_num = ''
-        qc_measure_tree = _load_qc_measure_structure(request, selected_entry, columns)
+        qc_measure_tree = stored_measure or default_qc_measure
+        measure_saved = stored_measure is not None
         measure_leaves = _flatten_measure_leaves(qc_measure_tree)
         if not measure_leaves:
-            measure_leaves = _flatten_measure_leaves(_default_qc_measure(columns))
+            measure_leaves = _flatten_measure_leaves(default_qc_measure)
 
-        for idx, leaf in enumerate(measure_leaves):
+        for idx, column in enumerate(entry_columns):
             filter_val = (request.GET.get(f'filter_{idx}') or '').strip()
-            assignment_filters.append({'index': idx, 'label': leaf['label'], 'value': filter_val})
+            assignment_filters.append({'index': idx, 'label': column, 'value': filter_val})
 
-        column_filters = {leaf['field']: f['value'] for leaf, f in zip(measure_leaves, assignment_filters) if f['value']}
-        search_terms = [term for term in search_term.lower().split() if term]
+        column_filters = {column: filt['value'] for column, filt in zip(entry_columns, assignment_filters) if filt['value']}
 
-        phone_values: List[str] = []
-        if phone_num:
-            phone_values = [
-                _normalise_record_value(record.get(phone_num, '')).strip()
-                for record in snapshot.records
-            ]
-
-        mobile_map: Dict[str, Optional[str]] = {}
-        if phone_values:
-            mobile_map = {
-                item['mobile']: str(item['person_id']) if item['person_id'] is not None else None
-                for item in Mobile.objects.filter(mobile__in=phone_values).values('mobile', 'person_id')
-            }
-
-        joined_rows: List[Dict[str, Any]] = []
-        joined_lookup: Dict[str, Dict[str, Any]] = {}
+        db_rows: List[Dict[str, Any]] = []
+        db_phone_index: Dict[str, List[Dict[str, Any]]] = {}
 
         for idx, record in enumerate(snapshot.records):
             submission_id = _extract_submission_id(record) or f"row-{idx}"
             phone_value = _normalise_record_value(record.get(phone_num, '')).strip() if phone_num else ''
-            person_id = mobile_map.get(phone_value) if phone_num else None
-            key = f"person:{person_id}" if person_id is not None else f"submission:{submission_id}"
             payload = {
                 'record': record,
-                'person_id': person_id,
-                'phone_value': phone_value,
-                'interview': None,
                 'submission_id': submission_id,
+                'phone_value': phone_value,
             }
-            joined_rows.append(payload)
-            joined_lookup.setdefault(key, payload)
+            db_rows.append(payload)
+            db_phone_index.setdefault(phone_value, []).append(payload)
 
-        for interview in Interview.objects.filter(project=selected_project).values('id', 'person_id'):
-            person_id = interview.get('person_id')
-            key = f"person:{person_id}" if person_id is not None else f"interview:{interview['id']}"
-            if key in joined_lookup:
-                if joined_lookup[key].get('interview') is None:
-                    joined_lookup[key]['interview'] = interview
-                continue
-            payload = {
-                'record': {},
-                'person_id': person_id,
-                'phone_value': '',
-                'interview': interview,
-                'submission_id': f"interview-{interview['id']}",
-            }
-            joined_rows.append(payload)
-            joined_lookup[key] = payload
+        interview_rows: List[Dict[str, Any]] = []
+        interview_queryset = (
+            Interview.objects.filter(project=selected_project)
+            .select_related('person')
+            .prefetch_related('person__mobiles')
+            if phone_num
+            else []
+        )
+
+        for interview in interview_queryset:
+            mobiles = []
+            if hasattr(interview, 'mobile'):
+                mobile_value = getattr(interview, 'mobile')
+                if mobile_value is not None:
+                    mobiles.append(str(mobile_value))
+            if not mobiles and interview.person:
+                mobiles.extend(list(interview.person.mobiles.values_list('mobile', flat=True)))
+            if not mobiles:
+                mobiles.append('')
+
+            for mobile_value in mobiles:
+                normalized_mobile = _normalise_record_value(mobile_value).strip()
+                interview_rows.append(
+                    {
+                        'interview': interview,
+                        'mobile': normalized_mobile,
+                        'submission_id': f"interview-{interview.id}",
+                    }
+                )
+
+        joined_rows: List[Dict[str, Any]] = []
+
+        if phone_num:
+            matched_db_records: set[str] = set()
+
+            for interview_data in interview_rows:
+                mobile_value = interview_data['mobile']
+                matched_records = db_phone_index.get(mobile_value)
+
+                if matched_records:
+                    for record in matched_records:
+                        matched_db_records.add(record['submission_id'])
+                        joined_rows.append(
+                            {
+                                'record': record['record'],
+                                'interview': interview_data['interview'],
+                                'phone_value': mobile_value,
+                                'submission_id': record['submission_id'],
+                            }
+                        )
+                else:
+                    joined_rows.append(
+                        {
+                            'record': {},
+                            'interview': interview_data['interview'],
+                            'phone_value': mobile_value,
+                            'submission_id': f"{interview_data['submission_id']}-{mobile_value or 'nomobile'}",
+                        }
+                    )
+
+            for record in db_rows:
+                if record['submission_id'] in matched_db_records:
+                    continue
+                joined_rows.append(
+                    {
+                        'record': record['record'],
+                        'interview': None,
+                        'phone_value': record['phone_value'],
+                        'submission_id': record['submission_id'],
+                    }
+                )
+        else:
+            joined_rows = [
+                {
+                    'record': record['record'],
+                    'interview': None,
+                    'phone_value': record['phone_value'],
+                    'submission_id': record['submission_id'],
+                }
+                for record in db_rows
+            ]
 
         filtered_records: List[Tuple[Dict[str, Any], Dict[str, str]]] = []
         for row in joined_rows:
             record_data = row.get('record') or {}
             value_map: Dict[str, str] = {}
-            for leaf in measure_leaves:
-                raw_value = record_data.get(leaf['field'], '')
-                value_map[leaf['field']] = _normalise_record_value(raw_value)
-            combined_text = ' '.join(value_map.values()).lower()
-            if search_terms and not all(term in combined_text for term in search_terms):
-                continue
+            for column in entry_columns:
+                raw_value = record_data.get(column, '')
+                value_map[column] = _normalise_record_value(raw_value)
             matches = True
             for col, filter_text in column_filters.items():
                 if not _matches_filter_value(value_map.get(col, ''), filter_text):
@@ -1450,8 +1520,7 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
             requested_size = int(request.GET.get('page_size', page_size))
         except (TypeError, ValueError):
             requested_size = page_size
-        if requested_size in page_sizes:
-            page_size = requested_size
+        page_size = min(max(requested_size, min_page_size), max_page_size)
         total_pages = max(1, ceil(total_records / page_size))
         try:
             requested_page = int(request.GET.get('page', 1))
@@ -1470,17 +1539,17 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         assignment_columns.extend(
             [
                 {
-                    'name': leaf['label'],
-                    'sort_type': _detect_sort_type(snapshot.records, leaf['field']),
-                    'field': leaf['field'],
+                    'name': column,
+                    'sort_type': _detect_sort_type(snapshot.records, column),
+                    'field': column,
                 }
-                for leaf in measure_leaves
+                for column in entry_columns
             ]
         )
 
         for record, value_map in page_slice:
             submission_id = record.get('submission_id', '') or ''
-            rows = [value_map.get(leaf['field'], '') for leaf in measure_leaves]
+            rows = [value_map.get(column, '') for column in entry_columns]
             assignment_rows.append({
                 'id': submission_id,
                 'values': rows,
@@ -1501,15 +1570,23 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         'page': page,
         'page_size': page_size,
         'page_sizes': page_sizes,
+        'min_page_size': min_page_size,
+        'max_page_size': max_page_size,
         'total_pages': total_pages,
         'total_records': total_records,
         'start_index': start_index + 1 if total_records else 0,
         'end_index': end_index,
         'has_previous': has_previous,
         'has_next': has_next,
-        'search_term': search_term,
+        'default_qc_measure': default_qc_measure,
+        'measure_saved': measure_saved,
         'qc_assignment_endpoint': reverse('qc_assignment_assign'),
         'lang': lang,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'Quality Control', 'کنترل کیفیت'), ''),
+            (_localise_text(lang, 'QC Management', 'مدیریت QC'), ''),
+        ),
     }
     return render(request, 'qc_management.html', context)
 
@@ -1536,17 +1613,28 @@ def qc_management_config(request: HttpRequest) -> JsonResponse:
 
     snapshot = load_entry_snapshot(entry)
     columns = infer_columns(snapshot.records)
+    default_measure = _default_qc_measure(lang)
+    stored_measure = (request.session.get('qc_measure') or {}).get(str(entry.pk))
 
     if request.method == 'GET':
-        measure = _load_qc_measure_structure(request, entry, columns)
-        return JsonResponse({'measure': measure, 'columns': columns, 'total_records': len(snapshot.records)})
+        measure = stored_measure or default_measure
+        return JsonResponse(
+            {
+                'measure': measure,
+                'default_measure': default_measure,
+                'columns': columns,
+                'measure_saved': stored_measure is not None,
+                'total_records': len(snapshot.records),
+            }
+        )
 
     try:
         payload = json.loads(request.body.decode('utf-8')) if request.body else {}
     except json.JSONDecodeError:
         return JsonResponse({'error': _localise_text(lang, 'Invalid payload.', 'داده ارسالی نامعتبر است.')}, status=400)
 
-    measure = payload.get('measure')
+    reset_to_default = bool(payload.get('reset_to_default'))
+    measure = default_measure if reset_to_default else payload.get('measure')
     if not isinstance(measure, list):
         return JsonResponse({'error': _localise_text(lang, 'Invalid measure structure.', 'ساختار اندازه‌گیری نادرست است.')}, status=400)
 
@@ -1554,7 +1642,15 @@ def qc_management_config(request: HttpRequest) -> JsonResponse:
     session_store[str(entry.pk)] = measure
     request.session['qc_measure'] = session_store
     request.session.modified = True
-    return JsonResponse({'ok': True, 'saved_for': entry.pk})
+    return JsonResponse(
+        {
+            'ok': True,
+            'saved_for': entry.pk,
+            'measure': measure,
+            'default_measure': default_measure,
+            'reset_to_default': reset_to_default,
+        }
+    )
 
 
 @login_required
@@ -2276,12 +2372,18 @@ def _project_form_context(form: ProjectForm, title: str) -> Dict[str, Any]:
 def project_list(request: HttpRequest) -> HttpResponse:
     """List projects accessible to the logged in organisation user."""
     user = request.user
+    lang = _get_lang(request)
     if not _user_is_organisation(user):
         messages.warning(request, 'Access denied: only organisation accounts can manage projects.')
         return redirect('home')
     projects = _get_accessible_projects(user)
     context = {
         'projects': projects,
+        'lang': lang,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'Projects', 'پروژه‌ها'), ''),
+        ),
     }
     return render(request, 'projects_list.html', context)
 
@@ -2290,6 +2392,7 @@ def project_list(request: HttpRequest) -> HttpResponse:
 def project_add(request: HttpRequest) -> HttpResponse:
     """Create a new project and assign the creator membership to it."""
     user = request.user
+    lang = _get_lang(request)
     if not _user_is_organisation(user):
         messages.warning(request, 'Access denied: only organisation accounts can create projects.')
         return redirect('home')
@@ -2343,13 +2446,26 @@ def project_add(request: HttpRequest) -> HttpResponse:
                 return redirect('project_list')
     else:
         form = ProjectForm()
-    return render(request, 'project_form.html', _project_form_context(form, 'Add Project'))
+    title = _localise_text(lang, 'Add Project', 'ایجاد پروژه')
+    context = _project_form_context(form, title)
+    context.update(
+        {
+            'lang': lang,
+            'breadcrumbs': _build_breadcrumbs(
+                lang,
+                (_localise_text(lang, 'Projects', 'پروژه‌ها'), reverse('project_list')),
+                (title, ''),
+            ),
+        }
+    )
+    return render(request, 'project_form.html', context)
 
 
 @login_required
 def project_edit(request: HttpRequest, project_id: int) -> HttpResponse:
     """Edit an existing project accessible to the organisation user."""
     user = request.user
+    lang = _get_lang(request)
     if not _user_is_organisation(user):
         messages.warning(request, 'Access denied: only organisation accounts can edit projects.')
         return redirect('home')
@@ -2382,7 +2498,20 @@ def project_edit(request: HttpRequest, project_id: int) -> HttpResponse:
                 return redirect('project_list')
     else:
         form = ProjectForm(instance=project)
-    return render(request, 'project_form.html', _project_form_context(form, 'Edit Project'))
+    title = _localise_text(lang, 'Edit Project', 'ویرایش پروژه')
+    context = _project_form_context(form, title)
+    context.update(
+        {
+            'lang': lang,
+            'breadcrumbs': _build_breadcrumbs(
+                lang,
+                (_localise_text(lang, 'Projects', 'پروژه‌ها'), reverse('project_list')),
+                (project.name or title, reverse('project_edit', args=[project.pk])),
+                (title, ''),
+            ),
+        }
+    )
+    return render(request, 'project_form.html', context)
 
 
 @login_required
@@ -3654,6 +3783,7 @@ def database_list(request: HttpRequest) -> HttpResponse:
     permission.  A disabled message is shown if the user lacks the panel.
     """
     user = request.user
+    lang = _get_lang(request)
     if not _user_has_panel(user, 'database_management'):
         messages.error(request, 'Access denied: you do not have database management permissions.')
         return redirect('home')
@@ -3669,7 +3799,18 @@ def database_list(request: HttpRequest) -> HttpResponse:
             )
             return redirect('home')
     entries = DatabaseEntry.objects.filter(project__in=projects).select_related('project')
-    return render(request, 'database_list.html', {'entries': entries})
+    return render(
+        request,
+        'database_list.html',
+        {
+            'entries': entries,
+            'lang': lang,
+            'breadcrumbs': _build_breadcrumbs(
+                lang,
+                (_localise_text(lang, 'Databases', 'پایگاه‌های داده'), ''),
+            ),
+        },
+    )
 
 
 @login_required
