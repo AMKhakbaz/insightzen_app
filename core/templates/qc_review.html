@@ -7,6 +7,47 @@
     <img src="{% static 'core/icons/feather/eye.svg' %}" alt="" class="me-2" width="24" height="24">
     <h1 class="h4 mb-0">{% if lang == 'fa' %}بازبینی داده{% else %}Review Data{% endif %}</h1>
   </div>
-  <p class="text-muted">{% if lang == 'fa' %}مرور و ارزیابی داده‌های گردآوری‌شده.{% else %}Review and assess collected data.{% endif %}</p>
+  <p class="text-muted">{% if lang == 'fa' %}تسک‌های ارجاع‌شده برای بازبینی را مدیریت کنید.{% else %}Manage your assigned review tasks.{% endif %}</p>
+
+  <div class="card">
+    <div class="card-body">
+      {% if tasks %}
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th scope="col">{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</th>
+              <th scope="col">{% if lang == 'fa' %}پایگاه{% else %}Database{% endif %}</th>
+              <th scope="col">{% if lang == 'fa' %}تعداد رکورد{% else %}Task size{% endif %}</th>
+              <th scope="col">{% if lang == 'fa' %}بازبینی شده{% else %}Reviewed{% endif %}</th>
+              <th scope="col">{% if lang == 'fa' %}باقی‌مانده{% else %}Remaining{% endif %}</th>
+              <th scope="col">{% if lang == 'fa' %}ارجاع‌دهنده{% else %}Assigned by{% endif %}</th>
+              <th scope="col" class="text-end">{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in tasks %}
+            <tr>
+              <td>{{ task.project.name }}</td>
+              <td>{{ task.entry.db_name }}</td>
+              <td>{{ task.task_size }}</td>
+              <td>{{ task.reviewed }}</td>
+              <td>{{ task.remaining }}</td>
+              <td>{% if task.assigned_by %}{{ task.assigned_by.get_full_name|default:task.assigned_by.username }}{% else %}&mdash;{% endif %}</td>
+              <td class="text-end">
+                <a class="btn btn-primary btn-sm{% if task.completed %} disabled{% endif %}" href="{% url 'qc_review_detail' task.id %}">
+                  {% if lang == 'fa' %}شروع بازبینی{% else %}Start review{% endif %}
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="mb-0 text-muted">{% if lang == 'fa' %}تسکی برای شما ارجاع نشده است.{% else %}No review tasks assigned to you yet.{% endif %}</p>
+      {% endif %}
+    </div>
+  </div>
 </div>
 {% endblock %}

@@ -95,7 +95,7 @@
         </div>
 
         <div class="qc-management__grid">
-            <section class="card qc-card qc-card--stacked" aria-labelledby="qc-measure-heading">
+            <section class="card card--narrow qc-card qc-card--stacked qc-card--narrow" aria-labelledby="qc-measure-heading">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <div>
                         <h2 id="qc-measure-heading" class="h5 mb-0">{% if lang == 'fa' %}QC Measure{% else %}QC Measure{% endif %}</h2>
@@ -117,7 +117,7 @@
                 </div>
             </section>
 
-            <section class="card qc-card qc-card--stacked" aria-labelledby="qc-assignment-heading">
+            <section class="card card--narrow qc-card qc-card--stacked qc-card--narrow" aria-labelledby="qc-assignment-heading">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <div>
                         <h2 id="qc-assignment-heading" class="h5 mb-0">{% if lang == 'fa' %}Assignment{% else %}Assignment{% endif %}</h2>
@@ -131,27 +131,38 @@
                 </div>
                 <div class="card-body">
                     {% if assignment_columns %}
+                        <div class="qc-assignment__controls">
+                            <button type="button" class="btn btn-outline btn-sm" data-select-all>
+                                {% if lang == 'fa' %}انتخاب همه{% else %}Select all{% endif %}
+                            </button>
+                            <span class="qc-assignment__controls-hint text-muted" data-select-status role="status" aria-live="polite"></span>
+                        </div>
                         <div class="table-responsive qc-table-wrapper">
                             <table class="table table-hover align-middle qc-assignment-table" data-table="interactive" data-filter-context="qc_management_assignment" data-empty-text="{% if lang == 'fa' %}سطر مطابق فیلتر یافت نشد.{% else %}No rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
                                 <thead>
                                     <tr>
                                         {% for col in assignment_columns %}
-                                            <th scope="col">
-                                                <button type="button" class="table-sort" data-sort-column="{{ forloop.counter0 }}" data-sort-type="{{ col.sort_type }}">
-                                                    <span>{{ col.name }}</span>
-                                                    <span class="sort-icon" aria-hidden="true"></span>
-                                                </button>
+                                            <th scope="col" class="{% if col.is_select %}qc-col-select{% elif col.is_measure %}qc-col-measure{% endif %}">
+                                                {% if col.is_select %}
+                                                    <span class="sr-only">{% if lang == 'fa' %}انتخاب{% else %}Select{% endif %}</span>
+                                                {% else %}
+                                                    <button type="button" class="table-sort" data-sort-column="{{ forloop.counter0 }}" data-sort-type="{{ col.sort_type }}">
+                                                        <span>{{ col.name }}</span>
+                                                        <span class="sort-icon" aria-hidden="true"></span>
+                                                    </button>
+                                                {% endif %}
                                             </th>
                                         {% endfor %}
                                     </tr>
                                     <tr class="table-filter-row">
-                                        {% for filter in assignment_filters %}
-                                            {% if forloop.first %}
+                                        {% for col in assignment_columns %}
+                                            {% if col.filterable %}
+                                                <th>
+                                                    <input type="text" name="{{ col.filter_name }}" value="{{ col.filter_value }}" form="qc-management-filter" data-filter-column="{{ forloop.counter }}" placeholder="{% if lang == 'fa' %}فیلتر {{ col.filter_label }}{% else %}Filter {{ col.filter_label }}{% endif %}" onchange="document.getElementById('qc-management-filter').page.value = 1; document.getElementById('qc-management-filter').submit();">
+                                                </th>
+                                            {% else %}
                                                 <th></th>
                                             {% endif %}
-                                            <th>
-                                                <input type="text" name="filter_{{ filter.index }}" value="{{ filter.value }}" form="qc-management-filter" data-filter-column="{{ forloop.counter }}" placeholder="{% if lang == 'fa' %}فیلتر {{ filter.label }}{% else %}Filter {{ filter.label }}{% endif %}" onchange="document.getElementById('qc-management-filter').page.value = 1; document.getElementById('qc-management-filter').submit();">
-                                            </th>
                                         {% endfor %}
                                     </tr>
                                 </thead>
@@ -162,8 +173,11 @@
                                                 <label class="sr-only" for="row-{{ forloop.counter }}">{% if lang == 'fa' %}انتخاب{% else %}Select{% endif %}</label>
                                                 <input type="checkbox" id="row-{{ forloop.counter }}" value="{{ row.id }}">
                                             </td>
+                                            {% for value in row.measure_values %}
+                                                <td class="qc-cell qc-cell--truncate qc-cell--boolean" data-fulltext="{{ value|default_if_none:'' }}">{{ value }}</td>
+                                            {% endfor %}
                                             {% for value in row.values %}
-                                                <td>{{ value }}</td>
+                                                <td class="qc-cell qc-cell--truncate" data-fulltext="{{ value|default_if_none:'' }}">{{ value }}</td>
                                             {% endfor %}
                                         </tr>
                                     {% empty %}

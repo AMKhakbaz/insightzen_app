@@ -3,11 +3,12 @@
 
 {% block content %}
 <div class="card" style="max-width:600px;margin:2rem auto;padding:1.5rem;">
-    <h1>{% if lang == 'fa' %}
-        {% if title == 'Add Database' %}افزودن پایگاه داده{% elif title == 'Edit Database' %}ویرایش پایگاه داده{% else %}پایگاه داده{% endif %}
-    {% else %}
-        {{ title }}
-    {% endif %}</h1>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+        <h1 style="margin:0;">{{ title }}</h1>
+        <a href="{% url 'database_list' %}" class="btn btn-sm btn-outline" aria-label="{% if lang == 'fa' %}بازگشت به فهرست پایگاه داده{% else %}Return to database list{% endif %}">
+            &times;
+        </a>
+    </div>
     <form method="post">
         {% csrf_token %}
         {{ form.non_field_errors }}
@@ -37,9 +38,9 @@
         </div>
         <button type="submit" class="btn" style="margin-top:1rem;">
             {% if lang == 'fa' %}
-                {% if title == 'Add Database' %}افزودن{% else %}ذخیره{% endif %}
+                {% if is_create %}افزودن{% else %}ذخیره{% endif %}
             {% else %}
-                {% if title == 'Add Database' %}Add{% else %}Save{% endif %}
+                {% if is_create %}Add{% else %}Save{% endif %}
             {% endif %}
         </button>
     </form>

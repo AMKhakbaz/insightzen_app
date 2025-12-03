@@ -1,0 +1,31 @@
+{% with items|default:breadcrumbs as crumbs %}
+{% if crumbs %}
+<nav class="breadcrumb" aria-label="{% if lang == 'fa' %}مسیر صفحه{% else %}Breadcrumb{% endif %}" data-breadcrumb>
+  <div class="breadcrumb__inner">
+    {% with crumbs|slice:':-1' as trail %}
+      {% if trail %}
+        {% with trail|last as back %}
+          {% if back.url %}
+            <a href="{{ back.url }}" class="breadcrumb__back">
+              <span aria-hidden="true" class="breadcrumb__back-icon">←</span>
+              <span class="breadcrumb__back-label">{% if lang == 'fa' %}بازگشت{% else %}Back{% endif %}</span>
+            </a>
+          {% endif %}
+        {% endwith %}
+      {% endif %}
+    {% endwith %}
+    <ol class="breadcrumb__list">
+      {% for crumb in crumbs %}
+        <li class="breadcrumb__item" data-breadcrumb-item>
+          {% if crumb.url and not forloop.last %}
+            <a href="{{ crumb.url }}" class="breadcrumb__link">{{ crumb.label }}</a>
+          {% else %}
+            <span class="breadcrumb__current">{{ crumb.label }}</span>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  </div>
+</nav>
+{% endif %}
+{% endwith %}

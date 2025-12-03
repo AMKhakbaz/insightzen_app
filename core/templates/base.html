@@ -70,21 +70,7 @@
             </header>
             <div class="page-content">
                 {% block breadcrumbs %}
-                    {% if breadcrumbs %}
-                        <nav class="breadcrumb" aria-label="{% if lang == 'fa' %}مسیر صفحه{% else %}Breadcrumb{% endif %}" data-breadcrumb>
-                            <ol class="breadcrumb__list">
-                                {% for crumb in breadcrumbs %}
-                                    <li class="breadcrumb__item" data-breadcrumb-item>
-                                        {% if crumb.url and not forloop.last %}
-                                            <a href="{{ crumb.url }}" class="breadcrumb__link">{{ crumb.label }}</a>
-                                        {% else %}
-                                            <span class="breadcrumb__current">{{ crumb.label }}</span>
-                                        {% endif %}
-                                    </li>
-                                {% endfor %}
-                            </ol>
-                        </nav>
-                    {% endif %}
+                    {% include 'partials/breadcrumbs.html' with items=breadcrumbs %}
                 {% endblock %}
                 {% for message in messages %}
                     <div class="alert alert-{{ message.tags }}">{{ message }}</div>
