@@ -440,9 +440,7 @@ body.rtl .breadcrumb__back-icon {
     border: 1px solid var(--color-divider);
     box-shadow: var(--color-shadow-soft);
     margin-bottom: 1.5rem;
-    transition: transform 0.2s ease, box-shadow 0.25s ease, outline-color 0.2s ease;
-    outline: 1.5px dotted transparent;
-    outline-offset: -6px;
+    transition: transform 0.2s ease, box-shadow 0.25s ease;
 }
 
 .card--narrow {
@@ -460,13 +458,17 @@ body.rtl .breadcrumb__back-icon {
 
 .card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 32px 120px rgba(10, 14, 36, 0.3), 0 12px 32px rgba(198, 164, 255, 0.12);
-    outline-color: rgba(198, 164, 255, 0.45);
+    box-shadow: 0 32px 120px rgba(10, 14, 36, 0.3), 0 12px 32px rgba(198, 164, 255, 0.12), 0 0 0 3px rgba(198, 164, 255, 0.35);
 }
 
 .card:active {
     transform: translateY(0);
-    outline-color: rgba(246, 213, 113, 0.45);
+    box-shadow: var(--color-shadow-soft), 0 0 0 3px rgba(246, 213, 113, 0.4);
+}
+
+.card:focus-visible {
+    outline: none;
+    box-shadow: var(--color-shadow-soft), 0 0 0 3px rgba(156, 212, 252, 0.45);
 }
 
 .card h1 {
@@ -609,10 +611,27 @@ body.rtl .breadcrumb__back-icon {
 
 .qc-management__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
-    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+    gap: 1rem;
     width: 100%;
     align-items: start;
+}
+
+.qc-management .card {
+    margin-bottom: 0;
+    transform: none;
+    transition: box-shadow 0.2s ease;
+}
+
+.qc-management .card:hover,
+.qc-management .card:active {
+    transform: none;
+    box-shadow: 0 18px 60px rgba(10, 14, 36, 0.18), 0 0 0 2px rgba(198, 164, 255, 0.25);
+}
+
+.qc-management .card:focus-visible {
+    outline: none;
+    box-shadow: var(--color-shadow-soft), 0 0 0 2px rgba(156, 212, 252, 0.6);
 }
 
 .qc-card--narrow {
@@ -794,8 +813,8 @@ body.rtl .breadcrumb__back-icon {
     }
 
     .qc-management__grid {
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.9rem;
     }
 }
 
@@ -1079,9 +1098,7 @@ body.rtl .breadcrumb__back-icon {
     color: var(--color-bg);
     font-weight: var(--font-weight-medium);
     letter-spacing: 0.2px;
-    transition: background-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease, outline-color 0.15s ease;
-    outline: 2px dotted transparent;
-    outline-offset: 2px;
+    transition: background-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     text-decoration: none;
 }
 
@@ -1143,15 +1160,19 @@ body.rtl .breadcrumb__back-icon {
     background: var(--color-accent-strong);
     box-shadow: 0 12px 24px rgba(76, 181, 195, 0.25), 0 0 0 3px rgba(198, 164, 255, 0.16);
     transform: translateY(-1px);
-    outline-color: rgba(198, 164, 255, 0.4);
     text-decoration: none;
 }
 
 .btn:active {
     transform: translateY(0);
     opacity: 0.92;
-    outline-color: rgba(246, 213, 113, 0.5);
+    box-shadow: 0 0 0 3px rgba(246, 213, 113, 0.5);
     text-decoration: none;
+}
+
+.btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(156, 212, 252, 0.5);
 }
 
 .btn-secondary {
@@ -2948,6 +2969,27 @@ body.rtl .calendar-panel__layout {
     border-radius: 999px;
 }
 
+.qc-review-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+.qc-review-actions > * {
+    flex: 0 0 11rem;
+}
+
+.qc-review-actions .btn-sm {
+    width: 100%;
+    min-width: 11rem;
+    text-align: center;
+}
+
+.qc-review-actions form {
+    margin: 0;
+}
+
 .btn-danger {
     background: var(--color-danger);
     color: var(--color-bg);
@@ -3220,7 +3262,7 @@ body.sidebar-collapsed .menu-toggle__icon--open {
 }
 
 .auth-link {
-    color: #9cd4fc;
+    color: #1c8cff;
     font-weight: var(--font-weight-medium);
     text-decoration: none;
     transition: color 0.2s ease, text-decoration-color 0.2s ease;
@@ -3228,7 +3270,7 @@ body.sidebar-collapsed .menu-toggle__icon--open {
 
 .auth-link:hover,
 .auth-link:focus-visible {
-    color: var(--color-accent-strong);
+    color: #1c8cff;
     text-decoration: underline;
     text-decoration-color: currentColor;
     outline: none;

@@ -33,11 +33,11 @@
               <td>{{ task.task_size }}</td>
               <td>{{ task.reviewed }}</td>
               <td class="text-end">
-                <div class="d-flex flex-wrap gap-2 justify-content-end">
+                <div class="qc-review-actions">
                   <a class="btn btn-outline-secondary btn-sm" href="{% url 'qc_review_detail' task.id %}">
                     {% if lang == 'fa' %}نمایش داده{% else %}Show data{% endif %}
                   </a>
-                  <form method="post" action="{% url 'qc_review_detail' task.id %}" class="d-inline">
+                  <form method="post" action="{% url 'qc_review_detail' task.id %}">
                     {% csrf_token %}
                     <input type="hidden" name="row_id" value="{{ task.next_row_id }}">
                     <input type="hidden" name="action" value="start">
