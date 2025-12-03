@@ -36,11 +36,13 @@ from .models import Interview, Project
 # _get_accessible_projects so we can filter interview data to only
 # projects the current user is permitted to view.
 from .views import (
-    _user_has_panel,
-    _user_is_organisation,
+    _build_breadcrumbs,
     _get_accessible_projects,
+    _get_lang,
     _get_locked_projects,
     _localise_text,
+    _user_has_panel,
+    _user_is_organisation,
 )
 
 
@@ -443,6 +445,7 @@ def collection_performance(request: HttpRequest) -> HttpResponse:
     whereas individual interviewers only see their own projects.
     """
     user = request.user
+    lang = _get_lang(request)
     if not _user_has_panel(user, 'collection_performance'):
         messages.error(request, 'Access denied: you do not have collection performance permissions.')
         return redirect('home')
@@ -483,6 +486,10 @@ def collection_performance(request: HttpRequest) -> HttpResponse:
             'start': filters['start_raw'],  # type: ignore[index]
             'end': filters['end_raw'],  # type: ignore[index]
         },
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'Collection Performance', 'کارایی گردآوری'), ''),
+        ),
     }
     return render(request, 'collection_performance.html', context)
 

@@ -2877,6 +2877,7 @@ def project_delete(request: HttpRequest, pk: int) -> HttpResponse:
 @login_required
 def membership_list(request: HttpRequest) -> HttpResponse:
     """Display memberships for the organisation user."""
+    lang = _get_lang(request)
     user = request.user
     if not _user_is_organisation(user):
         messages.warning(request, 'Access denied: only organisation accounts can manage memberships.')
@@ -2902,7 +2903,11 @@ def membership_list(request: HttpRequest) -> HttpResponse:
         {
             'memberships': memberships,
             'panel_labels': MEMBERSHIP_PANEL_LABELS,
-            'lang': request.session.get('lang', 'en'),
+            'lang': lang,
+            'breadcrumbs': _build_breadcrumbs(
+                lang,
+                (_localise_text(lang, 'Memberships', 'عضویت‌ها'), ''),
+            ),
         },
     )
 
@@ -3521,6 +3526,10 @@ def quota_management(request: HttpRequest) -> HttpResponse:
         'dimension_state': dimension_state,
         'prefill_json': json.dumps(prefill_payload, ensure_ascii=False),
         'lang': lang,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'Quota Management', 'مدیریت سهمیه'), ''),
+        ),
     }
     if selected_project:
         quotas = list(Quota.objects.filter(project=selected_project))
@@ -3920,6 +3929,10 @@ def telephone_interviewer(request: HttpRequest) -> HttpResponse:
         'call_result_mode': call_result_defs.source,
         'call_result_selection': call_result_source_state,
         'lang': lang,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'Telephone Interviewer', 'مصاحبه تلفنی'), ''),
+        ),
     }
     return render(request, 'telephone_interviewer.html', context)
 
