@@ -266,7 +266,7 @@ class UserToProjectForm(forms.Form):
     qc_management = forms.BooleanField(required=False, label='QC Management')
     qc_performance = forms.BooleanField(required=False, label='QC Performance')
     review_data = forms.BooleanField(required=False, label='Review Data')
-    edit_data = forms.BooleanField(required=False, label='Edit Data')
+    edit_data = forms.BooleanField(required=False, label='General Edit')
     voice_review = forms.BooleanField(required=False, label='Voice Review')
     callback_qc = forms.BooleanField(required=False, label='Callback QC')
     coding = forms.BooleanField(required=False, label='Coding AI')

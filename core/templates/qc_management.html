@@ -45,7 +45,7 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="qc-toolbar__field">
+            <div class="qc-toolbar__field qc-toolbar__field--grow">
                 <label for="phone-column-select">{% if lang == 'fa' %}ستون شماره تماس{% else %}Phone column{% endif %}</label>
                 <select id="phone-column-select" name="phone_num" {% if not selected_entry %}disabled{% endif %} onchange="this.form.page.value = 1; this.form.submit();">
                     <option value="" {% if not phone_num %}selected{% endif %}>
@@ -56,17 +56,26 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="qc-toolbar__field qc-toolbar__field--grow">
-                <label for="qc-search">{% if lang == 'fa' %}جست‌وجوی متنی{% else %}Search{% endif %}</label>
-                <input id="qc-search" type="search" name="search" value="{{ search_term }}" placeholder="{% if lang == 'fa' %}عبارت مورد نظر{% else %}Search assignments{% endif %}">
-            </div>
             <div class="qc-toolbar__field qc-toolbar__field--compact">
                 <label for="qc-page-size">{% if lang == 'fa' %}ردیف در صفحه{% else %}Rows per page{% endif %}</label>
-                <select id="qc-page-size" name="page_size" onchange="this.form.page.value = 1; this.form.submit();">
+                <input
+                    type="number"
+                    id="qc-page-size"
+                    name="page_size"
+                    value="{{ page_size }}"
+                    min="{{ min_page_size }}"
+                    max="{{ max_page_size }}"
+                    step="1"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    list="qc-page-size-options"
+                    onchange="this.form.page.value = 1; this.form.submit();"
+                >
+                <datalist id="qc-page-size-options">
                     {% for size in page_sizes %}
-                        <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>
+                        <option value="{{ size }}">{{ size }}</option>
                     {% endfor %}
-                </select>
+                </datalist>
             </div>
         </div>
         <input type="hidden" name="page" value="{{ page }}">
@@ -101,7 +110,10 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    {% include 'partials/qc_measure_list.html' with nodes=qc_measure_tree lang=lang %}
+                    <div data-measure-container>
+                        {% include 'partials/qc_measure_list.html' with nodes=qc_measure_tree lang=lang is_root=True measure_saved=measure_saved %}
+                    </div>
+                    {{ default_qc_measure|json_script:"qc-default-measure" }}
                 </div>
             </section>
 
@@ -193,7 +205,6 @@
                             </div>
                             <input type="hidden" name="project" value="{% if selected_project %}{{ selected_project.pk }}{% endif %}">
                             <input type="hidden" name="entry" value="{% if selected_entry %}{{ selected_entry.pk }}{% endif %}">
-                            <input type="hidden" name="search" value="{{ search_term }}">
                             <input type="hidden" name="phone_num" value="{{ phone_num }}">
                             <input type="hidden" name="page_size" value="{{ page_size }}">
                             {% for filter in assignment_filters %}

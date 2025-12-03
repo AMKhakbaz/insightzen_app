@@ -326,6 +326,66 @@ body.rtl .sidebar {
     overflow-y: auto;
 }
 
+.breadcrumb {
+    margin: 0 0 1rem;
+}
+
+.breadcrumb__list {
+    list-style: none;
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    margin: 0;
+    border-radius: 12px;
+    border: 1px solid var(--color-divider);
+    background: linear-gradient(145deg, rgba(165, 199, 255, 0.08), rgba(198, 164, 255, 0.05)), var(--color-surface);
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.breadcrumb__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--color-muted);
+    white-space: nowrap;
+    font-weight: var(--font-weight-medium);
+}
+
+.breadcrumb__item::before {
+    content: '›';
+    color: var(--color-divider-strong);
+}
+
+.breadcrumb__item:first-child::before {
+    content: '';
+}
+
+.breadcrumb__link {
+    color: var(--color-text);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.breadcrumb__link:hover,
+.breadcrumb__link:focus-visible {
+    color: var(--color-accent);
+    text-decoration: underline;
+}
+
+.breadcrumb__current {
+    color: var(--color-accent-strong);
+}
+
+body.rtl .breadcrumb__list {
+    flex-direction: row-reverse;
+}
+
+body.rtl .breadcrumb__item::before {
+    content: '‹';
+}
+
 /* Cards */
 .card {
     background: linear-gradient(145deg, rgba(165, 199, 255, 0.08), rgba(198, 164, 255, 0.05)), var(--color-surface-elevated);
@@ -579,16 +639,19 @@ body.rtl .sidebar {
 }
 
 .qc-measure-item__content {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.35rem;
+    align-items: center;
 }
 
-.qc-measure-item__label {
-    font-weight: 600;
+.qc-measure-item__input {
+    width: 100%;
+    font-size: var(--font-size-sm);
 }
 
-.qc-measure-item__field {
+.qc-measure-item__input--sub {
     color: var(--color-text-muted);
 }
 

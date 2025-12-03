@@ -3,6 +3,7 @@
 
 document.addEventListener('DOMContentLoaded', function () {
   initNotificationCenter();
+  initBreadcrumbs();
   // Conjoint analysis form submission
   const form = document.getElementById('conjoint-form');
   if (form) {
@@ -1032,6 +1033,19 @@ function initNotificationCenter() {
 
   // Prime the badge once the page loads.
   fetchNotifications(true);
+}
+
+function initBreadcrumbs() {
+  const breadcrumbNavs = document.querySelectorAll('[data-breadcrumb]');
+  breadcrumbNavs.forEach((nav) => {
+    const items = nav.querySelectorAll('[data-breadcrumb-item]');
+    if (!items.length) return;
+    const current = items[items.length - 1];
+    current.setAttribute('aria-current', 'page');
+    if (nav.scrollWidth > nav.clientWidth) {
+      nav.scrollLeft = nav.scrollWidth;
+    }
+  });
 }
 
 // Helper to get CSRF token from cookies

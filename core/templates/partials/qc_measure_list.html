@@ -1,11 +1,23 @@
-<ul class="qc-measure-list" data-measure-list>
+<ul class="qc-measure-list" data-measure-list{% if is_root %} data-measure-saved="{{ measure_saved|yesno:'true,false' }}"{% endif %}>
     {% for node in nodes %}
         <li class="qc-measure-item" data-measure-id="{{ node.id }}" data-measure-field="{{ node.field }}">
             <div class="qc-measure-item__body" draggable="true" data-draggable>
                 <div class="qc-measure-item__icon" aria-hidden="true"></div>
                 <div class="qc-measure-item__content">
-                    <span class="qc-measure-item__label">{{ node.label }}</span>
-                    <small class="qc-measure-item__field">{{ node.field }}</small>
+                    <input
+                        type="text"
+                        class="form-control form-control-sm qc-measure-item__input"
+                        data-label-input
+                        value="{{ node.label }}"
+                        placeholder="{% if lang == 'fa' %}عنوان QC{% else %}QC label{% endif %}"
+                    >
+                    <input
+                        type="text"
+                        class="form-control form-control-sm qc-measure-item__input qc-measure-item__input--sub"
+                        data-field-input
+                        value="{{ node.field }}"
+                        placeholder="{% if lang == 'fa' %}نام فیلد داده{% else %}Data field{% endif %}"
+                    >
                 </div>
                 <div class="qc-measure-item__actions">
                     <button type="button" class="btn btn-text btn-sm" data-add-child>
@@ -17,7 +29,7 @@
                 </div>
             </div>
             {% if node.children %}
-                {% include 'partials/qc_measure_list.html' with nodes=node.children lang=lang %}
+                {% include 'partials/qc_measure_list.html' with nodes=node.children lang=lang is_root=False measure_saved=measure_saved %}
             {% endif %}
         </li>
     {% empty %}

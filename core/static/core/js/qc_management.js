@@ -7,6 +7,10 @@
   const assignEmailInput = document.getElementById('qc-assign-email');
   const assignButton = document.querySelector('[data-assign-button]');
   const assignStatus = document.querySelector('[data-assign-status]');
+  const defaultMeasureScript = document.getElementById('qc-default-measure');
+  const defaultMeasure = defaultMeasureScript ? JSON.parse(defaultMeasureScript.textContent) : [];
+  let hasSavedMeasure = false;
+  let lastSavedStructure = [];
 
   function csrfToken() {
     const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
@@ -43,13 +47,15 @@
     if (!listEl) return items;
     const children = listEl.querySelectorAll(':scope > .qc-measure-item:not([data-empty])');
     children.forEach((li) => {
-      const labelEl = li.querySelector(':scope > .qc-measure-item__body .qc-measure-item__label');
-      const fieldEl = li.querySelector(':scope > .qc-measure-item__body .qc-measure-item__field');
+      const labelInput = li.querySelector('[data-label-input]');
+      const fieldInput = li.querySelector('[data-field-input]');
       const childList = li.querySelector(':scope > ul');
+      const label = (labelInput?.value || '').trim();
+      const field = (fieldInput?.value || label || '').trim();
       items.push({
         id: li.dataset.measureId || uuid(),
-        label: (labelEl ? labelEl.textContent : '').trim(),
-        field: (fieldEl ? fieldEl.textContent : '').trim(),
+        label,
+        field,
         children: buildListFromDom(childList),
       });
     });
@@ -66,10 +72,51 @@
     return childList;
   }
 
-  function createItem(label, field) {
+  function appendNodeFromStructure(node, listEl) {
+    const li = createItem(node.label, node.field, node.id);
+    listEl.appendChild(li);
+    if (node.children && node.children.length) {
+      const childList = ensureChildList(li);
+      node.children.forEach((child) => appendNodeFromStructure(child, childList));
+    }
+    wireInteractions(li);
+  }
+
+  function rebuildListFromStructure(structure) {
+    if (!measureRoot) return;
+    measureRoot.innerHTML = '';
+    structure.forEach((node) => appendNodeFromStructure(node, measureRoot));
+    refreshEmptyState();
+  }
+
+  function focusLabelInput(li) {
+    const labelInput = li?.querySelector('[data-label-input]');
+    if (labelInput) {
+      labelInput.focus();
+      labelInput.select();
+    }
+  }
+
+  function bindInputSync(li, labelInput, fieldInput) {
+    if (!li || !labelInput || !fieldInput || li.dataset.inputBound === 'true') return;
+    li.dataset.inputBound = 'true';
+    const syncFieldDataset = () => {
+      const nextLabel = (labelInput.value || '').trim();
+      const nextField = (fieldInput.value || nextLabel).trim();
+      li.dataset.measureField = nextField;
+      if (!fieldInput.value && nextLabel) {
+        fieldInput.value = nextLabel;
+      }
+    };
+
+    labelInput.addEventListener('input', syncFieldDataset);
+    fieldInput.addEventListener('input', syncFieldDataset);
+  }
+
+  function createItem(label, field, id) {
     const li = document.createElement('li');
     li.className = 'qc-measure-item';
-    li.dataset.measureId = uuid();
+    li.dataset.measureId = id || uuid();
     li.dataset.measureField = field || label;
 
     const body = document.createElement('div');
@@ -83,14 +130,28 @@
 
     const content = document.createElement('div');
     content.className = 'qc-measure-item__content';
-    const labelSpan = document.createElement('span');
-    labelSpan.className = 'qc-measure-item__label';
-    labelSpan.textContent = label;
-    const fieldSmall = document.createElement('small');
-    fieldSmall.className = 'qc-measure-item__field';
-    fieldSmall.textContent = field || label;
-    content.appendChild(labelSpan);
-    content.appendChild(fieldSmall);
+
+    const labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.className = 'form-control form-control-sm qc-measure-item__input';
+    labelInput.dataset.labelInput = 'true';
+    labelInput.placeholder =
+      document.documentElement.lang === 'fa' ? 'عنوان QC' : 'QC label';
+    labelInput.value = label || '';
+
+    const fieldInput = document.createElement('input');
+    fieldInput.type = 'text';
+    fieldInput.className =
+      'form-control form-control-sm qc-measure-item__input qc-measure-item__input--sub';
+    fieldInput.dataset.fieldInput = 'true';
+    fieldInput.placeholder =
+      document.documentElement.lang === 'fa' ? 'نام فیلد داده' : 'Data field';
+    fieldInput.value = field || label || '';
+
+    bindInputSync(li, labelInput, fieldInput);
+
+    content.appendChild(labelInput);
+    content.appendChild(fieldInput);
     body.appendChild(content);
 
     const actions = document.createElement('div');
@@ -117,32 +178,47 @@
   }
 
   function handleAddRoot() {
-    const label = prompt(document.documentElement.lang === 'fa' ? 'عنوان آیتم QC را وارد کنید' : 'Enter QC measure label');
-    if (!label) return;
-    const field = prompt(document.documentElement.lang === 'fa' ? 'نام ستون یا فیلد داده' : 'Data field name', label) || label;
-    const item = createItem(label, field);
+    const item = createItem('', '');
     measureRoot.appendChild(item);
     refreshEmptyState();
     wireInteractions(item);
+    focusLabelInput(item);
   }
 
   function handleAddChild(evt) {
     const li = evt.target.closest('.qc-measure-item');
     if (!li) return;
-    const label = prompt(document.documentElement.lang === 'fa' ? 'عنوان زیرآیتم را وارد کنید' : 'Enter child label');
-    if (!label) return;
-    const field = prompt(document.documentElement.lang === 'fa' ? 'نام ستون یا فیلد داده' : 'Data field name', label) || label;
-    const child = createItem(label, field);
+    const child = createItem('', '');
     ensureChildList(li).appendChild(child);
     refreshEmptyState();
     wireInteractions(child);
+    focusLabelInput(child);
   }
 
-  function handleRemove(evt) {
+  async function maybePromptDefaultReset() {
+    if (!measureRoot || !hasSavedMeasure || !defaultMeasure.length) return;
+    const hasItems = measureRoot.querySelector(':scope > .qc-measure-item:not([data-empty])');
+    if (hasItems) return;
+    const message =
+      document.documentElement.lang === 'fa'
+        ? 'همه آیتم‌ها حذف شدند. بازگردانی به مقدار پیش‌فرض؟'
+        : 'All items were removed. Reset to the default QC measure?';
+    const confirmed = window.confirm(message);
+    if (!confirmed) return;
+    rebuildListFromStructure(defaultMeasure);
+    await persistStructure(defaultMeasure, {
+      resetToDefault: true,
+      pendingLabel: document.documentElement.lang === 'fa' ? 'در حال بازگردانی…' : 'Restoring defaults…',
+      successLabel: document.documentElement.lang === 'fa' ? 'بازگردانی شد' : 'Defaults restored',
+    });
+  }
+
+  async function handleRemove(evt) {
     const li = evt.target.closest('.qc-measure-item');
     if (!li) return;
     li.remove();
     refreshEmptyState();
+    await maybePromptDefaultReset();
   }
 
   function handleDragStart(evt) {
@@ -185,6 +261,9 @@
     const addChild = li.querySelector('[data-add-child]');
     const removeBtn = li.querySelector('[data-remove-item]');
     const body = li.querySelector('[data-draggable]');
+    const labelInput = li.querySelector('[data-label-input]');
+    const fieldInput = li.querySelector('[data-field-input]');
+    bindInputSync(li, labelInput, fieldInput);
     if (addChild) addChild.addEventListener('click', handleAddChild);
     if (removeBtn) removeBtn.addEventListener('click', handleRemove);
     if (body) {
@@ -200,6 +279,20 @@
     items.forEach((li) => wireInteractions(li));
   }
 
+  function syncSavedState(structure) {
+    lastSavedStructure = structure || [];
+    hasSavedMeasure = true;
+    if (measureRoot) {
+      measureRoot.dataset.measureSaved = 'true';
+    }
+  }
+
+  function initialiseSavedState() {
+    if (!measureRoot) return;
+    lastSavedStructure = buildListFromDom(measureRoot);
+    hasSavedMeasure = (measureRoot.dataset.measureSaved || '').toLowerCase() === 'true';
+  }
+
   function setStatus(message, state) {
     if (!statusEl) return;
     statusEl.textContent = message || '';
@@ -210,6 +303,44 @@
     if (!assignStatus) return;
     assignStatus.textContent = message || '';
     assignStatus.dataset.state = state || '';
+  }
+
+  async function persistStructure(structure, options = {}) {
+    if (!saveButton || !measureRoot) return;
+    const endpoint = saveButton.dataset.endpoint;
+    const entry = saveButton.dataset.entry;
+    const { resetToDefault = false, pendingLabel, successLabel } = options;
+    if (!endpoint || !entry) return;
+    const payload = {
+      measure: structure,
+      reset_to_default: resetToDefault,
+    };
+    const pendingMessage =
+      pendingLabel || (document.documentElement.lang === 'fa' ? 'در حال ذخیره…' : 'Saving…');
+    const successMessage =
+      successLabel || (document.documentElement.lang === 'fa' ? 'ذخیره شد' : 'Saved');
+    setStatus(pendingMessage, 'saving');
+    try {
+      const resp = await fetch(`${endpoint}?entry=${encodeURIComponent(entry)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken(),
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || 'Request failed');
+      }
+      syncSavedState(resetToDefault ? defaultMeasure : structure);
+      setStatus(successMessage, 'success');
+      setTimeout(() => setStatus('', ''), 3500);
+    } catch (err) {
+      setStatus(document.documentElement.lang === 'fa' ? 'ذخیره انجام نشد' : 'Save failed', 'error');
+      // eslint-disable-next-line no-console
+      console.error(err);
+    }
   }
 
   function selectedAssignments() {
@@ -307,34 +438,9 @@
   }
 
   async function saveStructure() {
-    if (!saveButton || !measureRoot) return;
-    const endpoint = saveButton.dataset.endpoint;
-    const entry = saveButton.dataset.entry;
-    if (!endpoint || !entry) return;
-    const payload = {
-      measure: buildListFromDom(measureRoot),
-    };
-    setStatus(document.documentElement.lang === 'fa' ? 'در حال ذخیره…' : 'Saving…', 'saving');
-    try {
-      const resp = await fetch(`${endpoint}?entry=${encodeURIComponent(entry)}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken(),
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data.error || 'Request failed');
-      }
-      setStatus(document.documentElement.lang === 'fa' ? 'ذخیره شد' : 'Saved', 'success');
-      setTimeout(() => setStatus('', ''), 3500);
-    } catch (err) {
-      setStatus(document.documentElement.lang === 'fa' ? 'ذخیره انجام نشد' : 'Save failed', 'error');
-      // eslint-disable-next-line no-console
-      console.error(err);
-    }
+    if (!measureRoot) return;
+    const structure = buildListFromDom(measureRoot);
+    await persistStructure(structure);
   }
 
   if (addRootButton) {
@@ -348,6 +454,7 @@
   }
 
   if (measureRoot) {
+    initialiseSavedState();
     refreshEmptyState();
     wireExistingItems();
   }
