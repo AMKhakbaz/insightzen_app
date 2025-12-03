@@ -222,9 +222,15 @@ def payment(request: HttpRequest) -> HttpResponse:
     if not pending:
         return redirect('register')
 
-    lang = request.session.get('lang', 'en')
+    lang = _get_lang(request)
     context = {
         'security_phrase_value': '',
+        'lang': lang,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'Register', 'ثبت‌نام'), reverse('register')),
+            (_localise_text(lang, 'Payment', 'پرداخت'), None),
+        ),
     }
 
     if request.method == 'POST':
