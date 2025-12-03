@@ -529,6 +529,8 @@ class ReviewRow(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    review_started_at = models.DateTimeField(null=True, blank=True)
+    review_submitted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = ('task', 'submission_id')

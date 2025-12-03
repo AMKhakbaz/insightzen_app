@@ -322,9 +322,14 @@
       this.exportEndpoint = table.dataset.exportEndpoint || null;
       this.exportFilename = table.dataset.exportFilename || this.filterContext || this.tableId || 'table-data';
       this.exportParams = this.collectExportParams();
+      this.externalExportButtons = table.dataset.exportPlacement === 'header';
+      this.exportStatusTarget = table.dataset.exportStatusTarget || null;
       this.exportButtons = [];
       this.exportGroup = null;
       this.exportStatus = null;
+      if (this.exportStatusTarget) {
+        this.exportStatus = document.getElementById(this.exportStatusTarget) || null;
+      }
 
       this.captureRows();
       this.cacheControls();
@@ -800,7 +805,7 @@
     }
 
     createExportControls() {
-      if (!this.toolbarActions || !this.exportEndpoint || this.exportGroup) {
+      if (!this.toolbarActions || !this.exportEndpoint || this.exportGroup || this.externalExportButtons) {
         return;
       }
       const group = document.createElement('div');
@@ -1905,6 +1910,37 @@
     });
   }
 
+  function bindExternalExportButtons() {
+    const buttons = document.querySelectorAll('[data-table-export-target]');
+    buttons.forEach((button) => {
+      if (button.dataset.exportBound === 'true') {
+        return;
+      }
+      const targetId = button.dataset.tableExportTarget;
+      const format = (button.dataset.exportFormat || 'xlsx').toLowerCase();
+      button.addEventListener('click', () => {
+        const instance = window.InteractiveTableRegistry.get(targetId);
+        if (!instance) {
+          return;
+        }
+        if (!instance.exportButtons.includes(button)) {
+          instance.exportButtons.push(button);
+        }
+        instance.handleExport(format);
+      });
+      button.dataset.exportBound = 'true';
+    });
+
+    const statuses = document.querySelectorAll('[data-table-export-status]');
+    statuses.forEach((statusEl) => {
+      const targetId = statusEl.dataset.tableExportStatus;
+      const instance = window.InteractiveTableRegistry.get(targetId);
+      if (instance) {
+        instance.exportStatus = statusEl;
+      }
+    });
+  }
+
   window.InteractiveTableRegistry = window.InteractiveTableRegistry || {
     tables: new Map(),
     register(id, instance) {
@@ -1915,5 +1951,8 @@
     },
   };
 
-  document.addEventListener('DOMContentLoaded', initTables);
+  document.addEventListener('DOMContentLoaded', () => {
+    initTables();
+    bindExternalExportButtons();
+  });
 })();

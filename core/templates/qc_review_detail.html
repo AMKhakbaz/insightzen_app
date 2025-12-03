@@ -10,24 +10,25 @@
   <p class="text-muted">{% if lang == 'fa' %}رکوردهای ارجاع‌شده برای پایگاه {{ task.entry.db_name }} را بازبینی کنید.{% else %}Review assigned records for {{ task.entry.db_name }}.{% endif %}</p>
 
   <div class="row g-4">
-    <div class="col-lg-7">
+    <div class="col-lg-8">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center">
           <div>
             <div class="fw-semibold">{{ task.entry.project.name }}</div>
             <div class="text-muted small">{{ task.entry.db_name }}</div>
           </div>
-          <div class="text-end">
-            <div class="small text-muted">{% if lang == 'fa' %}بازبینی شده{% else %}Reviewed{% endif %}: {{ task.reviewed_count }} / {{ task.task_size }}</div>
-            <div class="small text-muted">{% if lang == 'fa' %}ارجاع‌دهنده{% else %}Assigned by{% endif %}: {% if task.assigned_by %}{{ task.assigned_by.get_full_name|default:task.assigned_by.username }}{% else %}&mdash;{% endif %}</div>
+          <div class="text-end small text-muted">
+            <div>{% if lang == 'fa' %}بازبینی شده{% else %}Reviewed{% endif %}: {{ task.reviewed_count }} / {{ task.task_size }}</div>
+            <div>{% if lang == 'fa' %}ردیف باقی‌مانده{% else %}Rows remaining{% endif %}: {{ remaining }}</div>
           </div>
         </div>
         <div class="card-body">
+          {% if rows %}
           <div class="table-responsive">
             <table class="table table-sm align-middle" data-review-table>
               <thead>
                 <tr>
-                  <th scope="col">{% if lang == 'fa' %}شروع{% else %}Start{% endif %}</th>
+                  <th scope="col" style="width: 52px;">#</th>
                   <th scope="col">{% if lang == 'fa' %}شناسه{% else %}Submission{% endif %}</th>
                   {% for column in columns %}
                   <th scope="col">{{ column }}</th>
@@ -35,42 +36,47 @@
                   {% for measure in measure_leaves %}
                   <th scope="col">{{ measure.label }}</th>
                   {% endfor %}
+                  <th scope="col" class="text-end">{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
                 </tr>
               </thead>
               <tbody>
                 {% for row in rows %}
-                <tr data-row="{{ row.obj.id }}" {% if row.obj.completed_at %}class="table-success"{% endif %}>
-                  <td>
-                    <form method="post" action="" class="d-inline">
-                      {% csrf_token %}
-                      <input type="hidden" name="row_id" value="{{ row.obj.id }}">
-                      <input type="hidden" name="action" value="start">
-                      <button type="submit" class="btn btn-outline-primary btn-sm{% if row.obj.completed_at %} disabled{% endif %}">
-                        {% if lang == 'fa' %}شروع{% else %}Start{% endif %}
-                      </button>
-                    </form>
-                  </td>
+                <tr data-row="{{ row.obj.id }}" class="{% if row.obj.completed_at %}table-success{% endif %}{% if active_row and row.obj.id == active_row.id %} table-active{% endif %}">
+                  <td>{{ row.index }}</td>
                   <td>{{ row.obj.submission_id }}</td>
                   {% for column in columns %}
                   <td>{{ row.values|get:column }}</td>
                   {% endfor %}
-                  {% for measure in measure_leaves %}
-                  <td data-row="{{ row.obj.id }}" data-measure-cell="{{ measure.id }}">{% if row.checklist|get:measure.id %}{% if lang == 'fa' %}درست{% else %}True{% endif %}{% else %}{% if lang == 'fa' %}نادرست{% else %}False{% endif %}{% endif %}</td>
+                  {% for measure in row.measure_cells %}
+                  <td data-row="{{ row.obj.id }}" data-measure-cell="{{ measure.id }}">{{ measure.display }}</td>
                   {% endfor %}
+                  <td class="text-end">
+                    <form method="post" action="" class="d-inline">
+                      {% csrf_token %}
+                      <input type="hidden" name="row_id" value="{{ row.obj.id }}">
+                      <input type="hidden" name="action" value="start">
+                      <button type="submit" class="btn btn-outline-primary btn-sm{% if task_complete or row.obj.completed_at %} disabled{% endif %}">
+                        {% if lang == 'fa' %}شروع{% else %}Start review{% endif %}
+                      </button>
+                    </form>
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
+          {% else %}
+          <p class="text-muted mb-0">{% if lang == 'fa' %}هیچ رکوردی در این تسک نیست.{% else %}No rows are assigned to this task.{% endif %}</p>
+          {% endif %}
         </div>
       </div>
     </div>
-    <div class="col-lg-5">
+    <div class="col-lg-4">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center">
           <span>{% if lang == 'fa' %}چک‌لیست بازبینی{% else %}Review checklist{% endif %}</span>
           <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-open-surveyzen data-entry="{{ task.entry.id }}" data-submission="{% if active_row %}{{ active_row.submission_id }}{% endif %}" {% if not active_row %}disabled{% endif %}>{% if lang == 'fa' %}نمایش پرسشنامه در SurveyZen{% else %}View in SurveyZen{% endif %}</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-open-surveyzen data-entry="{{ task.entry.id }}" data-submission="{% if active_row %}{{ active_row.submission_id }}{% endif %}" data-loading-text="{% if lang == 'fa' %}در حال دریافت لینک…{% else %}Requesting link…{% endif %}" data-success-text="{% if lang == 'fa' %}لینک SurveyZen در تب جدید باز شد{% else %}SurveyZen link opened in a new tab{% endif %}" data-error-text="{% if lang == 'fa' %}دریافت لینک با خطا مواجه شد{% else %}Unable to fetch link{% endif %}" {% if not active_row %}disabled{% endif %}>{% if lang == 'fa' %}نمایش پرسشنامه در SurveyZen{% else %}View in SurveyZen{% endif %}</button>
             <button type="button" class="btn btn-outline-secondary btn-sm" disabled>{% if lang == 'fa' %}پخش صدا{% else %}Play audio{% endif %}</button>
           </div>
         </div>
@@ -82,6 +88,7 @@
             <input type="hidden" name="action" value="submit">
             <div class="mb-3">
               <div class="text-muted small">{% if lang == 'fa' %}شناسه رکورد{% else %}Submission ID{% endif %}: {{ active_row.submission_id }}</div>
+              <div class="text-muted small" data-surveyzen-status></div>
             </div>
             <div class="vstack gap-2">
               {% for measure in measure_leaves %}

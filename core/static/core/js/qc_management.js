@@ -446,13 +446,25 @@
   }
 
   function hasActiveFilters() {
-    return Array.from(filterInputs || []).some((input) => (input.value || '').trim());
+    const hasServerFilters = Array.from(filterInputs || []).some(
+      (input) => (input.value || '').trim()
+    );
+    const hasClientFilters = assignmentTable?.classList.contains('has-active-filters');
+    return Boolean(hasServerFilters || hasClientFilters);
   }
 
   function handleSelectAll() {
     if (!assignmentTable) return;
-    const checkboxes = assignmentTable.querySelectorAll('tbody input[type="checkbox"]');
-    if (!checkboxes.length) return;
+    const visibleRows = Array.from(
+      assignmentTable.querySelectorAll('tbody tr:not([data-empty-row]):not([hidden])')
+    );
+    const checkboxes = visibleRows
+      .map((row) => row.querySelector('input[type="checkbox"]'))
+      .filter(Boolean);
+    if (!checkboxes.length) {
+      setSelectStatus('');
+      return;
+    }
     checkboxes.forEach((box) => {
       // eslint-disable-next-line no-param-reassign
       box.checked = true;

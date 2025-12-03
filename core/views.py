@@ -1403,6 +1403,8 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
     assignment_rows: List[Dict[str, Any]] = []
     assignment_filters: List[Dict[str, Any]] = []
     assignment_columns: List[Dict[str, Any]] = []
+    checklist_columns: List[Dict[str, Any]] = []
+    data_columns: List[Dict[str, Any]] = []
     qc_measure_tree: List[Dict[str, Any]] = []
     default_qc_measure = _default_qc_measure(lang)
     measure_saved = False
@@ -1600,34 +1602,35 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         has_next = page < total_pages
         page_slice = filtered_records[start_index:end_index]
 
+        checklist_columns = [
+            {
+                'name': leaf['label'],
+                'sort_type': 'text',
+                'field': leaf['field'],
+                'is_measure': True,
+                'type': 'boolean',
+            }
+            for leaf in measure_leaves
+        ]
+
+        data_columns = [
+            {
+                'name': column,
+                'sort_type': _detect_sort_type(snapshot.records, column),
+                'field': column,
+                'filterable': True,
+                'filter_name': f'filter_{idx}',
+                'filter_value': assignment_filters[idx]['value'],
+                'filter_label': column,
+            }
+            for idx, column in enumerate(entry_columns)
+        ]
+
         assignment_columns = [
             {'name': 'Select', 'sort_type': 'text', 'is_select': True},
+            *checklist_columns,
+            *data_columns,
         ]
-        assignment_columns.extend(
-            [
-                {
-                    'name': leaf['label'],
-                    'sort_type': 'text',
-                    'field': leaf['field'],
-                    'is_measure': True,
-                }
-                for leaf in measure_leaves
-            ]
-        )
-        assignment_columns.extend(
-            [
-                {
-                    'name': column,
-                    'sort_type': _detect_sort_type(snapshot.records, column),
-                    'field': column,
-                    'filterable': True,
-                    'filter_name': f'filter_{idx}',
-                    'filter_value': assignment_filters[idx]['value'],
-                    'filter_label': column,
-                }
-                for idx, column in enumerate(entry_columns)
-            ]
-        )
 
         for record, value_map in page_slice:
             submission_id = record.get('submission_id', '') or ''
@@ -1652,6 +1655,8 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         'entry_columns': entry_columns,
         'phone_num': phone_num,
         'assignment_columns': assignment_columns,
+        'checklist_columns': checklist_columns,
+        'data_columns': data_columns,
         'assignment_rows': assignment_rows,
         'assignment_filters': assignment_filters,
         'page': page,
@@ -1941,14 +1946,21 @@ def qc_review(request: HttpRequest) -> HttpResponse:
     tasks = list(
         ReviewTask.objects.filter(reviewer=user)
         .select_related('entry__project', 'assigned_by')
+        .prefetch_related('rows')
         .order_by('-created_at')
     )
     task_rows: List[Dict[str, Any]] = []
-    for task in tasks:
+    for idx, task in enumerate(tasks, start=1):
         remaining = max(task.task_size - task.reviewed_count, 0)
+        next_row = (
+            task.rows.filter(completed_at__isnull=True).order_by('created_at').first()
+            if remaining
+            else None
+        )
         task_rows.append(
             {
                 'id': task.pk,
+                'index': idx,
                 'project': task.entry.project,
                 'entry': task.entry,
                 'task_size': task.task_size,
@@ -1957,6 +1969,7 @@ def qc_review(request: HttpRequest) -> HttpResponse:
                 'assigned_by': task.assigned_by,
                 'created_at': task.created_at,
                 'completed': task.reviewed_count >= task.task_size,
+                'next_row_id': next_row.pk if next_row else None,
             }
         )
 
@@ -1994,9 +2007,70 @@ def qc_review_detail(request: HttpRequest, task_id: int) -> HttpResponse:
     measure_definition = task.measure_definition or _load_qc_measure_structure(
         request, task.entry, columns, lang
     )
-    measure_leaves = _flatten_measure_leaves(measure_definition)
+    measure_leaves = [
+        {**leaf, 'id': str(leaf.get('id'))} for leaf in _flatten_measure_leaves(measure_definition)
+    ]
+
+    true_label = _localise_text(lang, 'True', 'درست')
+    false_label = _localise_text(lang, 'False', 'نادرست')
 
     rows_qs = task.rows.prefetch_related('checklist_responses')
+
+    def _coerce_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        text = str(value or '').strip().casefold()
+        if not text:
+            return False
+        truthy = {'true', '1', 'yes', 'y', 't', 'on', 'checked', '✓', '✔'}
+        return text in truthy
+
+    def _update_assignment_snapshot(row: ReviewRow) -> None:
+        """Persist checklist updates back into the cached assignment table."""
+
+        if not snapshot.path:
+            return
+        try:
+            with snapshot.path.open('r', encoding='utf-8') as fh:
+                payload = json.load(fh)
+        except (FileNotFoundError, json.JSONDecodeError):
+            payload = {
+                'entry': snapshot.entry_info
+                or {
+                    'entry_id': task.entry.pk,
+                    'project_id': task.entry.project_id,
+                    'asset_id': task.entry.asset_id,
+                    'db_name': task.entry.db_name,
+                },
+                'metadata': snapshot.metadata,
+                'records': snapshot.records,
+                'record_count': len(snapshot.records),
+                'stats': snapshot.stats,
+                'synced_at': snapshot.synced_at,
+            }
+
+        records: List[Dict[str, Any]] = payload.get('records', [])
+        updated = False
+        for idx, record in enumerate(records):
+            if _extract_submission_id(record) == row.submission_id:
+                merged = {**record, **row.data}
+                records[idx] = merged
+                updated = True
+                break
+        if not updated:
+            merged_record = {**row.data}
+            merged_record.setdefault('_id', row.submission_id)
+            records.append(merged_record)
+
+        payload['records'] = records
+        payload['record_count'] = len(records)
+        stats = payload.get('stats') or {}
+        stats['total'] = len(records)
+        payload['stats'] = stats
+        payload['synced_at'] = payload.get('synced_at') or timezone.now().isoformat()
+        snapshot.path.parent.mkdir(parents=True, exist_ok=True)
+        with snapshot.path.open('w', encoding='utf-8') as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
 
     def _resolve_row(pk: int) -> ReviewRow:
         return get_object_or_404(rows_qs, pk=pk)
@@ -2011,13 +2085,23 @@ def qc_review_detail(request: HttpRequest, task_id: int) -> HttpResponse:
             row = _resolve_row(row_id)
             now = timezone.now()
             if action == 'start':
+                if row.completed_at:
+                    return redirect(f"{reverse('qc_review_detail', args=[task.pk])}?row={row.pk}")
+                if task.reviewed_count >= task.task_size:
+                    return redirect('qc_review')
                 if task.started_at is None:
                     task.started_at = now
                     task.save(update_fields=['started_at'])
                 if row.started_at is None:
                     row.started_at = now
-                    row.save(update_fields=['started_at'])
-                ReviewAction.objects.create(row=row, action=ReviewAction.Action.STARTED)
+                if row.review_started_at is None:
+                    row.review_started_at = now
+                row.save(update_fields=['started_at', 'review_started_at'])
+                ReviewAction.objects.create(
+                    row=row,
+                    action=ReviewAction.Action.STARTED,
+                    metadata={'started_at': now.isoformat()},
+                )
                 return redirect(f"{reverse('qc_review_detail', args=[task.pk])}?row={row.pk}")
             if action == 'submit':
                 checklist_values: Dict[str, bool] = {}
@@ -2036,13 +2120,27 @@ def qc_review_detail(request: HttpRequest, task_id: int) -> HttpResponse:
                     )
                     row.data[measure.get('field') or measure['id']] = value
                 row.started_at = row.started_at or now
+                row.review_started_at = row.review_started_at or row.started_at or now
                 row.completed_at = now
-                row.save(update_fields=['data', 'started_at', 'completed_at'])
+                row.review_submitted_at = now
+                row.save(
+                    update_fields=[
+                        'data',
+                        'started_at',
+                        'review_started_at',
+                        'completed_at',
+                        'review_submitted_at',
+                    ]
+                )
                 ReviewAction.objects.create(
                     row=row,
                     action=ReviewAction.Action.SUBMITTED,
-                    metadata={'checklist': checklist_values},
+                    metadata={
+                        'checklist': checklist_values,
+                        'submitted_at': now.isoformat(),
+                    },
                 )
+                _update_assignment_snapshot(row)
                 task.mark_reviewed()
                 next_row = (
                     rows_qs.filter(completed_at__isnull=True)
@@ -2073,16 +2171,36 @@ def qc_review_detail(request: HttpRequest, task_id: int) -> HttpResponse:
         }
 
     rows: List[Dict[str, Any]] = []
-    for row in rows_qs:
+    task_complete = task.reviewed_count >= task.task_size
+    for idx, row in enumerate(rows_qs, start=1):
         value_map: Dict[str, str] = {
             column: _normalise_record_value(row.data.get(column, '')) for column in columns
         }
         checklist_map = {resp.measure_id: resp.value for resp in row.checklist_responses.all()}
+        measure_cells: List[Dict[str, Any]] = []
+        for leaf in measure_leaves:
+            measure_id = str(leaf.get('id'))
+            field_name = leaf.get('field') or leaf['id']
+            raw_value = checklist_map.get(measure_id)
+            if raw_value is None:
+                raw_value = row.data.get(field_name, False)
+            bool_value = _coerce_bool(raw_value)
+            measure_cells.append(
+                {
+                    'id': measure_id,
+                    'label': leaf['label'],
+                    'value': bool_value,
+                    'display': true_label if bool_value else false_label,
+                    'field': field_name,
+                }
+            )
         rows.append(
             {
+                'index': idx,
                 'obj': row,
                 'values': value_map,
                 'checklist': checklist_map,
+                'measure_cells': measure_cells,
             }
         )
 
@@ -2094,6 +2212,8 @@ def qc_review_detail(request: HttpRequest, task_id: int) -> HttpResponse:
         'measure_leaves': measure_leaves,
         'active_row': active_row,
         'checklist_defaults': checklist_defaults,
+        'task_complete': task_complete,
+        'remaining': max(task.task_size - task.reviewed_count, 0),
         'breadcrumbs': _build_breadcrumbs(
             lang,
             (_localise_text(lang, 'Quality Control', 'کنترل کیفیت'), ''),

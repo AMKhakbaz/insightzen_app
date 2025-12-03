@@ -16,28 +16,36 @@
         <table class="table align-middle">
           <thead>
             <tr>
+              <th scope="col" style="width: 60px;">#</th>
               <th scope="col">{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</th>
               <th scope="col">{% if lang == 'fa' %}پایگاه{% else %}Database{% endif %}</th>
-              <th scope="col">{% if lang == 'fa' %}تعداد رکورد{% else %}Task size{% endif %}</th>
+              <th scope="col">{% if lang == 'fa' %}تعداد رکورد{% else %}Task rows{% endif %}</th>
               <th scope="col">{% if lang == 'fa' %}بازبینی شده{% else %}Reviewed{% endif %}</th>
-              <th scope="col">{% if lang == 'fa' %}باقی‌مانده{% else %}Remaining{% endif %}</th>
-              <th scope="col">{% if lang == 'fa' %}ارجاع‌دهنده{% else %}Assigned by{% endif %}</th>
               <th scope="col" class="text-end">{% if lang == 'fa' %}عملیات{% else %}Actions{% endif %}</th>
             </tr>
           </thead>
           <tbody>
             {% for task in tasks %}
-            <tr>
+            <tr{% if task.completed %} class="table-success"{% endif %}>
+              <td>{{ task.index }}</td>
               <td>{{ task.project.name }}</td>
               <td>{{ task.entry.db_name }}</td>
               <td>{{ task.task_size }}</td>
               <td>{{ task.reviewed }}</td>
-              <td>{{ task.remaining }}</td>
-              <td>{% if task.assigned_by %}{{ task.assigned_by.get_full_name|default:task.assigned_by.username }}{% else %}&mdash;{% endif %}</td>
               <td class="text-end">
-                <a class="btn btn-primary btn-sm{% if task.completed %} disabled{% endif %}" href="{% url 'qc_review_detail' task.id %}">
-                  {% if lang == 'fa' %}شروع بازبینی{% else %}Start review{% endif %}
-                </a>
+                <div class="d-flex flex-wrap gap-2 justify-content-end">
+                  <a class="btn btn-outline-secondary btn-sm" href="{% url 'qc_review_detail' task.id %}">
+                    {% if lang == 'fa' %}نمایش داده{% else %}Show data{% endif %}
+                  </a>
+                  <form method="post" action="{% url 'qc_review_detail' task.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="row_id" value="{{ task.next_row_id }}">
+                    <input type="hidden" name="action" value="start">
+                    <button type="submit" class="btn btn-primary btn-sm{% if task.completed or not task.next_row_id %} disabled{% endif %}">
+                      {% if lang == 'fa' %}شروع بازبینی{% else %}Start review{% endif %}
+                    </button>
+                  </form>
+                </div>
               </td>
             </tr>
             {% endfor %}

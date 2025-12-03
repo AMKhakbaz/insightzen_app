@@ -2,6 +2,7 @@
   const checklistForm = document.querySelector('[data-checklist-form]');
   const reviewTable = document.querySelector('[data-review-table]');
   const surveyButton = document.querySelector('[data-open-surveyzen]');
+  const surveyStatus = document.querySelector('[data-surveyzen-status]');
 
   function getCsrfToken() {
     const match = document.cookie.match(/csrftoken=([^;]+)/);
@@ -39,6 +40,14 @@
       if (!entryId || !submissionId) {
         return;
       }
+
+      const loadingText = surveyButton.getAttribute('data-loading-text') || '';
+      const successText = surveyButton.getAttribute('data-success-text') || '';
+      const errorText = surveyButton.getAttribute('data-error-text') || '';
+      if (surveyStatus) {
+        surveyStatus.textContent = loadingText;
+      }
+
       surveyButton.disabled = true;
       surveyButton.classList.add('disabled');
       try {
@@ -53,11 +62,23 @@
         const payload = await response.json();
         if (response.ok && payload.url) {
           window.open(payload.url, '_blank');
+          if (surveyStatus) {
+            surveyStatus.textContent = successText;
+          }
         } else if (payload.error) {
-          alert(payload.error);
+          if (surveyStatus) {
+            surveyStatus.textContent = payload.error;
+          } else {
+            alert(payload.error);
+          }
+        } else if (surveyStatus) {
+          surveyStatus.textContent = errorText;
         }
       } catch (error) {
         console.error('Failed to open SurveyZen link', error);
+        if (surveyStatus) {
+          surveyStatus.textContent = errorText;
+        }
       } finally {
         surveyButton.disabled = false;
         surveyButton.classList.remove('disabled');

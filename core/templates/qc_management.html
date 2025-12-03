@@ -138,57 +138,70 @@
                             <span class="qc-assignment__controls-hint text-muted" data-select-status role="status" aria-live="polite"></span>
                         </div>
                         <div class="table-responsive qc-table-wrapper">
-                            <table class="table table-hover align-middle qc-assignment-table" data-table="interactive" data-filter-context="qc_management_assignment" data-empty-text="{% if lang == 'fa' %}سطر مطابق فیلتر یافت نشد.{% else %}No rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
-                                <thead>
-                                    <tr>
-                                        {% for col in assignment_columns %}
-                                            <th scope="col" class="{% if col.is_select %}qc-col-select{% elif col.is_measure %}qc-col-measure{% endif %}">
-                                                {% if col.is_select %}
-                                                    <span class="sr-only">{% if lang == 'fa' %}انتخاب{% else %}Select{% endif %}</span>
-                                                {% else %}
-                                                    <button type="button" class="table-sort" data-sort-column="{{ forloop.counter0 }}" data-sort-type="{{ col.sort_type }}">
+                            {% with checklist_count=checklist_columns|length %}
+                                <table class="table table-hover align-middle qc-assignment-table" data-table="interactive" data-filter-context="qc_management_assignment" data-empty-text="{% if lang == 'fa' %}سطر مطابق فیلتر یافت نشد.{% else %}No rows match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="qc-col-select">
+                                                <span class="sr-only">{% if lang == 'fa' %}انتخاب{% else %}Select{% endif %}</span>
+                                            </th>
+                                            {% for col in checklist_columns %}
+                                                <th scope="col" class="qc-col-measure">
+                                                    <button type="button" class="table-sort" data-sort-column="{{ forloop.counter0|add:1 }}" data-sort-type="{{ col.sort_type }}">
                                                         <span>{{ col.name }}</span>
                                                         <span class="sort-icon" aria-hidden="true"></span>
                                                     </button>
-                                                {% endif %}
-                                            </th>
-                                        {% endfor %}
-                                    </tr>
-                                    <tr class="table-filter-row">
-                                        {% for col in assignment_columns %}
-                                            {% if col.filterable %}
-                                                <th>
-                                                    <input type="text" name="{{ col.filter_name }}" value="{{ col.filter_value }}" form="qc-management-filter" data-filter-column="{{ forloop.counter }}" placeholder="{% if lang == 'fa' %}فیلتر {{ col.filter_label }}{% else %}Filter {{ col.filter_label }}{% endif %}" onchange="document.getElementById('qc-management-filter').page.value = 1; document.getElementById('qc-management-filter').submit();">
                                                 </th>
-                                            {% else %}
+                                            {% endfor %}
+                                            {% for col in data_columns %}
+                                                <th scope="col">
+                                                    <button type="button" class="table-sort" data-sort-column="{{ forloop.counter0|add:checklist_count|add:1 }}" data-sort-type="{{ col.sort_type }}">
+                                                        <span>{{ col.name }}</span>
+                                                        <span class="sort-icon" aria-hidden="true"></span>
+                                                    </button>
+                                                </th>
+                                            {% endfor %}
+                                        </tr>
+                                        <tr class="table-filter-row">
+                                            <th></th>
+                                            {% for col in checklist_columns %}
                                                 <th></th>
-                                            {% endif %}
+                                            {% endfor %}
+                                            {% for col in data_columns %}
+                                                {% if col.filterable %}
+                                                    <th>
+                                                        <input type="text" name="{{ col.filter_name }}" value="{{ col.filter_value }}" form="qc-management-filter" data-filter-column="{{ forloop.counter0|add:checklist_count|add:1 }}" placeholder="{% if lang == 'fa' %}فیلتر {{ col.filter_label }}{% else %}Filter {{ col.filter_label }}{% endif %}" onchange="document.getElementById('qc-management-filter').page.value = 1; document.getElementById('qc-management-filter').submit();">
+                                                    </th>
+                                                {% else %}
+                                                    <th></th>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in assignment_rows %}
+                                            <tr>
+                                                <td>
+                                                    <label class="sr-only" for="row-{{ forloop.counter }}">{% if lang == 'fa' %}انتخاب{% else %}Select{% endif %}</label>
+                                                    <input type="checkbox" id="row-{{ forloop.counter }}" value="{{ row.id }}">
+                                                </td>
+                                                {% for value in row.measure_values %}
+                                                    <td class="qc-cell qc-cell--truncate qc-cell--boolean" data-fulltext="{{ value|default_if_none:'' }}">{{ value }}</td>
+                                                {% endfor %}
+                                                {% for value in row.values %}
+                                                    <td class="qc-cell qc-cell--truncate" data-fulltext="{{ value|default_if_none:'' }}">{{ value }}</td>
+                                                {% endfor %}
+                                            </tr>
+                                        {% empty %}
+                                            <tr data-empty-row>
+                                                <td colspan="{{ assignment_columns|length }}" class="qc-empty">
+                                                    {% if lang == 'fa' %}داده‌ای مطابق فیلتر وجود ندارد.{% else %}No records match your filters.{% endif %}
+                                                </td>
+                                            </tr>
                                         {% endfor %}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for row in assignment_rows %}
-                                        <tr>
-                                            <td>
-                                                <label class="sr-only" for="row-{{ forloop.counter }}">{% if lang == 'fa' %}انتخاب{% else %}Select{% endif %}</label>
-                                                <input type="checkbox" id="row-{{ forloop.counter }}" value="{{ row.id }}">
-                                            </td>
-                                            {% for value in row.measure_values %}
-                                                <td class="qc-cell qc-cell--truncate qc-cell--boolean" data-fulltext="{{ value|default_if_none:'' }}">{{ value }}</td>
-                                            {% endfor %}
-                                            {% for value in row.values %}
-                                                <td class="qc-cell qc-cell--truncate" data-fulltext="{{ value|default_if_none:'' }}">{{ value }}</td>
-                                            {% endfor %}
-                                        </tr>
-                                    {% empty %}
-                                        <tr data-empty-row>
-                                            <td colspan="{{ assignment_columns|length }}" class="qc-empty">
-                                                {% if lang == 'fa' %}داده‌ای مطابق فیلتر وجود ندارد.{% else %}No records match your filters.{% endif %}
-                                            </td>
-                                        </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
+                                    </tbody>
+                                </table>
+                            {% endwith %}
                         </div>
                         <form method="get" class="table-pagination" data-pagination>
                             <div class="page-controls">

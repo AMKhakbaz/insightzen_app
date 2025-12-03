@@ -8,4 +8,59 @@
  * without duplicating the base palette.
  */
 
-/* No additional overrides are required at this time. */
+body.theme-light {
+    --color-bg: #f1f1f1;
+    --color-bg-subtle: #f9f9f9;
+    --color-surface: #f9f9f9;
+    --color-surface-elevated: #ffffff;
+    --color-surface-muted: #ffffff;
+    --color-border: #e2e2e2;
+    --color-divider: rgba(0, 0, 0, 0.06);
+    --color-border-soft: #e2e2e2;
+    --color-shadow-soft: 0 24px 70px rgba(0, 0, 0, 0.12);
+    --color-text: #111111;
+    --color-text-muted: #333333;
+    --color-text-subtle: #4a4a4a;
+    --color-text-secondary: #1b1b1b;
+    --color-accent: #1c8cff;
+    --color-accent-strong: #1c8cff;
+    --color-accent-soft: rgba(28, 140, 255, 0.12);
+    --color-accent-secondary: #1c8cff;
+    --color-accent-secondary-soft: rgba(28, 140, 255, 0.1);
+    --color-danger: #ff5757;
+    --color-danger-strong: #ff5757;
+    --color-success: #22a242;
+}
+
+body.theme-light .sidebar {
+    box-shadow: inset -1px 0 0 var(--color-border-soft);
+}
+
+body.theme-light .card,
+body.theme-light .dashboard-card,
+body.theme-light .table,
+body.theme-light .table thead,
+body.theme-light .table tfoot,
+body.theme-light .table-responsive,
+body.theme-light .panel,
+body.theme-light .calendar-panel__dialog {
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+}
+
+body.theme-light .menu-toggle,
+body.theme-light .calendar-toggle,
+body.theme-light .theme-toggle,
+body.theme-light .notification-toggle,
+body.theme-light .btn,
+body.theme-light .btn-primary,
+body.theme-light .btn-outline,
+body.theme-light .btn-secondary,
+body.theme-light .btn-text {
+    color: var(--color-text);
+}
+
+body.theme-dark {
+    background: var(--color-bg);
+    color: var(--color-text);
+}

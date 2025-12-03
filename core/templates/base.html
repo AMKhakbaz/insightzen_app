@@ -34,6 +34,13 @@
                             <span class="sr-only">{% if lang == 'fa' %}تقویم{% else %}Calendar{% endif %}</span>
                             <img src="{% static 'core/icons/taghvim.svg' %}" alt="" aria-hidden="true" class="calendar-toggle__icon">
                         </button>
+                        <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false"
+                                data-theme-label-light="{% if lang == 'fa' %}تغییر به حالت روشن{% else %}Switch to light mode{% endif %}"
+                                data-theme-label-dark="{% if lang == 'fa' %}تغییر به حالت تیره{% else %}Switch to dark mode{% endif %}">
+                            <span class="sr-only" data-theme-toggle-label>{% if lang == 'fa' %}تغییر تم{% else %}Toggle theme{% endif %}</span>
+                            <img src="{% static 'core/icons/sun.svg' %}" alt="" aria-hidden="true" class="theme-toggle__icon" data-theme-icon="light">
+                            <img src="{% static 'core/icons/moon.svg' %}" alt="" aria-hidden="true" class="theme-toggle__icon" data-theme-icon="dark">
+                        </button>
                     </div>
                     <div id="notifications" class="notification-center" data-notification-root>
                         <button type="button" class="notification-toggle" data-notification-toggle aria-haspopup="true" aria-expanded="false">
@@ -72,13 +79,14 @@
                     {% block breadcrumbs %}
                         {% include 'partials/breadcrumbs.html' with items=breadcrumbs|default:'' %}
                     {% endblock %}
-                {% for message in messages %}
-                    <div class="alert alert-{{ message.tags }}">{{ message }}</div>
-                {% endfor %}
+                <script id="django-messages-data" type="application/json">
+                    [{% for message in messages %}{"level":"{{ message.tags }}","message":"{{ message|escapejs }}"}{% if not forloop.last %},{% endif %}{% endfor %}]
+                </script>
                 {% block content %}{% endblock %}
             </div>
         </div>
     </div>
+    <div class="toast-stack" data-toast-stack aria-live="polite" aria-atomic="true"></div>
     <div class="calendar-panel" data-calendar-panel hidden>
         <div class="calendar-panel__backdrop" data-calendar-dismiss></div>
         <div class="calendar-panel__dialog" role="dialog" aria-modal="true" aria-labelledby="calendar-panel-title">

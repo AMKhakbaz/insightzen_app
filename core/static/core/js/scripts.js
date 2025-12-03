@@ -1,7 +1,13 @@
 // Global scripts for InsightZen
 // Handles sidebar toggle and Conjoint Analysis AJAX interactions.
 
+const THEME_STORAGE_KEY = 'insightzen-theme';
+
+applyInitialTheme();
+
 document.addEventListener('DOMContentLoaded', function () {
+  initThemeToggle();
+  initToastMessages();
   initNotificationCenter();
   initBreadcrumbs();
   // Conjoint analysis form submission
@@ -766,6 +772,145 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
 });
+
+function applyInitialTheme() {
+  const stored = getStoredTheme();
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const fallback = prefersDark ? 'dark' : 'light';
+  const initialTheme = stored === 'light' || stored === 'dark' ? stored : fallback;
+  setTheme(initialTheme);
+}
+
+function getStoredTheme() {
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY);
+  } catch (err) {
+    return null;
+  }
+}
+
+function setTheme(theme, options = {}) {
+  const normalized = theme === 'light' ? 'light' : 'dark';
+  const isLight = normalized === 'light';
+  document.body.classList.toggle('theme-light', isLight);
+  document.body.classList.toggle('theme-dark', !isLight);
+  document.body.dataset.theme = normalized;
+
+  updateThemeToggleState(normalized);
+
+  if (options.persist) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, normalized);
+    } catch (err) {
+      /* ignore write failures */
+    }
+  }
+}
+
+function updateThemeToggleState(theme) {
+  const toggle = document.querySelector('[data-theme-toggle]');
+  if (!toggle) return;
+
+  const labelEl = toggle.querySelector('[data-theme-toggle-label]');
+  const nextTheme = theme === 'light' ? 'dark' : 'light';
+  const nextLabel = nextTheme === 'light' ? toggle.dataset.themeLabelLight : toggle.dataset.themeLabelDark;
+
+  toggle.setAttribute('aria-pressed', theme === 'light' ? 'true' : 'false');
+  if (nextLabel) {
+    toggle.setAttribute('aria-label', nextLabel);
+    toggle.setAttribute('title', nextLabel);
+    if (labelEl) {
+      labelEl.textContent = nextLabel;
+    }
+  }
+}
+
+function initThemeToggle() {
+  const toggle = document.querySelector('[data-theme-toggle]');
+  if (!toggle) return;
+
+  const handleClick = () => {
+    const currentTheme = document.body.classList.contains('theme-light') ? 'light' : 'dark';
+    const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme, { persist: true });
+  };
+
+  toggle.addEventListener('click', handleClick);
+  updateThemeToggleState(document.body.classList.contains('theme-light') ? 'light' : 'dark');
+}
+
+function initToastMessages() {
+  const stack = document.querySelector('[data-toast-stack]');
+  if (!stack) return;
+  const messages = parseMessagesPayload();
+  if (!messages.length) return;
+
+  messages.forEach((message) => {
+    const toastType = mapToastLevel(message.level);
+    showToast(message.message, toastType, { stack });
+  });
+}
+
+function parseMessagesPayload() {
+  const script = document.getElementById('django-messages-data');
+  if (!script) return [];
+  try {
+    const parsed = JSON.parse(script.textContent || '[]');
+    script.remove();
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function mapToastLevel(level) {
+  const normalized = (level || '').toLowerCase();
+  if (normalized.includes('success')) return 'success';
+  if (normalized.includes('error') || normalized.includes('danger')) return 'error';
+  return 'neutral';
+}
+
+function showToast(message, level = 'neutral', options = {}) {
+  const stack = options.stack || document.querySelector('[data-toast-stack]');
+  if (!stack || !message) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast toast--${level}`;
+
+  const accent = document.createElement('span');
+  accent.className = 'toast__accent';
+
+  const content = document.createElement('div');
+  content.className = 'toast__content';
+  content.textContent = message;
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'toast__close';
+  close.setAttribute('aria-label', document.documentElement.lang === 'fa' ? 'بستن' : 'Close');
+  close.textContent = '×';
+
+  const removeToast = () => {
+    toast.classList.add('is-hiding');
+    setTimeout(() => {
+      toast.remove();
+    }, 180);
+  };
+
+  const lifetime = Number(options.duration) || 15000;
+  const timerId = setTimeout(removeToast, lifetime);
+
+  close.addEventListener('click', () => {
+    clearTimeout(timerId);
+    removeToast();
+  });
+
+  toast.appendChild(accent);
+  toast.appendChild(content);
+  toast.appendChild(close);
+
+  stack.appendChild(toast);
+}
 
 function initNotificationCenter() {
   const root = document.querySelector('[data-notification-root]');
