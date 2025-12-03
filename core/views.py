@@ -4026,10 +4026,21 @@ def coding(request: HttpRequest) -> HttpResponse:
     A simple form allows the user to select between coding and category
     analyses, but the underlying functionality is not yet implemented.
     """
+    lang = _get_lang(request)
     if not _user_has_panel(request.user, 'coding'):
         messages.error(request, 'Access denied: you do not have permission to access the Coding panel.')
         return redirect('home')
-    return render(request, 'coding.html')
+    context = {
+        'lang': lang,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (
+                _localise_text(lang, 'Coding AI', 'کدگذاری هوش مصنوعی'),
+                '',
+            ),
+        ),
+    }
+    return render(request, 'coding.html', context)
 
 
 @login_required
@@ -4604,6 +4615,17 @@ def qc_edit(request: HttpRequest) -> HttpResponse:
         'has_next': has_next,
         'tracked_requests': tracked_requests,
         'lang': lang,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (
+                _localise_text(lang, 'QC Management', 'مدیریت QC'),
+                '',
+            ),
+            (
+                _localise_text(lang, 'Edit Data', 'ویرایش داده'),
+                '',
+            ),
+        ),
     }
     return render(request, 'qc_edit.html', context)
 
