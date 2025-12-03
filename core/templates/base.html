@@ -68,10 +68,10 @@
                     {% endif %}
                 </div>
             </header>
-            <div class="page-content">
-                {% block breadcrumbs %}
-                    {% include 'partials/breadcrumbs.html' with items=breadcrumbs %}
-                {% endblock %}
+                <div class="page-content">
+                    {% block breadcrumbs %}
+                        {% include 'partials/breadcrumbs.html' %}
+                    {% endblock %}
                 {% for message in messages %}
                     <div class="alert alert-{{ message.tags }}">{{ message }}</div>
                 {% endfor %}
