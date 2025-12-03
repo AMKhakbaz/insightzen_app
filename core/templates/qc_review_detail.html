@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% load i18n static custom_tags %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex align-items-center mb-3">
+    <img src="{% static 'core/icons/feather/eye.svg' %}" alt="" class="me-2" width="24" height="24">
+    <h1 class="h4 mb-0">{% if lang == 'fa' %}جزئیات بازبینی{% else %}Review task{% endif %}</h1>
+  </div>
+  <p class="text-muted">{% if lang == 'fa' %}رکوردهای ارجاع‌شده برای پایگاه {{ task.entry.db_name }} را بازبینی کنید.{% else %}Review assigned records for {{ task.entry.db_name }}.{% endif %}</p>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div>
+            <div class="fw-semibold">{{ task.entry.project.name }}</div>
+            <div class="text-muted small">{{ task.entry.db_name }}</div>
+          </div>
+          <div class="text-end">
+            <div class="small text-muted">{% if lang == 'fa' %}بازبینی شده{% else %}Reviewed{% endif %}: {{ task.reviewed_count }} / {{ task.task_size }}</div>
+            <div class="small text-muted">{% if lang == 'fa' %}ارجاع‌دهنده{% else %}Assigned by{% endif %}: {% if task.assigned_by %}{{ task.assigned_by.get_full_name|default:task.assigned_by.username }}{% else %}&mdash;{% endif %}</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle" data-review-table>
+              <thead>
+                <tr>
+                  <th scope="col">{% if lang == 'fa' %}شروع{% else %}Start{% endif %}</th>
+                  <th scope="col">{% if lang == 'fa' %}شناسه{% else %}Submission{% endif %}</th>
+                  {% for column in columns %}
+                  <th scope="col">{{ column }}</th>
+                  {% endfor %}
+                  {% for measure in measure_leaves %}
+                  <th scope="col">{{ measure.label }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rows %}
+                <tr data-row="{{ row.obj.id }}" {% if row.obj.completed_at %}class="table-success"{% endif %}>
+                  <td>
+                    <form method="post" action="" class="d-inline">
+                      {% csrf_token %}
+                      <input type="hidden" name="row_id" value="{{ row.obj.id }}">
+                      <input type="hidden" name="action" value="start">
+                      <button type="submit" class="btn btn-outline-primary btn-sm{% if row.obj.completed_at %} disabled{% endif %}">
+                        {% if lang == 'fa' %}شروع{% else %}Start{% endif %}
+                      </button>
+                    </form>
+                  </td>
+                  <td>{{ row.obj.submission_id }}</td>
+                  {% for column in columns %}
+                  <td>{{ row.values|get:column }}</td>
+                  {% endfor %}
+                  {% for measure in measure_leaves %}
+                  <td data-row="{{ row.obj.id }}" data-measure-cell="{{ measure.id }}">{% if row.checklist|get:measure.id %}{% if lang == 'fa' %}درست{% else %}True{% endif %}{% else %}{% if lang == 'fa' %}نادرست{% else %}False{% endif %}{% endif %}</td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>{% if lang == 'fa' %}چک‌لیست بازبینی{% else %}Review checklist{% endif %}</span>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-open-surveyzen data-entry="{{ task.entry.id }}" data-submission="{% if active_row %}{{ active_row.submission_id }}{% endif %}" {% if not active_row %}disabled{% endif %}>{% if lang == 'fa' %}نمایش پرسشنامه در SurveyZen{% else %}View in SurveyZen{% endif %}</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" disabled>{% if lang == 'fa' %}پخش صدا{% else %}Play audio{% endif %}</button>
+          </div>
+        </div>
+        <div class="card-body">
+          {% if active_row %}
+          <form method="post" data-checklist-form data-row="{{ active_row.id }}" data-true-label="{% if lang == 'fa' %}درست{% else %}True{% endif %}" data-false-label="{% if lang == 'fa' %}نادرست{% else %}False{% endif %}">
+            {% csrf_token %}
+            <input type="hidden" name="row_id" value="{{ active_row.id }}">
+            <input type="hidden" name="action" value="submit">
+            <div class="mb-3">
+              <div class="text-muted small">{% if lang == 'fa' %}شناسه رکورد{% else %}Submission ID{% endif %}: {{ active_row.submission_id }}</div>
+            </div>
+            <div class="vstack gap-2">
+              {% for measure in measure_leaves %}
+              <label class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="measure_{{ measure.id }}" data-checklist-toggle data-row="{{ active_row.id }}" data-measure="{{ measure.id }}" {% if checklist_defaults|get:measure.id %}checked{% endif %}>
+                <span class="form-check-label">{{ measure.label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-4">
+              <a href="{% url 'qc_review' %}" class="btn btn-light">{% if lang == 'fa' %}بازگشت{% else %}Back{% endif %}</a>
+              <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}ثبت و مورد بعدی{% else %}Submit & next{% endif %}</button>
+            </div>
+          </form>
+          {% else %}
+          <p class="text-muted mb-0">{% if lang == 'fa' %}رکوردی برای نمایش وجود ندارد.{% else %}No rows to review.{% endif %}</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="{% static 'core/js/qc_review.js' %}"></script>
+{% endblock %}

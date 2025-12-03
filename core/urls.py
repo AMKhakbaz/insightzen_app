@@ -55,6 +55,7 @@ urlpatterns = [
     path('qc/management/assign/', views.qc_assignment_assign, name='qc_assignment_assign'),
     path('qc/performance/', views.qc_performance_dashboard, name='qc_performance_dashboard'),
     path('qc/review/', views.qc_review, name='qc_review'),
+    path('qc/review/<int:task_id>/', views.qc_review_detail, name='qc_review_detail'),
     path('ai/product-matrix/', views.product_matrix_ai, name='product_matrix_ai'),
 
     # Quota management

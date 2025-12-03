@@ -330,6 +330,39 @@ body.rtl .sidebar {
     margin: 0 0 1rem;
 }
 
+.breadcrumb__inner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.breadcrumb__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-divider);
+    background: var(--color-surface-strong);
+    color: var(--color-text);
+    text-decoration: none;
+    box-shadow: var(--shadow-sm);
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.breadcrumb__back:hover,
+.breadcrumb__back:focus-visible {
+    background: var(--color-surface);
+    border-color: var(--color-accent);
+    color: var(--color-accent-strong);
+}
+
+.breadcrumb__back-icon {
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
 .breadcrumb__list {
     list-style: none;
     display: flex;
@@ -386,6 +419,10 @@ body.rtl .breadcrumb__item::before {
     content: '‹';
 }
 
+body.rtl .breadcrumb__back-icon {
+    transform: scaleX(-1);
+}
+
 /* Cards */
 .card {
     background: linear-gradient(145deg, rgba(165, 199, 255, 0.08), rgba(198, 164, 255, 0.05)), var(--color-surface-elevated);
@@ -397,6 +434,19 @@ body.rtl .breadcrumb__item::before {
     transition: transform 0.2s ease, box-shadow 0.25s ease, outline-color 0.2s ease;
     outline: 1.5px dotted transparent;
     outline-offset: -6px;
+}
+
+.card--narrow {
+    padding: 1.1rem 1.25rem;
+    border-radius: 14px;
+}
+
+.card--narrow .card-header {
+    padding: 0.85rem 1rem;
+}
+
+.card--narrow .card-body {
+    padding: 1rem 1rem 1.2rem;
 }
 
 .card:hover {
@@ -547,8 +597,13 @@ body.rtl .breadcrumb__item::before {
 
 .qc-management__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 1.25rem;
+}
+
+.qc-card--narrow {
+    max-width: 1140px;
+    margin: 1.5rem auto;
 }
 
 .qc-card--stacked .card-header {
@@ -559,6 +614,14 @@ body.rtl .breadcrumb__item::before {
 
 .qc-card--stacked .card-body {
     padding: 1rem 1.25rem 1.25rem;
+}
+
+.card--narrow.qc-card--stacked .card-header {
+    padding: 0.85rem 1rem;
+}
+
+.card--narrow.qc-card--stacked .card-body {
+    padding: 0.9rem 1rem 1.05rem;
 }
 
 .qc-toolbar {
@@ -707,6 +770,11 @@ body.rtl .breadcrumb__item::before {
     .qc-toolbar__field--grow {
         grid-column: span 1;
     }
+
+    .qc-management__grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
 }
 
 .qc-meta {
@@ -727,6 +795,73 @@ body.rtl .breadcrumb__item::before {
 
 .qc-table-wrapper {
     margin-top: 1rem;
+}
+
+.qc-assignment__controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+.qc-assignment__controls-hint {
+    font-size: var(--font-size-sm);
+}
+
+.qc-assignment-table th,
+.qc-assignment-table td {
+    white-space: nowrap;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    height: 52px;
+    vertical-align: middle;
+}
+
+.qc-assignment-table .qc-col-select {
+    width: 54px;
+    min-width: 54px;
+}
+
+.qc-assignment-table .qc-col-measure {
+    max-width: 140px;
+}
+
+.qc-cell--truncate {
+    cursor: pointer;
+}
+
+.qc-cell-popup {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.qc-cell-popup__body {
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+    padding: 1rem 1.25rem;
+    border-radius: 0.75rem;
+    box-shadow: var(--color-shadow-strong);
+    max-width: min(720px, 95vw);
+    width: 100%;
+}
+
+.qc-cell-popup__header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.75rem;
+}
+
+.qc-cell-popup__content {
+    font-size: var(--font-size-base);
+    overflow-wrap: anywhere;
 }
 
 .qc-actions-header {
@@ -2816,6 +2951,21 @@ body.sidebar-collapsed .menu-toggle__icon--open {
     display: block;
     object-fit: contain;
     filter: var(--password-toggle-icon-filter, none);
+}
+
+.auth-link {
+    color: #9cd4fc;
+    font-weight: var(--font-weight-medium);
+    text-decoration: none;
+    transition: color 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.auth-link:hover,
+.auth-link:focus-visible {
+    color: var(--color-accent-strong);
+    text-decoration: underline;
+    text-decoration-color: currentColor;
+    outline: none;
 }
 
 .superadmin-dashboard {

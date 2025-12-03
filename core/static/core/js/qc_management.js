@@ -7,6 +7,9 @@
   const assignEmailInput = document.getElementById('qc-assign-email');
   const assignButton = document.querySelector('[data-assign-button]');
   const assignStatus = document.querySelector('[data-assign-status]');
+  const selectAllButton = document.querySelector('[data-select-all]');
+  const selectStatus = document.querySelector('[data-select-status]');
+  const filterInputs = document.querySelectorAll('.table-filter-row input');
   const defaultMeasureScript = document.getElementById('qc-default-measure');
   const defaultMeasure = defaultMeasureScript ? JSON.parse(defaultMeasureScript.textContent) : [];
   let hasSavedMeasure = false;
@@ -305,6 +308,11 @@
     assignStatus.dataset.state = state || '';
   }
 
+  function setSelectStatus(message) {
+    if (!selectStatus) return;
+    selectStatus.textContent = message || '';
+  }
+
   async function persistStructure(structure, options = {}) {
     if (!saveButton || !measureRoot) return;
     const endpoint = saveButton.dataset.endpoint;
@@ -437,6 +445,85 @@
     }
   }
 
+  function hasActiveFilters() {
+    return Array.from(filterInputs || []).some((input) => (input.value || '').trim());
+  }
+
+  function handleSelectAll() {
+    if (!assignmentTable) return;
+    const checkboxes = assignmentTable.querySelectorAll('tbody input[type="checkbox"]');
+    if (!checkboxes.length) return;
+    checkboxes.forEach((box) => {
+      // eslint-disable-next-line no-param-reassign
+      box.checked = true;
+    });
+    const message = hasActiveFilters()
+      ? document.documentElement.lang === 'fa'
+        ? 'همه نتایج فیلتر شده در این صفحه انتخاب شدند.'
+        : 'All filtered rows on this page were selected.'
+      : document.documentElement.lang === 'fa'
+        ? 'همه ردیف‌های این صفحه انتخاب شدند.'
+        : 'All rows on this page were selected.';
+    setSelectStatus(message);
+  }
+
+  function buildPopup() {
+    const existing = document.querySelector('.qc-cell-popup');
+    if (existing) return existing;
+    const overlay = document.createElement('div');
+    overlay.className = 'qc-cell-popup';
+    overlay.hidden = true;
+
+    const body = document.createElement('div');
+    body.className = 'qc-cell-popup__body';
+
+    const header = document.createElement('div');
+    header.className = 'qc-cell-popup__header';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn btn-sm btn-text';
+    closeBtn.textContent = document.documentElement.lang === 'fa' ? 'بستن' : 'Close';
+    header.appendChild(closeBtn);
+
+    const content = document.createElement('div');
+    content.className = 'qc-cell-popup__content';
+
+    body.appendChild(header);
+    body.appendChild(content);
+    overlay.appendChild(body);
+    document.body.appendChild(overlay);
+
+    const hide = () => {
+      overlay.hidden = true;
+      content.textContent = '';
+    };
+
+    closeBtn.addEventListener('click', hide);
+    overlay.addEventListener('click', (evt) => {
+      if (evt.target === overlay) hide();
+    });
+    document.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape') hide();
+    });
+
+    overlay.showContent = (text) => {
+      content.textContent = text;
+      overlay.hidden = false;
+    };
+
+    return overlay;
+  }
+
+  function handleCellClick(evt) {
+    const cell = evt.target.closest('[data-fulltext]');
+    if (!cell || cell.closest('.table-filter-row')) return;
+    const fullText = cell.dataset.fulltext || cell.textContent || '';
+    const shouldExpand = cell.scrollWidth > cell.clientWidth || fullText.length > 80;
+    if (!shouldExpand || !fullText.trim()) return;
+    const popup = buildPopup();
+    popup.showContent(fullText);
+  }
+
   async function saveStructure() {
     if (!measureRoot) return;
     const structure = buildListFromDom(measureRoot);
@@ -451,6 +538,12 @@
   }
   if (assignButton) {
     assignButton.addEventListener('click', handleAssignClick);
+  }
+  if (selectAllButton) {
+    selectAllButton.addEventListener('click', handleSelectAll);
+  }
+  if (assignmentTable) {
+    assignmentTable.addEventListener('click', handleCellClick);
   }
 
   if (measureRoot) {

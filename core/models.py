@@ -14,6 +14,7 @@ from __future__ import annotations
 from django.db import models
 from django.contrib.auth.models import User
 from django.contrib.postgres.fields import ArrayField  # type: ignore
+from django.utils import timezone
 
 
 class Notification(models.Model):
@@ -485,6 +486,84 @@ class DatabaseEntryEditRequest(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover
         return f"Edit request for {_shorten(self.submission_id)} on {self.entry}"
+
+
+class ReviewTask(models.Model):
+    """Represents a QC review assignment for a reviewer."""
+
+    entry = models.ForeignKey(DatabaseEntry, on_delete=models.CASCADE, related_name='review_tasks')
+    reviewer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='review_tasks')
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_review_tasks',
+    )
+    task_size = models.PositiveIntegerField(default=0)
+    reviewed_count = models.PositiveIntegerField(default=0)
+    measure_definition = models.JSONField(default=list, blank=True)
+    columns = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def mark_reviewed(self) -> None:
+        """Update reviewed counters and completion state."""
+
+        self.reviewed_count = self.rows.filter(completed_at__isnull=False).count()
+        if self.reviewed_count >= self.task_size and self.completed_at is None:
+            self.completed_at = timezone.now()
+        self.save(update_fields=['reviewed_count', 'completed_at'])
+
+
+class ReviewRow(models.Model):
+    """Individual submission row assigned within a review task."""
+
+    task = models.ForeignKey(ReviewTask, on_delete=models.CASCADE, related_name='rows')
+    submission_id = models.CharField(max_length=64)
+    data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('task', 'submission_id')
+        ordering = ['created_at']
+
+
+class ReviewAction(models.Model):
+    """Audit trail of actions taken while reviewing a row."""
+
+    class Action(models.TextChoices):
+        ASSIGNED = 'assigned', 'Assigned'
+        STARTED = 'started', 'Started'
+        SUBMITTED = 'submitted', 'Submitted'
+        UPDATED_CHECKLIST = 'updated_checklist', 'Updated Checklist'
+
+    row = models.ForeignKey(ReviewRow, on_delete=models.CASCADE, related_name='actions')
+    action = models.CharField(max_length=32, choices=Action.choices)
+    metadata = models.JSONField(default=dict, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['timestamp']
+
+
+class ChecklistResponse(models.Model):
+    """Stores boolean responses for checklist measures per row."""
+
+    row = models.ForeignKey(ReviewRow, on_delete=models.CASCADE, related_name='checklist_responses')
+    measure_id = models.CharField(max_length=128)
+    label = models.CharField(max_length=255)
+    value = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('row', 'measure_id')
 
 
 class TableFilterPreset(models.Model):

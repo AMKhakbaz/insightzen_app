@@ -29,9 +29,9 @@
     </form>
     <p style="margin-top:1rem;">
         {% if lang == 'fa' %}
-            حساب کاربری ندارید؟ <a href="{% url 'register' %}">ثبت‌نام کنید</a>
+            حساب کاربری ندارید؟ <a class="auth-link" href="{% url 'register' %}">ثبت‌نام کنید</a>
         {% else %}
-            Don't have an account? <a href="{% url 'register' %}">Register here</a>
+            Don't have an account? <a class="auth-link" href="{% url 'register' %}">Register here</a>
         {% endif %}
     </p>
 </div>

@@ -52,9 +52,9 @@
     </form>
     <p style="margin-top:1rem;">
         {% if lang == 'fa' %}
-            قبلاً ثبت‌نام کرده‌اید؟ <a href="{% url 'login' %}">ورود</a>
+            قبلاً ثبت‌نام کرده‌اید؟ <a class="auth-link" href="{% url 'login' %}">ورود</a>
         {% else %}
-            Already have an account? <a href="{% url 'login' %}">Login</a>
+            Already have an account? <a class="auth-link" href="{% url 'login' %}">Login</a>
         {% endif %}
     </p>
 </div>

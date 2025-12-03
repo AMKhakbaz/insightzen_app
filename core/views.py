@@ -126,6 +126,10 @@ from .models import (
     TableFilterPreset,
     Notification,
     CalendarEvent,
+    ReviewTask,
+    ReviewRow,
+    ReviewAction,
+    ChecklistResponse,
 )
 
 
@@ -416,6 +420,7 @@ def superadmin_dashboard(request: HttpRequest) -> HttpResponse:
     """Display an overview dashboard for super administrators."""
 
     user = request.user
+    lang = _get_lang(request)
     if not getattr(user, 'is_superuser', False):
         messages.error(request, 'Access denied: super admin privileges are required.')
         return redirect('home')
@@ -1025,6 +1030,7 @@ def _format_membership_panels(membership: Membership) -> str:
 def _build_membership_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
     lang = request.session.get('lang', 'en')
     user = request.user
+    lang = _get_lang(request)
     lang = request.session.get('lang', 'en')
     if not _user_is_organisation(user):
         raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
@@ -1108,6 +1114,7 @@ def _build_projects_export_dataset(request: HttpRequest, params: Dict[str, Any])
 def _build_database_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
     lang = request.session.get('lang', 'en')
     user = request.user
+    lang = _get_lang(request)
     if not _user_has_panel(user, 'database_management'):
         raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
     projects = _get_accessible_projects(user, panel='database_management')
@@ -1229,6 +1236,7 @@ def _parse_iso_datetime_param(raw: Any) -> Optional[datetime]:
 def _build_database_view_export_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
     lang = request.session.get('lang', 'en')
     user = request.user
+    lang = _get_lang(request)
     if not _user_has_panel(user, 'database_management'):
         raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
     entry_id = _resolve_entry_param(params, ('entry', 'entryId'))
@@ -1312,6 +1320,29 @@ def _flatten_measure_leaves(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     for node in nodes:
         walk(node)
     return leaves
+
+
+def _boolean_display(value: Any, lang: str) -> str:
+    """Return a normalised True/False label for assignment cells."""
+
+    truthy = {'true', '1', 'yes', 'y', 't', 'on', 'checked', '✓', '✔'}
+    falsy = {'false', '0', 'no', 'n', 'f', 'off', '✕', '×'}
+
+    if isinstance(value, bool):
+        is_true = value
+        is_false = not value
+    else:
+        text = str(value or '').strip().casefold()
+        if not text:
+            return ''
+        is_true = text in truthy
+        is_false = text in falsy
+
+    if is_true:
+        return _localise_text(lang, 'True', 'صحیح')
+    if is_false:
+        return _localise_text(lang, 'False', 'غلط')
+    return str(value or '')
 
 
 def _load_qc_measure_structure(
@@ -1400,9 +1431,21 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
 
         for idx, column in enumerate(entry_columns):
             filter_val = (request.GET.get(f'filter_{idx}') or '').strip()
-            assignment_filters.append({'index': idx, 'label': column, 'value': filter_val})
+            assignment_filters.append(
+                {
+                    'index': idx,
+                    'label': column,
+                    'value': filter_val,
+                    'field': column,
+                    'filter_name': f'filter_{idx}',
+                }
+            )
 
-        column_filters = {column: filt['value'] for column, filt in zip(entry_columns, assignment_filters) if filt['value']}
+        column_filters = {
+            column: filt['value']
+            for column, filt in zip(entry_columns, assignment_filters)
+            if filt['value']
+        }
 
         db_rows: List[Dict[str, Any]] = []
         db_phone_index: Dict[str, List[Dict[str, Any]]] = {}
@@ -1539,19 +1582,39 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         assignment_columns.extend(
             [
                 {
+                    'name': leaf['label'],
+                    'sort_type': 'text',
+                    'field': leaf['field'],
+                    'is_measure': True,
+                }
+                for leaf in measure_leaves
+            ]
+        )
+        assignment_columns.extend(
+            [
+                {
                     'name': column,
                     'sort_type': _detect_sort_type(snapshot.records, column),
                     'field': column,
+                    'filterable': True,
+                    'filter_name': f'filter_{idx}',
+                    'filter_value': assignment_filters[idx]['value'],
+                    'filter_label': column,
                 }
-                for column in entry_columns
+                for idx, column in enumerate(entry_columns)
             ]
         )
 
         for record, value_map in page_slice:
             submission_id = record.get('submission_id', '') or ''
+            measure_values = [
+                _boolean_display(value_map.get(leaf['field'], ''), lang)
+                for leaf in measure_leaves
+            ]
             rows = [value_map.get(column, '') for column in entry_columns]
             assignment_rows.append({
                 'id': submission_id,
+                'measure_values': measure_values,
                 'values': rows,
             })
 
@@ -1723,6 +1786,7 @@ def qc_assignment_assign(request: HttpRequest) -> JsonResponse:
             )
 
     snapshot = load_entry_snapshot(entry)
+    entry_columns = infer_columns(snapshot.records)
     available_ids = {_extract_submission_id(record) for record in snapshot.records}
     missing = [sid for sid in submissions if sid not in available_ids]
     if missing:
@@ -1767,6 +1831,32 @@ def qc_assignment_assign(request: HttpRequest) -> JsonResponse:
 
     actor_label = user.get_full_name() or user.username
     submission_count = len(submissions)
+    measure_definition = _load_qc_measure_structure(request, entry, entry_columns, lang)
+    record_map = {_extract_submission_id(record): record for record in snapshot.records}
+    with transaction.atomic():
+        task = ReviewTask.objects.create(
+            entry=entry,
+            reviewer=recipient,
+            assigned_by=user,
+            task_size=submission_count,
+            measure_definition=measure_definition,
+            columns=entry_columns,
+        )
+        for submission_id in submissions:
+            record = record_map.get(submission_id, {}) or {}
+            row_data: Dict[str, Any] = {
+                column: record.get(column, '') for column in entry_columns
+            }
+            review_row = ReviewRow.objects.create(
+                task=task,
+                submission_id=submission_id,
+                data=row_data,
+            )
+            ReviewAction.objects.create(
+                row=review_row,
+                action=ReviewAction.Action.ASSIGNED,
+                metadata={'assigned_by': actor_label},
+            )
     message_en = (
         f'You have {submission_count} QC record(s) assigned for project "{entry.project.name}".'
     )
@@ -1819,10 +1909,175 @@ def qc_review(request: HttpRequest) -> HttpResponse:
     """Entry point for reviewing submitted data."""
 
     lang = request.session.get('lang', 'en')
-    if not _user_has_panel(request.user, 'review_data'):
+    user = request.user
+    if not _user_has_panel(user, 'review_data'):
         messages.error(request, _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
         return redirect('home')
-    return render(request, 'qc_review.html', {'lang': lang})
+
+    tasks = list(
+        ReviewTask.objects.filter(reviewer=user)
+        .select_related('entry__project', 'assigned_by')
+        .order_by('-created_at')
+    )
+    task_rows: List[Dict[str, Any]] = []
+    for task in tasks:
+        remaining = max(task.task_size - task.reviewed_count, 0)
+        task_rows.append(
+            {
+                'id': task.pk,
+                'project': task.entry.project,
+                'entry': task.entry,
+                'task_size': task.task_size,
+                'reviewed': task.reviewed_count,
+                'remaining': remaining,
+                'assigned_by': task.assigned_by,
+                'created_at': task.created_at,
+                'completed': task.reviewed_count >= task.task_size,
+            }
+        )
+
+    context = {
+        'lang': lang,
+        'tasks': task_rows,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'Quality Control', 'کنترل کیفیت'), ''),
+            (_localise_text(lang, 'QC Review', 'بازبینی داده'), ''),
+        ),
+    }
+    return render(request, 'qc_review.html', context)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def qc_review_detail(request: HttpRequest, task_id: int) -> HttpResponse:
+    """Detail view for an individual QC review task."""
+
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'review_data'):
+        messages.error(request, _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+        return redirect('home')
+
+    task = get_object_or_404(
+        ReviewTask.objects.select_related('entry__project', 'assigned_by'),
+        pk=task_id,
+        reviewer=user,
+    )
+
+    snapshot = load_entry_snapshot(task.entry)
+    columns = task.columns or infer_columns(snapshot.records)
+    measure_definition = task.measure_definition or _load_qc_measure_structure(
+        request, task.entry, columns, lang
+    )
+    measure_leaves = _flatten_measure_leaves(measure_definition)
+
+    rows_qs = task.rows.prefetch_related('checklist_responses')
+
+    def _resolve_row(pk: int) -> ReviewRow:
+        return get_object_or_404(rows_qs, pk=pk)
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        try:
+            row_id = int(request.POST.get('row_id') or 0)
+        except (TypeError, ValueError):
+            row_id = 0
+        if row_id:
+            row = _resolve_row(row_id)
+            now = timezone.now()
+            if action == 'start':
+                if task.started_at is None:
+                    task.started_at = now
+                    task.save(update_fields=['started_at'])
+                if row.started_at is None:
+                    row.started_at = now
+                    row.save(update_fields=['started_at'])
+                ReviewAction.objects.create(row=row, action=ReviewAction.Action.STARTED)
+                return redirect(f"{reverse('qc_review_detail', args=[task.pk])}?row={row.pk}")
+            if action == 'submit':
+                checklist_values: Dict[str, bool] = {}
+                for measure in measure_leaves:
+                    key = f"measure_{measure['id']}"
+                    checklist_values[measure['id']] = request.POST.get(key) is not None
+                if task.started_at is None:
+                    task.started_at = now
+                    task.save(update_fields=['started_at'])
+                for measure in measure_leaves:
+                    value = checklist_values.get(measure['id'], False)
+                    ChecklistResponse.objects.update_or_create(
+                        row=row,
+                        measure_id=str(measure['id']),
+                        defaults={'value': value, 'label': measure.get('label', '')},
+                    )
+                    row.data[measure.get('field') or measure['id']] = value
+                row.started_at = row.started_at or now
+                row.completed_at = now
+                row.save(update_fields=['data', 'started_at', 'completed_at'])
+                ReviewAction.objects.create(
+                    row=row,
+                    action=ReviewAction.Action.SUBMITTED,
+                    metadata={'checklist': checklist_values},
+                )
+                task.mark_reviewed()
+                next_row = (
+                    rows_qs.filter(completed_at__isnull=True)
+                    .exclude(pk=row.pk)
+                    .order_by('created_at')
+                    .first()
+                )
+                if next_row:
+                    return redirect(f"{reverse('qc_review_detail', args=[task.pk])}?row={next_row.pk}")
+                return redirect('qc_review')
+
+    row_param = request.GET.get('row')
+    active_row: Optional[ReviewRow] = None
+    if row_param:
+        try:
+            active_row = _resolve_row(int(row_param))
+        except (TypeError, ValueError):
+            active_row = None
+    if active_row is None:
+        active_row = rows_qs.filter(completed_at__isnull=True).order_by('created_at').first()
+    if active_row is None:
+        active_row = rows_qs.order_by('created_at').first()
+
+    checklist_defaults: Dict[str, bool] = {}
+    if active_row:
+        checklist_defaults = {
+            resp.measure_id: resp.value for resp in active_row.checklist_responses.all()
+        }
+
+    rows: List[Dict[str, Any]] = []
+    for row in rows_qs:
+        value_map: Dict[str, str] = {
+            column: _normalise_record_value(row.data.get(column, '')) for column in columns
+        }
+        checklist_map = {resp.measure_id: resp.value for resp in row.checklist_responses.all()}
+        rows.append(
+            {
+                'obj': row,
+                'values': value_map,
+                'checklist': checklist_map,
+            }
+        )
+
+    context = {
+        'lang': lang,
+        'task': task,
+        'rows': rows,
+        'columns': columns,
+        'measure_leaves': measure_leaves,
+        'active_row': active_row,
+        'checklist_defaults': checklist_defaults,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'Quality Control', 'کنترل کیفیت'), ''),
+            (_localise_text(lang, 'QC Review', 'بازبینی داده'), reverse('qc_review')),
+            (_localise_text(lang, 'Task detail', 'جزئیات تسک'), ''),
+        ),
+    }
+    return render(request, 'qc_review_detail.html', context)
 
 
 @login_required
@@ -3824,6 +4079,7 @@ def database_add(request: HttpRequest) -> HttpResponse:
     here) can subsequently update the status.
     """
     user = request.user
+    lang = _get_lang(request)
     if not _user_has_panel(user, 'database_management'):
         messages.error(request, 'Access denied: you do not have permission to add databases.')
         return redirect('home')
@@ -3875,7 +4131,24 @@ def database_add(request: HttpRequest) -> HttpResponse:
     else:
         form = DatabaseEntryForm()
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
-    return render(request, 'database_form.html', {'form': form, 'title': 'Add Database'})
+    return render(
+        request,
+        'database_form.html',
+        {
+            'form': form,
+            'title': _localise_text(lang, 'Add Database', 'افزودن پایگاه داده'),
+            'lang': lang,
+            'is_create': True,
+            'breadcrumbs': _build_breadcrumbs(
+                lang,
+                (
+                    _localise_text(lang, 'Databases', 'پایگاه‌های داده'),
+                    reverse('database_list'),
+                ),
+                (_localise_text(lang, 'Add database', 'افزودن پایگاه'), ''),
+            ),
+        },
+    )
 
 
 @login_required
@@ -3888,6 +4161,7 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
     updated by background sync logic.
     """
     user = request.user
+    lang = _get_lang(request)
     if not _user_has_panel(user, 'database_management'):
         messages.error(request, 'Access denied: you do not have permission to edit databases.')
         return redirect('home')
@@ -3929,7 +4203,27 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
     else:
         form = DatabaseEntryForm(instance=entry)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
-    return render(request, 'database_form.html', {'form': form, 'title': 'Edit Database'})
+    return render(
+        request,
+        'database_form.html',
+        {
+            'form': form,
+            'title': _localise_text(lang, 'Edit Database', 'ویرایش پایگاه داده'),
+            'lang': lang,
+            'is_create': False,
+            'breadcrumbs': _build_breadcrumbs(
+                lang,
+                (
+                    _localise_text(lang, 'Databases', 'پایگاه‌های داده'),
+                    reverse('database_list'),
+                ),
+                (
+                    _localise_text(lang, 'Edit database', 'ویرایش پایگاه'),
+                    '',
+                ),
+            ),
+        },
+    )
 
 
 @login_required
