@@ -1939,13 +1939,29 @@ def qc_review(request: HttpRequest) -> HttpResponse:
 
     lang = request.session.get('lang', 'en')
     user = request.user
-    if not _user_has_panel(user, 'review_data'):
+
+    has_panel_access = _user_has_panel(user, 'review_data')
+    task_qs = ReviewTask.objects.filter(reviewer=user)
+    has_assignment_access = task_qs.exists()
+
+    if not (has_panel_access or has_assignment_access):
+        log_activity(
+            user,
+            'qc_review_access_denied',
+            'User lacks review_data panel access and has no ReviewTask assignments.',
+        )
         messages.error(request, _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
         return redirect('home')
 
+    if has_assignment_access and not has_panel_access:
+        log_activity(
+            user,
+            'qc_review_access_granted_via_assignment',
+            'User permitted to access QC review list via assigned ReviewTasks.',
+        )
+
     tasks = list(
-        ReviewTask.objects.filter(reviewer=user)
-        .select_related('entry__project', 'assigned_by')
+        task_qs.select_related('entry__project', 'assigned_by')
         .prefetch_related('rows')
         .order_by('-created_at')
     )
@@ -1992,9 +2008,24 @@ def qc_review_detail(request: HttpRequest, task_id: int) -> HttpResponse:
 
     lang = request.session.get('lang', 'en')
     user = request.user
-    if not _user_has_panel(user, 'review_data'):
+
+    has_panel_access = _user_has_panel(user, 'review_data')
+    assigned_to_task = ReviewTask.objects.filter(pk=task_id, reviewer=user).exists()
+    if not has_panel_access and not assigned_to_task:
+        log_activity(
+            user,
+            'qc_review_detail_access_denied',
+            f'User lacks review_data panel and assignment for task {task_id}.',
+        )
         messages.error(request, _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
         return redirect('home')
+
+    if assigned_to_task and not has_panel_access:
+        log_activity(
+            user,
+            'qc_review_detail_access_via_assignment',
+            f'User permitted to review task {task_id} based on assignment.',
+        )
 
     task = get_object_or_404(
         ReviewTask.objects.select_related('entry__project', 'assigned_by'),
@@ -2451,6 +2482,180 @@ def _build_collection_top_export_dataset(request: HttpRequest, params: Dict[str,
     return {'columns': columns, 'rows': rows, 'filename': 'collection-top'}
 
 
+def _build_qc_assignment_export_dataset(
+    request: HttpRequest, params: Dict[str, Any]
+) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+
+    if not _user_has_panel(user, 'qc_management'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+
+    def _resolve_param(options: Dict[str, Any], keys: List[str]) -> str:
+        for key in keys:
+            value = options.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return ''
+
+    try:
+        entry_id = int(_resolve_param(params, ['entry', 'entryId', 'entry_id']))
+    except (TypeError, ValueError):
+        entry_id = 0
+    if not entry_id:
+        raise ValueError(
+            _localise_text(lang, 'Database entry is required.', 'شناسه پایگاه لازم است.')
+        )
+
+    entry = get_object_or_404(DatabaseEntry, pk=entry_id)
+    if not (_user_is_organisation(user) or getattr(user, 'is_superuser', False)):
+        if not Membership.objects.filter(user=user, project=entry.project, qc_management=True).exists():
+            raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+
+    snapshot = load_entry_snapshot(entry)
+    entry_columns = infer_columns(snapshot.records)
+    phone_num = _resolve_param(params, ['phone_num', 'phoneNum', 'phone'])
+    if phone_num and phone_num not in entry_columns:
+        phone_num = ''
+
+    measure_definition = _load_qc_measure_structure(request, entry, entry_columns, lang)
+    measure_leaves = _flatten_measure_leaves(measure_definition) or _flatten_measure_leaves(
+        _default_qc_measure(lang)
+    )
+
+    columns: List[Dict[str, Any]] = [
+        {
+            'field': f"measure_{leaf['field']}",
+            'label': leaf['label'],
+            'type': 'text',
+            'export': True,
+        }
+        for leaf in measure_leaves
+    ]
+
+    data_columns: List[Dict[str, Any]] = []
+    for column in entry_columns:
+        sort_type = _detect_sort_type(snapshot.records, column)
+        data_columns.append(
+            {
+                'field': column,
+                'label': column,
+                'type': sort_type,
+                'export': True,
+            }
+        )
+    columns.extend(data_columns)
+
+    db_rows: List[Dict[str, Any]] = []
+    db_phone_index: Dict[str, List[Dict[str, Any]]] = {}
+    for idx, record in enumerate(snapshot.records):
+        submission_id = _extract_submission_id(record) or f"row-{idx}"
+        phone_value = (
+            _normalise_record_value(record.get(phone_num, '')).strip() if phone_num else ''
+        )
+        payload = {
+            'record': record,
+            'submission_id': submission_id,
+            'phone_value': phone_value,
+        }
+        db_rows.append(payload)
+        db_phone_index.setdefault(phone_value, []).append(payload)
+
+    joined_rows: List[Dict[str, Any]] = []
+    if phone_num:
+        interview_rows: List[Dict[str, Any]] = []
+        interview_queryset = (
+            Interview.objects.filter(project=entry.project)
+            .select_related('person')
+            .prefetch_related('person__mobiles')
+        )
+
+        for interview in interview_queryset:
+            mobiles = []
+            if hasattr(interview, 'mobile'):
+                mobile_value = getattr(interview, 'mobile')
+                if mobile_value is not None:
+                    mobiles.append(str(mobile_value))
+            if not mobiles and interview.person:
+                mobiles.extend(list(interview.person.mobiles.values_list('mobile', flat=True)))
+            if not mobiles:
+                mobiles.append('')
+
+            for mobile_value in mobiles:
+                interview_rows.append(
+                    {
+                        'record': {},
+                        'interview': interview,
+                        'phone_value': str(mobile_value or ''),
+                        'submission_id': _extract_submission_id(interview.data) or '',
+                    }
+                )
+
+        matched_db_records = set()
+        for interview_data in interview_rows:
+            phone_value = interview_data['phone_value']
+            if phone_value in db_phone_index:
+                for record in db_phone_index[phone_value]:
+                    matched_db_records.add(record['submission_id'])
+                    joined_rows.append(
+                        {
+                            'record': record['record'],
+                            'interview': interview_data['interview'],
+                            'phone_value': phone_value,
+                            'submission_id': record['submission_id'],
+                        }
+                    )
+            else:
+                joined_rows.append(
+                    {
+                        'record': {},
+                        'interview': interview_data['interview'],
+                        'phone_value': phone_value,
+                        'submission_id': f"{interview_data['submission_id']}-{phone_value or 'nomobile'}",
+                    }
+                )
+
+        for record in db_rows:
+            if record['submission_id'] in matched_db_records:
+                continue
+            joined_rows.append(
+                {
+                    'record': record['record'],
+                    'interview': None,
+                    'phone_value': record['phone_value'],
+                    'submission_id': record['submission_id'],
+                }
+            )
+    else:
+        joined_rows = [
+            {
+                'record': record['record'],
+                'interview': None,
+                'phone_value': record['phone_value'],
+                'submission_id': record['submission_id'],
+            }
+            for record in db_rows
+        ]
+
+    rows: List[Dict[str, Any]] = []
+    for row in joined_rows:
+        record_data = row.get('record') or {}
+        value_map = {column: _normalise_record_value(record_data.get(column, '')) for column in entry_columns}
+        dataset_row: Dict[str, Any] = {}
+        for leaf in measure_leaves:
+            dataset_row[f"measure_{leaf['field']}"] = _boolean_display(
+                value_map.get(leaf['field'], ''), lang
+            )
+        for column in entry_columns:
+            dataset_row[column] = value_map.get(column, '')
+        rows.append(dataset_row)
+
+    return {'columns': columns, 'rows': rows, 'filename': f'qc-assignment-{entry.pk}'}
+
+
 TABLE_EXPORT_BUILDERS: Dict[str, Any] = {
     'membership_list': _build_membership_export_dataset,
     'projects_list': _build_projects_export_dataset,
@@ -2458,6 +2663,7 @@ TABLE_EXPORT_BUILDERS: Dict[str, Any] = {
     'activity_logs': _build_activity_export_dataset,
     'database_view': _build_database_view_export_dataset,
     'qc_edit': _build_qc_export_dataset,
+    'qc_management_assignment': _build_qc_assignment_export_dataset,
     'quota_management': _build_quota_export_dataset,
     'collection_performance_raw': _build_collection_raw_export_dataset,
     'collection_performance_top': _build_collection_top_export_dataset,
