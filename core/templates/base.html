@@ -70,7 +70,7 @@
             </header>
                 <div class="page-content">
                     {% block breadcrumbs %}
-                        {% include 'partials/breadcrumbs.html' with items=breadcrumbs|default:[] %}
+                        {% include 'partials/breadcrumbs.html' with items=breadcrumbs|default:'' %}
                     {% endblock %}
                 {% for message in messages %}
                     <div class="alert alert-{{ message.tags }}">{{ message }}</div>
