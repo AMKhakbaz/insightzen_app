@@ -1,26 +1,26 @@
 # InsightZen Deployment Notes
 
-The application now requires explicit environment variables for sensitive
-settings such as the Django secret key and database connection details. Copy
-`.env.sample` to `.env` for local development and adjust the values to match
-your environment before running any management commands. If `.env` is absent,
-the app automatically falls back to `.env.sample` values as a convenience, but
-these defaults are insecure and should be replaced in real deployments.
+The application requires environment variables for sensitive settings such as the
+Django secret key and database connection details. Copy `.env.sample` to `.env`
+for local development, then replace every `CHANGE_ME` placeholder with your
+actual secrets and connection parameters before running any management commands.
+Provide real secrets via your environment (process manager, container runtime,
+etc.) instead of committing them to source control.
 
 | Setting | Environment variable | Notes |
 | --- | --- | --- |
-| Django secret key | `DJANGO_SECRET_KEY` | Required. Generate a unique value for each deployment. |
+| Django secret key | `DJANGO_SECRET_KEY` | Required. Generate a unique value for each deployment (the sample file uses `CHANGE_ME`). |
 | Debug mode | `DJANGO_DEBUG` | Defaults to `False`. Set to `True` in `.env` for local development only. |
-| Django DB host | `PGHOST` | Defaults to `185.204.171.78` if not set. |
-| Django DB port | `PGPORT` | Defaults to `5433` if not set. |
-| Django DB user | `PGUSER` | Defaults to `insightzen` if not set. |
-| Django DB password | `PGPASSWORD` | Defaults to `K8RwWAPT5F7-?mrMBzR<` if not set. |
-| Django DB name | `PGDATABASE` | Defaults to `insightzen3` if not set. |
-| Respondent DB host | `RESPONDENT_DB_HOST` | Defaults to `185.204.171.78` if not set. |
-| Respondent DB port | `RESPONDENT_DB_PORT` | Defaults to `5433` if not set. |
-| Respondent DB user | `RESPONDENT_DB_USER` | Defaults to `insightzen` if not set. |
-| Respondent DB password | `RESPONDENT_DB_PASSWORD` | Defaults to `K8RwWAPT5F7-?mrMBzR<` if not set. |
-| Respondent DB name | `RESPONDENT_DB_NAME` | Defaults to `Numbers` if not set. |
+| Django DB host | `PGHOST` | Set to your PostgreSQL host; the sample file uses `CHANGE_ME` and the app falls back to a legacy default if unset. |
+| Django DB port | `PGPORT` | Set to your PostgreSQL port; defaults to `5433` if not set. |
+| Django DB user | `PGUSER` | Set to your PostgreSQL user (the sample file uses `CHANGE_ME`). |
+| Django DB password | `PGPASSWORD` | Set to your PostgreSQL password (the sample file uses `CHANGE_ME`). |
+| Django DB name | `PGDATABASE` | Set to your PostgreSQL database name (the sample file uses `CHANGE_ME`). |
+| Respondent DB host | `RESPONDENT_DB_HOST` | Set to your respondent source DB host; the sample file uses `CHANGE_ME` and the app falls back to a legacy default if unset. |
+| Respondent DB port | `RESPONDENT_DB_PORT` | Set to your respondent source DB port; defaults to `5433` if not set. |
+| Respondent DB user | `RESPONDENT_DB_USER` | Set to your respondent source DB user (the sample file uses `CHANGE_ME`). |
+| Respondent DB password | `RESPONDENT_DB_PASSWORD` | Set to your respondent source DB password (the sample file uses `CHANGE_ME`). |
+| Respondent DB name | `RESPONDENT_DB_NAME` | Set to your respondent source DB name (the sample file uses `CHANGE_ME`). |
 
 Export these variables (for example via a `.env` file) before running the Django
 management commands. Production environments should set real values via your
