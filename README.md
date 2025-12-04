@@ -1,32 +1,31 @@
 # InsightZen Deployment Notes
 
 The application requires environment variables for sensitive settings such as the
-Django secret key and database connection details. Copy `.env.sample` to `.env`
-for local development, then replace every `CHANGE_ME` placeholder with your
-actual secrets and connection parameters before running any management commands.
-Provide real secrets via your environment (process manager, container runtime,
-etc.) instead of committing them to source control.
+Django secret key and database connection details. A checked-in `.env` file
+copied from `.env.sample` already contains the current PostgreSQL and respondent
+bank connection values used in deployment. Update those values in `.env` when
+rotating credentials, and export the file in your process manager or container
+runtime before running any management commands.
 
 | Setting | Environment variable | Notes |
 | --- | --- | --- |
-| Django secret key | `DJANGO_SECRET_KEY` | Required. Generate a unique value for each deployment (the sample file uses `CHANGE_ME`). |
+| Django secret key | `DJANGO_SECRET_KEY` | Required. The checked-in `.env` holds the current deployment value; update when rotating secrets. |
 | Debug mode | `DJANGO_DEBUG` | Defaults to `False`. Set to `True` in `.env` for local development only. |
-| Django DB host | `PGHOST` | Set to your PostgreSQL host; the sample file uses `CHANGE_ME` and the app falls back to a legacy default if unset. |
-| Django DB port | `PGPORT` | Set to your PostgreSQL port; defaults to `5433` if not set. |
-| Django DB user | `PGUSER` | Set to your PostgreSQL user (the sample file uses `CHANGE_ME`). |
-| Django DB password | `PGPASSWORD` | Set to your PostgreSQL password (the sample file uses `CHANGE_ME`). |
-| Django DB name | `PGDATABASE` | Set to your PostgreSQL database name (the sample file uses `CHANGE_ME`). |
-| Respondent DB host | `RESPONDENT_DB_HOST` | Set to your respondent source DB host; the sample file uses `CHANGE_ME` and the app falls back to a legacy default if unset. |
-| Respondent DB port | `RESPONDENT_DB_PORT` | Set to your respondent source DB port; defaults to `5433` if not set. |
-| Respondent DB user | `RESPONDENT_DB_USER` | Set to your respondent source DB user (the sample file uses `CHANGE_ME`). |
-| Respondent DB password | `RESPONDENT_DB_PASSWORD` | Set to your respondent source DB password (the sample file uses `CHANGE_ME`). |
-| Respondent DB name | `RESPONDENT_DB_NAME` | Set to your respondent source DB name (the sample file uses `CHANGE_ME`). |
+| Django DB host | `PGHOST` | Pre-populated in `.env` with the live PostgreSQL host; update if the host changes. |
+| Django DB port | `PGPORT` | Pre-populated in `.env`; defaults to `5433` if not set. |
+| Django DB user | `PGUSER` | Pre-populated in `.env` with the live PostgreSQL user. |
+| Django DB password | `PGPASSWORD` | Pre-populated in `.env` with the live PostgreSQL password. |
+| Django DB name | `PGDATABASE` | Pre-populated in `.env` with the live PostgreSQL database name. |
+| Respondent DB host | `RESPONDENT_DB_HOST` | Pre-populated in `.env` with the live respondent source DB host. |
+| Respondent DB port | `RESPONDENT_DB_PORT` | Pre-populated in `.env`; defaults to `5433` if not set. |
+| Respondent DB user | `RESPONDENT_DB_USER` | Pre-populated in `.env` with the live respondent source DB user. |
+| Respondent DB password | `RESPONDENT_DB_PASSWORD` | Pre-populated in `.env` with the live respondent source DB password. |
+| Respondent DB name | `RESPONDENT_DB_NAME` | Pre-populated in `.env` with the live respondent source DB name. |
 
-Export these variables (for example via a `.env` file) before running the Django
-management commands. Production environments should set real values via your
-process manager or container orchestration rather than committing secrets to
-source control. Leave `DJANGO_DEBUG` unset (the default `False`) in production
-and only enable it locally when debugging.
+Export these variables (for example via `.env` or your process manager) before
+running the Django management commands. Production environments should still
+load the checked-in `.env` securely and leave `DJANGO_DEBUG` unset (the default
+`False`) in production.
 
 ## Applying migrations on PostgreSQL deployments
 
@@ -61,3 +60,20 @@ Pass `--force` if you need to import even when data already exists.
 Ensure the `RESPONDENT_DB_*` environment variables (or the defaults in
 `core/data_load_utils.py`) are set to the correct source database before running
 `python manage.py import_respondent_bank`.
+
+## Deployment sequence
+
+Run the respondent bank import immediately after applying migrations and before
+starting any application processes so `Person` and `Mobile` records are ready
+when the app serves traffic. The helper scripts automatically load `.env` so the
+migrations and import share the same PostgreSQL and respondent bank
+configuration:
+
+```bash
+./scripts/deploy_migrate_and_import.sh
+# then start your WSGI/ASGI workers
+```
+
+The helper scripts use `--no-input` so they can run non-interactively during
+deployments. Override the database connection values via the environment if they
+ever diverge from `.env`.
