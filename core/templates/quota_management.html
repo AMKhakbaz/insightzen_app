@@ -2,6 +2,17 @@
 {% block title %}{% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}{% endblock %}
 
 {% block content %}
+<style>
+    .city-tag-select { border: 1px solid #ddd; border-radius: 6px; padding: 0.5rem; background: #fafafa; }
+    .city-tag-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .city-tag-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .city-tag { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.5rem; background: #e7f1ff; border: 1px solid #b6d4fe; border-radius: 999px; font-size: 0.95rem; }
+    .city-tag-remove { border: none; background: transparent; cursor: pointer; padding: 0 0.3rem; font-size: 1rem; line-height: 1; color: #555; }
+    .city-input-wrap { display: flex; align-items: center; gap: 0.35rem; }
+    .city-suggestion-list { margin-top: 0.35rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.35rem; }
+    .city-suggestion { border: 1px solid #ddd; background: white; padding: 0.35rem 0.5rem; text-align: left; border-radius: 6px; cursor: pointer; }
+    .city-suggestion.empty { cursor: default; color: #777; background: #f5f5f5; }
+</style>
 <div class="card" style="max-width:1100px;margin:2rem auto;">
     <h1 style="margin-bottom:1.5rem;">{% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}</h1>
     <form method="post" onsubmit="return prepareQuotaData();">
@@ -31,14 +42,15 @@
         </div>
         <div class="quota-dimension-panel" data-dimension-panel="city" {% if not dimension_state.city %}hidden{% endif %}>
             <label>{% if lang == 'fa' %}شهرها:{% else %}Cities:{% endif %}</label><br>
-            <input type="text" id="city-search" placeholder="{% if lang == 'fa' %}جستجوی شهر{% else %}Search city{% endif %}" class="form-control" style="max-width:300px;margin-bottom:0.5rem;" oninput="filterCities()">
-            <div id="city-options" class="city-option-grid">
-                {% for city in cities %}
-                    <label class="city-option">
-                        <input type="checkbox" name="city" value="{{ city }}" onchange="updateCityQuotas()">
-                        <span>{{ city }}</span>
-                    </label>
-                {% endfor %}
+            <div class="city-tag-select" style="max-width:500px;">
+                <div class="city-tag-row">
+                    <div id="city-tags" class="city-tag-list"></div>
+                    <div class="city-input-wrap">
+                        <input type="text" id="city-search" placeholder="{% if lang == 'fa' %}جستجوی شهر{% else %}Search or add city{% endif %}" class="form-control" style="width:220px;" autocomplete="off">
+                        <button type="button" class="btn btn-sm" id="city-add-btn" title="{% if lang == 'fa' %}افزودن شهر{% else %}Add city{% endif %}">+</button>
+                    </div>
+                </div>
+                <div id="city-suggestions" class="city-suggestion-list" role="listbox"></div>
             </div>
             <div id="city-quotas-container" style="margin-top:0.5rem;"></div>
         </div>
@@ -141,30 +153,151 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
-// Filter city list by search input
-function filterCities() {
-    const query = document.getElementById('city-search').value.toLowerCase();
-    const options = document.querySelectorAll('#city-options label');
-    options.forEach(opt => {
-        const text = opt.textContent.toLowerCase();
-        opt.style.display = text.includes(query) ? '' : 'none';
+const CITY_SUGGESTIONS = {{ cities|safe }};
+const CITY_TAG_SELECTOR = '#city-tags [data-city-tag]';
+
+function getSelectedCities() {
+    return Array.from(document.querySelectorAll(CITY_TAG_SELECTOR)).map(el => el.dataset.city);
+}
+
+function renderCityTag(city) {
+    const tags = document.getElementById('city-tags');
+    if (!tags) return;
+    const lower = city.toLowerCase();
+    const existing = getSelectedCities().map(c => c.toLowerCase());
+    if (existing.includes(lower)) {
+        return;
+    }
+    const tag = document.createElement('span');
+    tag.className = 'city-tag';
+    tag.dataset.city = city;
+    const label = document.createElement('span');
+    label.textContent = city;
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'city-tag-remove';
+    removeBtn.setAttribute('aria-label', '{% if lang == 'fa' %}حذف شهر{% else %}Remove city{% endif %}');
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+        tag.remove();
+        updateCityQuotas();
+        refreshCitySuggestions();
+    });
+    tag.appendChild(label);
+    tag.appendChild(removeBtn);
+    tags.appendChild(tag);
+}
+
+function refreshCitySuggestions() {
+    const list = document.getElementById('city-suggestions');
+    const input = document.getElementById('city-search');
+    if (!list || !input) return;
+    const query = input.value.trim().toLowerCase();
+    const selected = getSelectedCities().map(c => c.toLowerCase());
+    const matches = CITY_SUGGESTIONS.filter(city => !selected.includes(city.toLowerCase()) && city.toLowerCase().includes(query));
+    list.innerHTML = '';
+    if (!query && matches.length === 0) {
+        return;
+    }
+    if (!matches.length) {
+        const empty = document.createElement('div');
+        empty.className = 'city-suggestion empty';
+        empty.textContent = '{% if lang == 'fa' %}شهری یافت نشد{% else %}No matching cities{% endif %}';
+        list.appendChild(empty);
+        return;
+    }
+    matches.forEach(city => {
+        const opt = document.createElement('button');
+        opt.type = 'button';
+        opt.className = 'city-suggestion';
+        opt.setAttribute('role', 'option');
+        opt.textContent = city;
+        opt.addEventListener('click', () => {
+            renderCityTag(city);
+            input.value = '';
+            refreshCitySuggestions();
+            updateCityQuotas();
+        });
+        list.appendChild(opt);
     });
 }
+
+function addCityFromInput() {
+    const input = document.getElementById('city-search');
+    if (!input) return;
+    const value = input.value.trim();
+    if (!value) return;
+    renderCityTag(value);
+    input.value = '';
+    refreshCitySuggestions();
+    updateCityQuotas();
+}
+document.addEventListener('DOMContentLoaded', function() {
+    const cityInput = document.getElementById('city-search');
+    if (cityInput) {
+        cityInput.addEventListener('input', refreshCitySuggestions);
+        cityInput.addEventListener('keydown', function(ev) {
+            if (ev.key === 'Enter') {
+                ev.preventDefault();
+                addCityFromInput();
+            }
+        });
+    }
+    const addBtn = document.getElementById('city-add-btn');
+    if (addBtn) {
+        addBtn.addEventListener('click', addCityFromInput);
+    }
+    [{key: 'city'}, {key: 'age'}, {key: 'gender'}].forEach(({key}) => {
+        const toggle = document.getElementById(`enable-${key}`);
+        const panel = document.querySelector(`[data-dimension-panel="${key}"]`);
+        if (toggle && panel) {
+            toggle.addEventListener('change', () => {
+                panel.hidden = !toggle.checked;
+                if (key === 'city') {
+                    updateCityQuotas();
+                }
+            });
+        }
+    });
+    refreshCitySuggestions();
+    updateCityQuotas();
+});
 // Update city quota inputs when selecting/deselecting cities
 function updateCityQuotas() {
     const container = document.getElementById('city-quotas-container');
     if (!container) return;
+    const existingValues = {};
+    container.querySelectorAll('.city-quota').forEach(inp => {
+        const city = inp.getAttribute('data-city');
+        existingValues[city] = inp.value;
+    });
     container.innerHTML = '';
     const cityToggle = document.getElementById('enable-city');
     if (cityToggle && !cityToggle.checked) {
         return;
     }
-    const checkboxes = document.querySelectorAll('#city-options input[type=checkbox]:checked');
-    checkboxes.forEach(cb => {
-        const city = cb.value;
+    const selectedCities = getSelectedCities();
+    selectedCities.forEach(city => {
         const row = document.createElement('div');
         row.className = 'city-quota-row';
-        row.innerHTML = `<label>${city} (%): <input type="number" min="0" max="100" step="0.1" data-city="${city}" class="city-quota" style="width:80px;"></label>`;
+        const label = document.createElement('label');
+        const labelText = document.createElement('span');
+        labelText.textContent = `${city} (%): `;
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.max = '100';
+        input.step = '0.1';
+        input.dataset.city = city;
+        input.className = 'city-quota';
+        input.style.width = '80px';
+        const value = typeof existingValues[city] !== 'undefined' ? existingValues[city] : '';
+        if (value !== '') {
+            input.value = value;
+        }
+        label.appendChild(labelText);
+        label.appendChild(input);
+        row.appendChild(label);
         container.appendChild(row);
     });
 }
@@ -290,21 +423,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 toggle.checked = Boolean(PREFILL[`${key}_enabled`]);
             }
             panel.hidden = !toggle.checked;
-            toggle.addEventListener('change', () => {
-                panel.hidden = !toggle.checked;
-                if (key === 'city') {
-                    updateCityQuotas();
-                }
-            });
         }
     });
 
     const cityMap = PREFILL.cities || {};
-    document.querySelectorAll('#city-options input[type=checkbox]').forEach(cb => {
-        if (cityMap.hasOwnProperty(cb.value)) {
-            cb.checked = true;
-        }
-    });
+    Object.keys(cityMap).forEach(city => renderCityTag(city));
     updateCityQuotas();
     document.querySelectorAll('.city-quota').forEach(inp => {
         const city = inp.getAttribute('data-city');

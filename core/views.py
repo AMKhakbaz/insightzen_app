@@ -4989,7 +4989,13 @@ def qc_edit_link(request: HttpRequest, entry_id: int) -> JsonResponse:
     try:
         edit_url = request_enketo_edit_url(entry, submission_id, return_url=return_url)
     except EnketoLinkError as exc:
-        return JsonResponse({'error': str(exc)}, status=502)
+        status_code = getattr(exc, 'status', 502)
+        message = _localise_message(
+            lang,
+            f"Unable to request an edit link right now: {exc}",
+            f"امکان دریافت لینک ویرایش در حال حاضر وجود ندارد: {exc}",
+        )
+        return JsonResponse({'error': message}, status=status_code)
 
     DatabaseEntryEditRequest.objects.update_or_create(
         entry=entry,

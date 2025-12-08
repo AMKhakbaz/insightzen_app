@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -28,6 +29,10 @@ class DatabaseCacheError(Exception):
 
 class EnketoLinkError(DatabaseCacheError):
     """Raised when requesting an Enketo edit URL fails."""
+
+    def __init__(self, message: str, status: int = 502):
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass
@@ -189,24 +194,54 @@ def request_enketo_edit_url(entry: DatabaseEntry, submission_id: str, return_url
     verify_param = getattr(settings, 'KOBO_TLS_CERT', None) or getattr(settings, 'KOBO_VERIFY_TLS', True)
     api_base = getattr(settings, 'KOBO_API_BASE', None)
     if not api_base:
-        raise EnketoLinkError('KOBO_API_BASE setting is not configured.')
+        raise EnketoLinkError('Kobo API base (KOBO_API_BASE) is not configured.', status=500)
     submission_segment = str(submission_id).strip()
     if not submission_segment:
-        raise EnketoLinkError('A valid submission identifier is required to request an edit link.')
+        raise EnketoLinkError(
+            'A valid submission identifier is required to request an edit link.', status=400
+        )
+    if not submission_segment.isdigit():
+        raise EnketoLinkError(
+            f"Submission id '{submission_segment}' is not valid; a numeric id is required.", status=400
+        )
     endpoint = f"{api_base.rstrip('/')}/assets/{entry.asset_id}/data/{submission_segment}/enketo/edit/"
     params: Dict[str, Any] = {}
     if return_url is not None:
         params['return_url'] = return_url
-    try:
-        response = session.get(endpoint, params=params, timeout=timeout, verify=verify_param)
-        response.raise_for_status()
-    except requests.RequestException as exc:  # pragma: no cover - depends on network
-        raise EnketoLinkError(f'Failed to request Enketo edit link: {exc}')
-    payload = response.json()
-    url = payload.get('url')
-    if not url:
-        raise EnketoLinkError('Enketo edit URL was not returned by the Kobo API.')
-    return url
+    attempts = getattr(settings, 'KOBO_RETRY_ATTEMPTS', 3)
+    backoff_seconds = getattr(settings, 'KOBO_RETRY_BACKOFF', 1)
+    last_error: Optional[str] = None
+    for attempt in range(1, max(attempts, 1) + 1):
+        try:
+            response = session.get(endpoint, params=params, timeout=timeout, verify=verify_param)
+        except requests.Timeout:
+            last_error = f'Request timed out after {timeout} seconds.'
+        except requests.RequestException as exc:  # pragma: no cover - depends on network
+            last_error = f'Failed to reach the Kobo API: {exc}'
+        else:
+            if response.status_code != 200:
+                try:
+                    error_payload = response.json()
+                    error_detail = error_payload.get('detail') if isinstance(error_payload, dict) else None
+                except ValueError:
+                    error_detail = response.text.strip()
+                detail_suffix = f": {error_detail}" if error_detail else ''
+                last_error = (
+                    f'Kobo API returned {response.status_code} when requesting an edit link{detail_suffix}.'
+                )
+            else:
+                try:
+                    payload = response.json()
+                except ValueError:
+                    last_error = 'Kobo API returned invalid JSON when requesting an edit link.'
+                else:
+                    url = payload.get('url')
+                    if url:
+                        return url
+                    last_error = 'Enketo edit URL was not returned by the Kobo API.'
+        if attempt < attempts and last_error:
+            time.sleep(backoff_seconds * attempt)
+    raise EnketoLinkError(last_error or 'Unknown error while requesting an Enketo edit link.')
 
 
 def infer_columns(records: Iterable[Dict[str, Any]]) -> List[str]:

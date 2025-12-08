@@ -73,8 +73,8 @@
                         <span>{% if lang == 'fa' %}پایگاه داده و سهمیه{% else %}DB & Quota{% endif %}</span>
                     </label>
                     <div style="margin-top:0.5rem;">
-                        <label><input type="checkbox" name="database_management" id="id_database_management" {% if form.database_management.value %}checked{% endif %}> {% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}</label><br>
-                        <label><input type="checkbox" name="quota_management" id="id_quota_management" {% if form.quota_management.value %}checked{% endif %}> {% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}</label>
+                        <label>{{ form.database_management }} {% if lang == 'fa' %}مدیریت پایگاه داده{% else %}Database Management{% endif %}</label><br>
+                        <label>{{ form.quota_management }} {% if lang == 'fa' %}مدیریت سهمیه{% else %}Quota Management{% endif %}</label>
                     </div>
                 </div>
                 <div>
@@ -83,11 +83,21 @@
                         <span>{% if lang == 'fa' %}گردآوری{% else %}Collection{% endif %}</span>
                     </label>
                     <div style="margin-top:0.5rem;">
-                        <label><input type="checkbox" name="collection_management" id="id_collection_management" {% if form.collection_management.value %}checked{% endif %}> {% if lang == 'fa' %}مدیریت گردآوری{% else %}Collection Management{% endif %}</label><br>
-                        <label><input type="checkbox" name="collection_performance" id="id_collection_performance" {% if form.collection_performance.value %}checked{% endif %}> {% if lang == 'fa' %}کارایی گردآوری{% else %}Collection Performance{% endif %}</label><br>
-                        <label><input type="checkbox" name="telephone_interviewer" id="id_telephone_interviewer" {% if form.telephone_interviewer.value %}checked{% endif %}> {% if lang == 'fa' %}مصاحبه تلفنی{% else %}Telephone Interviewer{% endif %}</label><br>
-                        <label><input type="checkbox" name="fieldwork_interviewer" id="id_fieldwork_interviewer" {% if form.fieldwork_interviewer.value %}checked{% endif %}> {% if lang == 'fa' %}مصاحبه میدانی{% else %}Fieldwork Interviewer{% endif %}</label><br>
-                        <label><input type="checkbox" name="focus_group_panel" id="id_focus_group_panel" {% if form.focus_group_panel.value %}checked{% endif %}> {% if lang == 'fa' %}پنل گروه کانونی{% else %}Focus Group Panel{% endif %}</label>
+                        <label>{{ form.collection_management }} {% if lang == 'fa' %}مدیریت گردآوری{% else %}Collection Management{% endif %}</label><br>
+                        <label>{{ form.collection_performance }} {% if lang == 'fa' %}کارایی گردآوری{% else %}Collection Performance{% endif %}</label><br>
+                        <label>{{ form.telephone_interviewer }} {% if lang == 'fa' %}مصاحبه تلفنی{% else %}Telephone Interviewer{% endif %}</label><br>
+                        <label>{{ form.fieldwork_interviewer }} {% if lang == 'fa' %}مصاحبه میدانی{% else %}Fieldwork Interviewer{% endif %}</label><br>
+                        <label>{{ form.focus_group_panel }} {% if lang == 'fa' %}پنل گروه کانونی{% else %}Focus Group Panel{% endif %}</label>
+                    </div>
+                </div>
+                <div>
+                    <label style="font-weight:600;display:flex;align-items:center;gap:0.5rem;">
+                        <input type="checkbox" class="group-toggle" data-group="data_access">
+                        <span>{% if lang == 'fa' %}دسترسی داده{% else %}Data Access{% endif %}</span>
+                    </label>
+                    <div style="margin-top:0.5rem;">
+                        <label>{{ form.review_data }} {% if lang == 'fa' %}بازبینی داده{% else %}Review Data{% endif %}</label><br>
+                        <label>{{ form.edit_data }} {% if lang == 'fa' %}ویرایش داده{% else %}General Edit{% endif %}</label>
                     </div>
                 </div>
                 <div>
@@ -96,25 +106,26 @@
                         <span>{% if lang == 'fa' %}کنترل کیفیت{% else %}Quality Control{% endif %}</span>
                     </label>
                     <div style="margin-top:0.5rem;">
-                        <label><input type="checkbox" name="qc_management" id="id_qc_management" {% if form.qc_management.value %}checked{% endif %}> {% if lang == 'fa' %}مدیریت QC{% else %}QC Management{% endif %}</label><br>
-                        <label><input type="checkbox" name="qc_performance" id="id_qc_performance" {% if form.qc_performance.value %}checked{% endif %}> {% if lang == 'fa' %}کارایی QC{% else %}QC Performance{% endif %}</label><br>
-                        <label><input type="checkbox" name="voice_review" id="id_voice_review" {% if form.voice_review.value %}checked{% endif %}> {% if lang == 'fa' %}بازبینی صدا{% else %}Voice Review{% endif %}</label><br>
-                        <label><input type="checkbox" name="callback_qc" id="id_callback_qc" {% if form.callback_qc.value %}checked{% endif %}> {% if lang == 'fa' %}QC تماس برگشتی{% else %}Callback QC{% endif %}</label>
+                        <label>{{ form.qc_management }} {% if lang == 'fa' %}مدیریت QC{% else %}QC Management{% endif %}</label><br>
+                        <label>{{ form.qc_performance }} {% if lang == 'fa' %}کارایی QC{% else %}QC Performance{% endif %}</label><br>
+                        <label>{{ form.voice_review }} {% if lang == 'fa' %}بازبینی صدا{% else %}Voice Review{% endif %}</label><br>
+                        <label>{{ form.callback_qc }} {% if lang == 'fa' %}QC تماس برگشتی{% else %}Callback QC{% endif %}</label>
                     </div>
                 </div>
                 <div>
                     <label style="font-weight:600;display:flex;align-items:center;gap:0.5rem;">
                         <input type="checkbox" class="group-toggle" data-group="analysis">
-                        <span>{% if lang == 'fa' %}تحلیل{% else %}Analysis{% endif %}</span>
+                        <span>{% if lang == 'fa' %}تحلیل{% else %}Analysis & AI{% endif %}</span>
                     </label>
                     <div style="margin-top:0.5rem;">
-                        <label><input type="checkbox" name="coding" id="id_coding" {% if form.coding.value %}checked{% endif %}> {% if lang == 'fa' %}کدگذاری{% else %}Coding{% endif %}</label><br>
-                        <label><input type="checkbox" name="statistical_health_check" id="id_statistical_health_check" {% if form.statistical_health_check.value %}checked{% endif %}> {% if lang == 'fa' %}بررسی سلامت آماری{% else %}Statistical Health Check{% endif %}</label><br>
-                        <label><input type="checkbox" name="tabulation" id="id_tabulation" {% if form.tabulation.value %}checked{% endif %}> {% if lang == 'fa' %}جدول‌بندی{% else %}Tabulation{% endif %}</label><br>
-                        <label><input type="checkbox" name="statistics" id="id_statistics" {% if form.statistics.value %}checked{% endif %}> {% if lang == 'fa' %}آمار{% else %}Statistics{% endif %}</label><br>
-                        <label><input type="checkbox" name="funnel_analysis" id="id_funnel_analysis" {% if form.funnel_analysis.value %}checked{% endif %}> {% if lang == 'fa' %}تحلیل قیف{% else %}Funnel Analysis{% endif %}</label><br>
-                        <label><input type="checkbox" name="conjoint_analysis" id="id_conjoint_analysis" {% if form.conjoint_analysis.value %}checked{% endif %}> {% if lang == 'fa' %}تحلیل همگرایی{% else %}Conjoint Analysis{% endif %}</label><br>
-                        <label><input type="checkbox" name="segmentation_analysis" id="id_segmentation_analysis" {% if form.segmentation_analysis.value %}checked{% endif %}> {% if lang == 'fa' %}تحلیل تقسیم‌بندی{% else %}Segmentation Analysis{% endif %}</label>
+                        <label>{{ form.coding }} {% if lang == 'fa' %}کدگذاری{% else %}Coding{% endif %}</label><br>
+                        <label>{{ form.product_matrix_ai }} {% if lang == 'fa' %}ماتریس محصول AI{% else %}Product Matrix AI{% endif %}</label><br>
+                        <label>{{ form.statistical_health_check }} {% if lang == 'fa' %}بررسی سلامت آماری{% else %}Statistical Health Check{% endif %}</label><br>
+                        <label>{{ form.tabulation }} {% if lang == 'fa' %}جدول‌بندی{% else %}Tabulation{% endif %}</label><br>
+                        <label>{{ form.statistics }} {% if lang == 'fa' %}آمار{% else %}Statistics{% endif %}</label><br>
+                        <label>{{ form.funnel_analysis }} {% if lang == 'fa' %}تحلیل قیف{% else %}Funnel Analysis{% endif %}</label><br>
+                        <label>{{ form.conjoint_analysis }} {% if lang == 'fa' %}تحلیل همگرایی{% else %}Conjoint Analysis{% endif %}</label><br>
+                        <label>{{ form.segmentation_analysis }} {% if lang == 'fa' %}تحلیل تقسیم‌بندی{% else %}Segmentation Analysis{% endif %}</label>
                     </div>
                 </div>
             </div>
@@ -188,8 +199,9 @@
         const groupMap = {
             'database_quota': ['database_management','quota_management'],
             'collection': ['collection_management','collection_performance','telephone_interviewer','fieldwork_interviewer','focus_group_panel'],
+            'data_access': ['review_data','edit_data'],
             'quality': ['qc_management','qc_performance','voice_review','callback_qc'],
-            'analysis': ['coding','statistical_health_check','tabulation','statistics','funnel_analysis','conjoint_analysis','segmentation_analysis'],
+            'analysis': ['coding','product_matrix_ai','statistical_health_check','tabulation','statistics','funnel_analysis','conjoint_analysis','segmentation_analysis'],
         };
         document.querySelectorAll('.group-toggle').forEach(function(master) {
             master.addEventListener('change', function() {

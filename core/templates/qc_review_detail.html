@@ -2,12 +2,11 @@
 {% load i18n static custom_tags %}
 
 {% block content %}
-<div class="container py-4">
-  <div class="d-flex align-items-center mb-3">
-    <img src="{% static 'core/icons/feather/eye.svg' %}" alt="" class="me-2" width="24" height="24">
-    <h1 class="h4 mb-0">{% if lang == 'fa' %}جزئیات بازبینی{% else %}Review task{% endif %}</h1>
-  </div>
-  <p class="text-muted">{% if lang == 'fa' %}رکوردهای ارجاع‌شده برای پایگاه {{ task.entry.db_name }} را بازبینی کنید.{% else %}Review assigned records for {{ task.entry.db_name }}.{% endif %}</p>
+  <div class="container py-4">
+    <div class="d-flex align-items-center mb-3">
+      <h1 class="h4 mb-0">{% if lang == 'fa' %}جزئیات بازبینی{% else %}Review task{% endif %}</h1>
+    </div>
+    <p class="text-muted">{% if lang == 'fa' %}رکوردهای ارجاع‌شده برای پایگاه {{ task.entry.db_name }} را بازبینی کنید.{% else %}Review assigned records for {{ task.entry.db_name }}.{% endif %}</p>
 
   <div class="row g-4">
     <div class="col-lg-8">

@@ -1143,6 +1143,11 @@ function initNotificationCenter() {
           renderList([]);
           updateBadge(totalUnread);
           setStatus(text[lang].updated);
+          // Ensure counts stay in sync once the API confirms the update.
+          if (totalUnread === 0) {
+            updateBadge(0);
+          }
+          fetchNotifications(true);
         })
         .catch(() => {
           setStatus(text[lang].error, 'error');
