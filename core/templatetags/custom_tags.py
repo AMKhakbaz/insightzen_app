@@ -381,7 +381,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
                 {
                     'icon': 'grid',
                     'label': {'en': 'Tabulation', 'fa': 'جدول‌بندی'},
-                    'url': '#',
+                    'url': _resolve_url('tabulation'),
                     'disabled': not panel_active('tabulation'),
                     'visible': True,
                 },

@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}جدول‌بندی{% else %}Tabulation{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:1.5rem;">
+    <h1 style="margin-bottom:0.5rem;">{% if lang == 'fa' %}داشبورد جدول‌بندی{% else %}Tabulation Dashboard{% endif %}</h1>
+    <p style="margin-bottom:1rem;">
+        {% if lang == 'fa' %}
+            دیتاست خود را از بخش «Database Management» انتخاب کنید و بدون نیاز به آپلود فایل، جداول فراوانی و جدول دو بعدی بسازید.
+            در صورت نیاز به ستون‌های دیگر، ابتدا پایگاه داده مربوط را همگام‌سازی کنید.
+        {% else %}
+            Pick a dataset from the Database Management panel and build frequency or cross-tabulation tables without uploading any files.
+            If you need newer fields, synchronise the database first.
+        {% endif %}
+    </p>
+    <form method="get" class="form-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;align-items:end;">
+        <div>
+            <label class="form-label" for="entry">
+                {% if lang == 'fa' %}پایگاه داده{% else %}Database source{% endif %}
+            </label>
+            <select id="entry" name="entry" class="form-control">
+                <option value="">{% if lang == 'fa' %}یک منبع را انتخاب کنید{% else %}Select a source{% endif %}</option>
+                {% for entry in entries %}
+                    <option value="{{ entry.id }}" {% if selected_entry and entry.id == selected_entry.id %}selected{% endif %}>
+                        {{ entry.project.name }} — {{ entry.db_name }}
+                    </option>
+                {% empty %}
+                    <option value="" disabled>{% if lang == 'fa' %}هیچ پایگاه داده‌ای در دسترس نیست{% else %}No databases available{% endif %}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="analysis">
+                {% if lang == 'fa' %}نوع تحلیل{% else %}Analysis type{% endif %}
+            </label>
+            <select id="analysis" name="analysis" class="form-control">
+                <option value="univariate" {% if analysis_type == 'univariate' %}selected{% endif %}>{% if lang == 'fa' %}یک‌بعدی{% else %}Univariate{% endif %}</option>
+                <option value="crosstab" {% if analysis_type == 'crosstab' %}selected{% endif %}>{% if lang == 'fa' %}جدول دو بعدی{% else %}Cross-tab{% endif %}</option>
+            </select>
+        </div>
+        {% if available_columns %}
+            {% if analysis_type == 'crosstab' %}
+                <div>
+                    <label class="form-label" for="row_dimension">
+                        {% if lang == 'fa' %}سطرها بر اساس{% else %}Rows by{% endif %}
+                    </label>
+                    <select id="row_dimension" name="row_dimension" class="form-control">
+                        <option value="">{% if lang == 'fa' %}ستون را انتخاب کنید{% else %}Choose a column{% endif %}</option>
+                        {% for col in available_columns %}
+                            <option value="{{ col }}" {% if row_dimension == col %}selected{% endif %}>{{ col }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label" for="column_dimension">
+                        {% if lang == 'fa' %}ستون‌ها بر اساس{% else %}Columns by{% endif %}
+                    </label>
+                    <select id="column_dimension" name="column_dimension" class="form-control">
+                        <option value="">{% if lang == 'fa' %}ستون را انتخاب کنید{% else %}Choose a column{% endif %}</option>
+                        {% for col in available_columns %}
+                            <option value="{{ col }}" {% if column_dimension == col %}selected{% endif %}>{{ col }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% else %}
+                <div>
+                    <label class="form-label" for="column">
+                        {% if lang == 'fa' %}ستون مورد بررسی{% else %}Column{% endif %}
+                    </label>
+                    <select id="column" name="column" class="form-control">
+                        {% for col in available_columns %}
+                            <option value="{{ col }}" {% if selected_column == col %}selected{% endif %}>{{ col }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% endif %}
+        {% endif %}
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button type="submit" class="btn">{% if lang == 'fa' %}نمایش{% else %}Run{% endif %}</button>
+            {% if selected_entry %}
+                <a class="btn btn-outline" href="{% url 'database_view' selected_entry.id %}">{% if lang == 'fa' %}نمایش داده خام{% else %}View raw data{% endif %}</a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+{% if not entries %}
+    <div class="card">
+        <p style="margin:0;">{% if lang == 'fa' %}برای استفاده از این بخش ابتدا یک پایگاه داده در «Database Management» اضافه کنید.{% else %}Add a database entry under "Database Management" to start analysing data.{% endif %}</p>
+    </div>
+{% endif %}
+
+{% if selected_entry %}
+    <div class="card" style="margin-bottom:1rem;">
+        <h2 style="margin-bottom:0.5rem;">{{ selected_entry.project.name }} — {{ selected_entry.db_name }}</h2>
+        <ul style="list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.75rem;">
+            <li><strong>{% if lang == 'fa' %}تعداد رکورد{% else %}Records{% endif %}:</strong> {{ dataset_summary.records|default:0 }}</li>
+            <li><strong>{% if lang == 'fa' %}تعداد ستون‌ها{% else %}Columns{% endif %}:</strong> {{ dataset_summary.columns|default:0 }}</li>
+            <li><strong>{% if lang == 'fa' %}آخرین همگام‌سازی{% else %}Last sync{% endif %}:</strong> {{ dataset_summary.last_sync|default:"—" }}</li>
+        </ul>
+    </div>
+{% endif %}
+
+{% if preview_rows %}
+    <div class="card" style="margin-bottom:1rem;">
+        <h3 style="margin-bottom:0.5rem;">{% if lang == 'fa' %}پیش‌نمایش داده{% else %}Data preview{% endif %}</h3>
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        {% for col in preview_columns %}
+                            <th scope="col">{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in preview_rows %}
+                        <tr>
+                            {% for value in row %}
+                                <td>{{ value }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endif %}
+
+{% if analysis_result %}
+    <div class="card">
+        {% if analysis_type == 'crosstab' %}
+            <h3 style="margin-bottom:0.5rem;">{% if lang == 'fa' %}جدول دو بعدی{% else %}Cross-tabulation{% endif %}</h3>
+            <div class="table-responsive" style="margin-bottom:1rem;">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>{% if lang == 'fa' %}مقدار سطر{% else %}Row value{% endif %}</th>
+                            {% for col in analysis_result.columns %}
+                                <th>{{ col }}</th>
+                            {% endfor %}
+                            <th>{% if lang == 'fa' %}جمع سطر{% else %}Row total{% endif %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in analysis_result.rows %}
+                            <tr>
+                                <th scope="row">{{ row.label }}</th>
+                                {% for value in row.counts %}
+                                    <td>{{ value }}</td>
+                                {% endfor %}
+                                <td><strong>{{ row.total }}</strong></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>{% if lang == 'fa' %}جمع ستون{% else %}Column total{% endif %}</th>
+                            {% for total in analysis_result.column_totals %}
+                                <th>{{ total }}</th>
+                            {% endfor %}
+                            <th>{{ analysis_result.grand_total }}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>{% if lang == 'fa' %}درصد ردیف{% else %}Row %{% endif %}</th>
+                            {% for col in analysis_result.columns %}
+                                <th>{{ col }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in analysis_result.rows %}
+                            <tr>
+                                <th scope="row">{{ row.label }}</th>
+                                {% for value in row.percents %}
+                                    <td>{{ value }}%</td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <h3 style="margin-bottom:0.5rem;">{% if lang == 'fa' %}فراوانی برای{% else %}Frequency for{% endif %} {{ selected_column }}</h3>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>{% if lang == 'fa' %}مقدار{% else %}Value{% endif %}</th>
+                            <th>{% if lang == 'fa' %}تعداد{% else %}Count{% endif %}</th>
+                            <th>%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in analysis_result.rows %}
+                            <tr>
+                                <th scope="row">{{ row.value }}</th>
+                                <td>{{ row.count }}</td>
+                                <td>{{ row.percent }}%</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>{% if lang == 'fa' %}جمع{% else %}Total{% endif %}</th>
+                            <th>{{ analysis_result.total }}</th>
+                            <th>100%</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <div style="max-width:640px;margin-top:1rem;">
+                <canvas id="tabulation-chart" aria-label="{% if lang == 'fa' %}نمودار فراوانی{% else %}Frequency chart{% endif %}"></canvas>
+            </div>
+            {{ analysis_result.chart|json_script:"tabulation-chart-data" }}
+        {% endif %}
+    </div>
+{% elif selected_entry %}
+    <div class="card">
+        <p style="margin:0;">{% if lang == 'fa' %}برای مشاهده نتایج، نوع تحلیل و ستون‌های مناسب را انتخاب کنید.{% else %}Choose an analysis type and columns to view results.{% endif %}</p>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+    {% if analysis_result and analysis_type != 'crosstab' %}
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+        <script>
+            (function() {
+                const payload = JSON.parse(document.getElementById('tabulation-chart-data').textContent || '{}');
+                const ctx = document.getElementById('tabulation-chart');
+                if (!ctx || !payload.labels) return;
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: payload.labels,
+                        datasets: [{
+                            label: '%',
+                            data: payload.percentages,
+                            backgroundColor: '#15b8d9',
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) { return ctx.parsed.y + '%'; }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                ticks: { callback: value => value + '%' },
+                                beginAtZero: true,
+                                suggestedMax: 100
+                            }
+                        }
+                    }
+                });
+            })();
+        </script>
+    {% endif %}
+{% endblock %}

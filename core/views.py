@@ -22,6 +22,8 @@ from math import ceil
 from typing import Any, Dict, Iterable, List, Tuple, Optional
 from types import SimpleNamespace
 
+import pandas as pd
+
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -4288,6 +4290,183 @@ def collection_performance_export(request: HttpRequest) -> HttpResponse:
     from . import views_performance as perf
 
     return perf.collection_performance_export(request)
+
+
+def _missing_label(lang: str) -> str:
+    """Return the localised placeholder used for missing values."""
+
+    return _localise_text(lang, 'Missing', 'فاقد مقدار')
+
+
+def _stringify_value(value: Any, missing_label: str) -> str:
+    """Convert values (including lists/dicts) to displayable strings."""
+
+    if value is None:
+        return missing_label
+    if isinstance(value, float) and pd.isna(value):
+        return missing_label
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except TypeError:
+            return str(value)
+    return str(value)
+
+
+def _prepare_univariate_table(df: pd.DataFrame, column: str, lang: str) -> Dict[str, Any]:
+    """Return frequency and percentage breakdown for a single column."""
+
+    missing_label = _missing_label(lang)
+    series = df[column].apply(lambda v: _stringify_value(v, missing_label))
+    counts = series.value_counts(dropna=False)
+    total = int(series.shape[0]) or 1
+    rows = []
+    labels: List[str] = []
+    percentages: List[float] = []
+    for value, freq in counts.items():
+        percent = round((freq / total) * 100, 2)
+        display_value = missing_label if pd.isna(value) else str(value)
+        rows.append({'value': display_value, 'count': int(freq), 'percent': percent})
+        labels.append(display_value)
+        percentages.append(percent)
+    return {
+        'rows': rows,
+        'total': total,
+        'chart': {'labels': labels, 'percentages': percentages},
+    }
+
+
+def _prepare_crosstab(df: pd.DataFrame, row_dimension: str, column_dimension: str, lang: str) -> Dict[str, Any]:
+    """Build a cross-tabulation frequency and percentage table."""
+
+    missing_label = _missing_label(lang)
+    row_series = df[row_dimension].apply(lambda v: _stringify_value(v, missing_label))
+    col_series = df[column_dimension].apply(lambda v: _stringify_value(v, missing_label))
+    frequency = pd.crosstab(row_series, col_series, dropna=False)
+    row_totals = frequency.sum(axis=1)
+    col_totals = frequency.sum(axis=0)
+    percent_table = frequency.div(row_totals.replace(0, pd.NA), axis=0) * 100
+
+    columns = [str(col) for col in frequency.columns]
+    rows = []
+    for idx in frequency.index:
+        counts_for_row = [int(frequency.loc[idx, col]) for col in frequency.columns]
+        percents_for_row = []
+        for col in frequency.columns:
+            value = percent_table.loc[idx, col]
+            percents_for_row.append(round(float(value), 2) if pd.notna(value) else 0.0)
+        rows.append(
+            {
+                'label': str(idx),
+                'counts': counts_for_row,
+                'percents': percents_for_row,
+                'total': int(row_totals.loc[idx]),
+            }
+        )
+
+    return {
+        'columns': columns,
+        'rows': rows,
+        'column_totals': [int(val) for val in col_totals.tolist()],
+        'grand_total': int(row_totals.sum()),
+    }
+
+
+@login_required
+def tabulation_dashboard(request: HttpRequest) -> HttpResponse:
+    """Interactive tabulation dashboard backed by cached database entries."""
+
+    user = request.user
+    lang = _get_lang(request)
+    if not _user_has_panel(user, 'tabulation'):
+        messages.error(request, 'Access denied: you do not have permission to access the Tabulation panel.')
+        return redirect('home')
+
+    tab_project_ids = {p.id for p in _get_accessible_projects(user, panel='tabulation')}
+    db_project_ids = {p.id for p in _get_accessible_projects(user, panel='database_management')}
+    if user.is_superuser:
+        accessible_projects = Project.objects.all()
+    else:
+        allowed_ids = tab_project_ids & db_project_ids
+        accessible_projects = Project.objects.filter(id__in=allowed_ids)
+
+    entries = DatabaseEntry.objects.filter(project__in=accessible_projects).select_related('project').order_by('project__name', 'db_name')
+
+    selected_entry: Optional[DatabaseEntry] = None
+    snapshot = None
+    df: Optional[pd.DataFrame] = None
+    preview_columns: List[str] = []
+    preview_rows: List[Dict[str, Any]] = []
+    analysis_result: Optional[Dict[str, Any]] = None
+    available_columns: List[str] = []
+    dataset_summary: Dict[str, Any] = {}
+    analysis_type = request.GET.get('analysis', 'univariate')
+    selected_column = request.GET.get('column')
+    row_dimension = request.GET.get('row_dimension')
+    column_dimension = request.GET.get('column_dimension')
+
+    try:
+        entry_id = int(request.GET.get('entry', ''))
+    except (TypeError, ValueError):
+        entry_id = None
+
+    if entry_id:
+        selected_entry = entries.filter(pk=entry_id).first()
+        if not selected_entry:
+            messages.error(request, 'The selected database entry is not available for your account.')
+        else:
+            snapshot = load_entry_snapshot(selected_entry)
+            records = snapshot.records or []
+            if records:
+                df = pd.DataFrame.from_records(records)
+                available_columns = [str(col) for col in df.columns]
+                dataset_summary = {
+                    'records': len(df),
+                    'columns': len(df.columns),
+                    'last_sync': snapshot.synced_at,
+                    'db_name': selected_entry.db_name,
+                    'project_name': selected_entry.project.name,
+                }
+                preview_df = df.head(20).copy()
+                preview_columns = available_columns
+                missing_label = _missing_label(lang)
+                preview_rows = [
+                    [_stringify_value(row[col], missing_label) for col in preview_columns]
+                    for _, row in preview_df.iterrows()
+                ]
+                if analysis_type == 'crosstab':
+                    if row_dimension in available_columns and column_dimension in available_columns:
+                        analysis_result = _prepare_crosstab(df, row_dimension, column_dimension, lang)
+                    elif row_dimension or column_dimension:
+                        messages.error(request, 'Please choose valid dimensions for cross-tabulation.')
+                else:
+                    target_column = selected_column if selected_column in available_columns else (available_columns[0] if available_columns else None)
+                    if target_column:
+                        analysis_result = _prepare_univariate_table(df, target_column, lang)
+                        selected_column = target_column
+            else:
+                messages.warning(request, 'No cached records were found for the selected database. Please sync data first.')
+
+    context = {
+        'lang': lang,
+        'entries': entries,
+        'selected_entry': selected_entry,
+        'preview_columns': preview_columns,
+        'preview_rows': preview_rows,
+        'analysis_result': analysis_result,
+        'available_columns': available_columns,
+        'selected_column': selected_column,
+        'analysis_type': analysis_type,
+        'row_dimension': row_dimension,
+        'column_dimension': column_dimension,
+        'dataset_summary': dataset_summary,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'MR Analysis', 'تحلیل تحقیقات بازار'), ''),
+            (_localise_text(lang, 'Tabulation', 'جدول‌بندی'), ''),
+        ),
+    }
+    return render(request, 'tabulation.html', context)
 
 # -----------------------------------------------------------------------------
 # Conjoint analysis placeholder
