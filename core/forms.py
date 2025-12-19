@@ -272,6 +272,7 @@ class UserToProjectForm(forms.Form):
     coding = forms.BooleanField(required=False, label='Coding AI')
     product_matrix_ai = forms.BooleanField(required=False, label='Product Matrix AI')
     statistical_health_check = forms.BooleanField(required=False, label='Statistical Health Check')
+    sample_size_calculator = forms.BooleanField(required=False, label='Sample Size Calculator')
     tabulation = forms.BooleanField(required=False, label='Tabulation')
     statistics = forms.BooleanField(required=False, label='Statistics')
     funnel_analysis = forms.BooleanField(required=False, label='Funnel Analysis')
@@ -370,12 +371,43 @@ class MembershipWorkbookForm(forms.Form):
 
 # Form for creating or editing a database entry (Database Management panel)
 class DatabaseEntryForm(forms.ModelForm):
+    upload_file = forms.FileField(
+        required=False,
+        validators=[FileExtensionValidator(allowed_extensions=['csv', 'xlsx', 'xls'])],
+        widget=forms.ClearableFileInput(
+            attrs={
+                'class': 'form-control',
+                'accept': '.csv,.xlsx,.xls',
+            }
+        ),
+    )
+
     class Meta:
         model = DatabaseEntry
-        fields = ['project', 'db_name', 'token', 'asset_id']
+        fields = ['project', 'db_name', 'source_type', 'token', 'asset_id', 'upload_file', 'upload_sheet_name']
         widgets = {
             'project': forms.Select(attrs={'class': 'form-select'}),
             'db_name': forms.TextInput(attrs={'class': 'form-control'}),
+            'source_type': forms.Select(attrs={'class': 'form-select'}),
             'token': forms.TextInput(attrs={'class': 'form-control'}),
             'asset_id': forms.TextInput(attrs={'class': 'form-control'}),
+            'upload_sheet_name': forms.TextInput(attrs={'class': 'form-control'}),
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        source_type = cleaned.get('source_type')
+        token = cleaned.get('token')
+        asset_id = cleaned.get('asset_id')
+        upload_file = cleaned.get('upload_file')
+        if source_type == DatabaseEntry.SourceType.KOBO:
+            if not token:
+                self.add_error('token', 'Token is required for Surveyzen/Kobo sources.')
+            if not asset_id:
+                self.add_error('asset_id', 'Asset ID is required for Surveyzen/Kobo sources.')
+            cleaned['upload_file'] = None
+            cleaned['upload_sheet_name'] = ''
+        elif source_type == DatabaseEntry.SourceType.UPLOAD:
+            if not upload_file and not self.instance.upload_file:
+                self.add_error('upload_file', 'Please upload an Excel or CSV file.')
+        return cleaned

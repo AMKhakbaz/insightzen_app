@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}{% if lang == 'fa' %}محاسبه‌گر حجم نمونه{% else %}Sample Size Calculator{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:720px;margin:2rem auto;padding:1.5rem;">
+    <h1 style="margin-top:0;">{% if lang == 'fa' %}محاسبه‌گر حجم نمونه{% else %}Sample Size Calculator{% endif %}</h1>
+    <p class="card-intro">
+        {% if lang == 'fa' %}
+            پارامترهای جمعیت، سطح اطمینان و خطای مجاز را وارد کنید تا حجم نمونه پیشنهادی محاسبه شود.
+        {% else %}
+            Enter the population, confidence level, and margin of error to calculate the recommended sample size.
+        {% endif %}
+    </p>
+    <form method="post" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:end;">
+        {% csrf_token %}
+        <div style="grid-column: span 2;">
+            <label for="population">{% if lang == 'fa' %}اندازه جامعه (اختیاری){% else %}Population size (optional){% endif %}</label>
+            <input type="number" min="0" id="population" name="population" class="form-control" value="{{ inputs.population }}">
+        </div>
+        <div>
+            <label for="confidence">{% if lang == 'fa' %}سطح اطمینان{% else %}Confidence level{% endif %}</label>
+            <select id="confidence" name="confidence" class="form-select">
+                {% for level in '90,95,99'.split(',') %}
+                    <option value="{{ level }}" {% if inputs.confidence == level %}selected{% endif %}>{{ level }}%</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="margin">{% if lang == 'fa' %}خطای مجاز (%)‌{% else %}Margin of error (%) {% endif %}</label>
+            <input type="number" step="0.01" min="0.01" max="99" id="margin" name="margin" class="form-control" value="{{ inputs.margin }}">
+        </div>
+        <div>
+            <label for="proportion">{% if lang == 'fa' %}نسبت برآورد شده (٪){% else %}Estimated proportion (%) {% endif %}</label>
+            <input type="number" step="0.01" min="0.01" max="99" id="proportion" name="proportion" class="form-control" value="{{ inputs.proportion }}">
+            <small class="text-muted">
+                {% if lang == 'fa' %}در صورت عدم اطلاع، مقدار ۵۰٪ توصیه می‌شود.{% else %}Use 50% when unsure to get the most conservative size.{% endif %}
+            </small>
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+            <button type="submit" class="btn">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
+        </div>
+    </form>
+    {% if result %}
+        <div class="alert alert-success" role="alert" style="margin-top:1.25rem;">
+            {% if lang == 'fa' %}
+                حجم نمونه پیشنهادی: <strong>{{ result }}</strong>
+            {% else %}
+                Recommended sample size: <strong>{{ result }}</strong>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

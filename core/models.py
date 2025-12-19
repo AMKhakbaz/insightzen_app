@@ -252,6 +252,7 @@ class Membership(models.Model):
     coding = models.BooleanField(default=False)
     product_matrix_ai = models.BooleanField(default=False)
     statistical_health_check = models.BooleanField(default=False)
+    sample_size_calculator = models.BooleanField(default=False)
     tabulation = models.BooleanField(default=False)
     statistics = models.BooleanField(default=False)
     funnel_analysis = models.BooleanField(default=False)
@@ -432,6 +433,10 @@ class UploadedSampleEntry(models.Model):
 
 # New model for external database connections (database management panel)
 class DatabaseEntry(models.Model):
+    class SourceType(models.TextChoices):
+        KOBO = 'kobo', 'Surveyzen / Kobo'
+        UPLOAD = 'upload', 'Uploaded file'
+
     """Represents a connection to an external data source.
 
     Each entry stores the credentials and configuration required to
@@ -443,8 +448,13 @@ class DatabaseEntry(models.Model):
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='database_entries')
     db_name = models.CharField(max_length=255)
-    token = models.CharField(max_length=255)
-    asset_id = models.CharField(max_length=255)
+    source_type = models.CharField(
+        max_length=20, choices=SourceType.choices, default=SourceType.KOBO
+    )
+    token = models.CharField(max_length=255, blank=True, null=True)
+    asset_id = models.CharField(max_length=255, blank=True, null=True)
+    upload_file = models.FileField(upload_to='database_uploads/', blank=True, null=True)
+    upload_sheet_name = models.CharField(max_length=255, blank=True, default='')
     status = models.BooleanField(default=False)
     # Timestamp of the last attempted synchronisation.  Updated by the
     # sync_database_entries management command each time it runs.

@@ -152,6 +152,7 @@ MEMBERSHIP_PANEL_DEFINITIONS: List[Tuple[str, str, str]] = [
     ('coding', 'Coding AI', 'کدگذاری هوش مصنوعی'),
     ('product_matrix_ai', 'Product Matrix AI', 'ماتریس محصول هوش مصنوعی'),
     ('statistical_health_check', 'Statistical Health Check', 'بررسی سلامت آماری'),
+    ('sample_size_calculator', 'Sample Size Calculator', 'محاسبه‌گر حجم نمونه'),
     ('tabulation', 'Tabulation', 'جدول‌بندی'),
     ('statistics', 'Statistics', 'آمار'),
     ('funnel_analysis', 'Funnel Analysis', 'تحلیل قیف'),
@@ -1148,6 +1149,7 @@ def _build_database_export_dataset(request: HttpRequest, params: Dict[str, Any])
     columns = [
         {'field': 'project', 'label': 'Project', 'type': 'text', 'export': True},
         {'field': 'db_name', 'label': 'DB Name', 'type': 'text', 'export': True},
+        {'field': 'source_type', 'label': 'Source', 'type': 'text', 'export': True},
         {'field': 'token', 'label': 'Token', 'type': 'text', 'export': True},
         {'field': 'asset_id', 'label': 'Asset ID', 'type': 'text', 'export': True},
         {'field': 'status', 'label': 'Status', 'type': 'text', 'export': True},
@@ -1160,6 +1162,7 @@ def _build_database_export_dataset(request: HttpRequest, params: Dict[str, Any])
             {
                 'project': entry.project.name,
                 'db_name': entry.db_name,
+                'source_type': entry.source_type,
                 'token': entry.token,
                 'asset_id': entry.asset_id,
                 'status': status_label,
@@ -1926,13 +1929,162 @@ def qc_assignment_assign(request: HttpRequest) -> JsonResponse:
 
 @login_required
 def qc_performance_dashboard(request: HttpRequest) -> HttpResponse:
-    """Placeholder dashboard for QC performance insights."""
+    """Dashboard summarising review performance for QC reviewers."""
 
-    lang = request.session.get('lang', 'en')
-    if not _user_has_panel(request.user, 'qc_performance'):
+    lang = _get_lang(request)
+    user = request.user
+    if not _user_has_panel(user, 'qc_performance'):
         messages.error(request, _localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
         return redirect('home')
-    return render(request, 'qc_performance.html', {'lang': lang})
+
+    accessible_projects = _get_accessible_projects(user, panel='qc_performance')
+    if not accessible_projects:
+        locked = _get_locked_projects(user, panel='qc_performance')
+        if locked:
+            locked_names = ', '.join(sorted({p.name for p in locked}))
+            messages.error(
+                request,
+                _localise_text(
+                    lang,
+                    f'Access denied: project deadlines have passed ({locked_names}). Only the owner can view the QC performance dashboard.',
+                    f'دسترسی ممنوع است: ددلاین پروژه‌ها گذشته است ({locked_names}) و تنها مالک می‌تواند داشبورد کارایی QC را ببیند.',
+                ),
+            )
+        else:
+            messages.error(request, _localise_text(lang, 'No projects available for QC analytics.', 'پروژه‌ای برای تحلیل QC در دسترس نیست.'))
+        return redirect('home')
+
+    project_ids = _parse_int_param_list(request.GET.get('projects'))
+    selected_projects = [p for p in accessible_projects if not project_ids or p.id in project_ids]
+    if project_ids and not selected_projects:
+        messages.warning(request, _localise_text(lang, 'No matching projects for the selected filter.', 'هیچ پروژه‌ای با فیلتر انتخاب‌شده یافت نشد.'))
+
+    start = _parse_iso_datetime_param(request.GET.get('start'))
+    end = _parse_iso_datetime_param(request.GET.get('end'))
+
+    tasks_qs = ReviewTask.objects.filter(entry__project__in=selected_projects).select_related('reviewer', 'entry__project')
+    if start:
+        tasks_qs = tasks_qs.filter(created_at__gte=start)
+    if end:
+        tasks_qs = tasks_qs.filter(created_at__lte=end)
+
+    rows_qs = ReviewRow.objects.filter(task__in=tasks_qs).select_related('task__reviewer')
+    if start:
+        rows_qs = rows_qs.filter(created_at__gte=start)
+    if end:
+        rows_qs = rows_qs.filter(created_at__lte=end)
+
+    tasks = list(tasks_qs)
+    rows = list(rows_qs)
+
+    # Aggregate per reviewer
+    reviewer_stats: Dict[int, Dict[str, Any]] = {}
+    tasks_by_user: defaultdict[int, set] = defaultdict(set)
+    for task in tasks:
+        tasks_by_user[task.reviewer_id].add(task.pk)
+
+    total_rows = len(rows)
+    completed_rows = 0
+    sum_review_minutes = 0.0
+    review_duration_count = 0
+    sum_cycle_minutes = 0.0
+    cycle_duration_count = 0
+
+    for row in rows:
+        reviewer_id = row.task.reviewer_id
+        reviewer_stats.setdefault(
+            reviewer_id,
+            {
+                'user': row.task.reviewer,
+                'total_rows': 0,
+                'completed_rows': 0,
+                'sum_review_minutes': 0.0,
+                'review_duration_count': 0,
+                'sum_cycle_minutes': 0.0,
+                'cycle_duration_count': 0,
+                'last_activity': None,
+            },
+        )
+        stats = reviewer_stats[reviewer_id]
+        stats['total_rows'] += 1
+        if row.completed_at:
+            stats['completed_rows'] += 1
+            completed_rows += 1
+        last_activity = row.review_submitted_at or row.review_started_at or row.started_at or row.created_at
+        if last_activity and (stats['last_activity'] is None or last_activity > stats['last_activity']):
+            stats['last_activity'] = last_activity
+        if row.review_started_at and row.review_submitted_at:
+            delta = row.review_submitted_at - row.review_started_at
+            minutes = delta.total_seconds() / 60.0
+            stats['sum_review_minutes'] += minutes
+            stats['review_duration_count'] += 1
+            sum_review_minutes += minutes
+            review_duration_count += 1
+        if row.completed_at:
+            cycle_delta = row.completed_at - row.created_at
+            minutes = cycle_delta.total_seconds() / 60.0
+            stats['sum_cycle_minutes'] += minutes
+            stats['cycle_duration_count'] += 1
+            sum_cycle_minutes += minutes
+            cycle_duration_count += 1
+
+    reviewer_rows: List[Dict[str, Any]] = []
+    for reviewer_id, stats in reviewer_stats.items():
+        total_rows_user = stats['total_rows']
+        completed_rows_user = stats['completed_rows']
+        completion_rate_user = round((completed_rows_user / total_rows_user) * 100, 2) if total_rows_user else 0.0
+        avg_review_minutes_user = (
+            stats['sum_review_minutes'] / stats['review_duration_count'] if stats['review_duration_count'] else None
+        )
+        avg_cycle_minutes_user = (
+            stats['sum_cycle_minutes'] / stats['cycle_duration_count'] if stats['cycle_duration_count'] else None
+        )
+        reviewer_rows.append(
+            {
+                'user': stats['user'],
+                'tasks': len(tasks_by_user.get(reviewer_id, [])),
+                'total_rows': total_rows_user,
+                'completed_rows': completed_rows_user,
+                'completion_rate': completion_rate_user,
+                'avg_review_minutes': avg_review_minutes_user,
+                'avg_cycle_minutes': avg_cycle_minutes_user,
+                'last_activity': stats['last_activity'],
+            }
+        )
+
+    reviewer_rows.sort(key=lambda r: r['completion_rate'], reverse=True)
+
+    completion_rate = round((completed_rows / total_rows) * 100, 2) if total_rows else 0.0
+    avg_review_minutes = sum_review_minutes / review_duration_count if review_duration_count else None
+    avg_cycle_minutes = sum_cycle_minutes / cycle_duration_count if cycle_duration_count else None
+
+    summary = {
+        'total_tasks': len(tasks),
+        'total_rows': total_rows,
+        'completed_rows': completed_rows,
+        'completion_rate': completion_rate,
+        'avg_review_minutes': avg_review_minutes,
+        'avg_cycle_minutes': avg_cycle_minutes,
+        'active_reviewers': len(reviewer_rows),
+    }
+
+    context = {
+        'lang': lang,
+        'projects': sorted(accessible_projects, key=lambda p: p.name.lower()),
+        'selected_projects': [p.id for p in selected_projects],
+        'filters': {
+            'start': request.GET.get('start', ''),
+            'end': request.GET.get('end', ''),
+        },
+        'summary': summary,
+        'reviewer_rows': reviewer_rows,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'Quality Control', 'کنترل کیفیت'), ''),
+            (_localise_text(lang, 'QC Performance', 'کارایی QC'), ''),
+        ),
+    }
+    return render(request, 'qc_performance.html', context)
 
 
 @login_required
@@ -4372,6 +4524,87 @@ def _prepare_crosstab(df: pd.DataFrame, row_dimension: str, column_dimension: st
     }
 
 
+def _z_score(confidence: float) -> float:
+    """Return an approximate z-score for common confidence levels."""
+
+    lookup = {
+        90: 1.645,
+        95: 1.96,
+        99: 2.576,
+    }
+    return lookup.get(int(confidence), 1.96)
+
+
+def _calculate_sample_size(population: Optional[float], confidence: float, margin: float, proportion: float = 0.5) -> int:
+    """Compute a sample size for proportion estimates with finite population correction."""
+
+    z = _z_score(confidence)
+    p = proportion
+    e = margin
+    n0 = (z * z * p * (1 - p)) / (e * e)
+    if population and population > 0:
+        n = (n0 * population) / (n0 + population - 1)
+    else:
+        n = n0
+    return int(ceil(n))
+
+
+@login_required
+def sample_size_calculator(request: HttpRequest) -> HttpResponse:
+    """Simple sample size calculator panel (MRAnalysis group)."""
+
+    user = request.user
+    lang = _get_lang(request)
+    if not _user_has_panel(user, 'sample_size_calculator'):
+        messages.error(request, 'Access denied: you do not have permission to access the Sample Size Calculator.')
+        return redirect('home')
+
+    result: Optional[int] = None
+    input_values: Dict[str, Any] = {
+        'population': '',
+        'confidence': '95',
+        'margin': '5',
+        'proportion': '50',
+    }
+    if request.method == 'POST':
+        input_values['population'] = request.POST.get('population', '').strip()
+        input_values['confidence'] = request.POST.get('confidence', '95').strip()
+        input_values['margin'] = request.POST.get('margin', '5').strip()
+        input_values['proportion'] = request.POST.get('proportion', '50').strip()
+        try:
+            population_val = float(input_values['population']) if input_values['population'] else None
+            confidence_val = float(input_values['confidence'])
+            margin_pct = float(input_values['margin'])
+            proportion_pct = float(input_values['proportion'])
+            if margin_pct <= 0 or margin_pct >= 100:
+                raise ValueError('Invalid margin.')
+            if proportion_pct <= 0 or proportion_pct >= 100:
+                raise ValueError('Invalid proportion.')
+            result = _calculate_sample_size(
+                population=population_val,
+                confidence=confidence_val,
+                margin=margin_pct / 100.0,
+                proportion=proportion_pct / 100.0,
+            )
+        except ValueError:
+            messages.error(
+                request,
+                _localise_text(lang, 'Please provide valid numeric inputs.', 'لطفاً مقادیر عددی معتبر وارد کنید.'),
+            )
+
+    context = {
+        'lang': lang,
+        'result': result,
+        'inputs': input_values,
+        'breadcrumbs': _build_breadcrumbs(
+            lang,
+            (_localise_text(lang, 'MRAnalysis', 'تحلیل تحقیقات بازار'), ''),
+            (_localise_text(lang, 'Sample Size Calculator', 'محاسبه‌گر حجم نمونه'), ''),
+        ),
+    }
+    return render(request, 'sample_size_calculator.html', context)
+
+
 @login_required
 def tabulation_dashboard(request: HttpRequest) -> HttpResponse:
     """Interactive tabulation dashboard backed by cached database entries."""
@@ -4649,10 +4882,16 @@ def database_add(request: HttpRequest) -> HttpResponse:
             messages.error(request, 'Access denied: you do not have a project available for database management.')
         return redirect('home')
     if request.method == 'POST':
-        form = DatabaseEntryForm(request.POST)
+        form = DatabaseEntryForm(request.POST, request.FILES)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
         if form.is_valid():
             entry: DatabaseEntry = form.save(commit=False)
+            if entry.source_type == DatabaseEntry.SourceType.UPLOAD:
+                entry.token = None
+                entry.asset_id = None
+            else:
+                entry.upload_file = None
+                entry.upload_sheet_name = ''
             entry.status = False
             entry.last_sync = None
             entry.last_error = ''
@@ -4726,10 +4965,21 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
     if not _ensure_project_deadline_access(request, entry.project):
         return redirect('database_list')
     if request.method == 'POST':
-        form = DatabaseEntryForm(request.POST, instance=entry)
+        form = DatabaseEntryForm(request.POST, request.FILES, instance=entry)
         form.fields['project'].queryset = Project.objects.filter(pk__in=[p.pk for p in projects])
         if form.is_valid():
             entry = form.save()
+            if entry.source_type == DatabaseEntry.SourceType.UPLOAD:
+                entry.token = None
+                entry.asset_id = None
+                entry.save(update_fields=['token', 'asset_id'])
+            else:
+                # Clear any previously uploaded file when switching back to Kobo
+                if entry.upload_file:
+                    entry.upload_file.delete(save=False)
+                entry.upload_file = None
+                entry.upload_sheet_name = ''
+                entry.save(update_fields=['token', 'asset_id', 'upload_file', 'upload_sheet_name'])
             entry.last_update_requested = timezone.now()
             entry.save(update_fields=['last_update_requested'])
             sync_message = ''
@@ -4800,25 +5050,25 @@ def database_delete(request: HttpRequest, pk: int) -> HttpResponse:
         return redirect('database_list')
     if not _ensure_project_deadline_access(request, entry.project):
         return redirect('database_list')
-    # Attempt to drop the table corresponding to this entry
-    try:
-        # Build a connection to the default database configured in settings
-        db_conf = settings.DATABASES.get('default', {})
-        conn = psycopg2.connect(
-            host=db_conf.get('HOST', '127.0.0.1'),
-            port=db_conf.get('PORT', 5432),
-            dbname=db_conf.get('NAME'),
-            user=db_conf.get('USER'),
-            password=db_conf.get('PASSWORD'),
-        )
-        table_name = _sanitize_identifier(entry.asset_id)
-        with conn.cursor() as cur:
-            cur.execute(sql.SQL("DROP TABLE IF EXISTS {} CASCADE;").format(sql.Identifier(table_name)))
-        conn.commit()
-        conn.close()
-    except Exception:
-        # Fail silently; deletion of the Django record should still proceed
-        pass
+    if entry.asset_id:
+        # Attempt to drop the table corresponding to this entry
+        try:
+            db_conf = settings.DATABASES.get('default', {})
+            conn = psycopg2.connect(
+                host=db_conf.get('HOST', '127.0.0.1'),
+                port=db_conf.get('PORT', 5432),
+                dbname=db_conf.get('NAME'),
+                user=db_conf.get('USER'),
+                password=db_conf.get('PASSWORD'),
+            )
+            table_name = _sanitize_identifier(entry.asset_id)
+            with conn.cursor() as cur:
+                cur.execute(sql.SQL("DROP TABLE IF EXISTS {} CASCADE;").format(sql.Identifier(table_name)))
+            conn.commit()
+            conn.close()
+        except Exception:
+            # Fail silently; deletion of the Django record should still proceed
+            pass
     delete_entry_cache(entry)
     entry.delete()
     messages.success(request, 'Database entry deleted successfully.')
@@ -4850,6 +5100,7 @@ def database_update(request: HttpRequest, pk: int) -> HttpResponse:
         return redirect('database_list')
 
     now = timezone.now()
+    full_refresh = (request.POST.get('mode') or '').lower() == 'full'
     window_start = entry.update_window_start
     if window_start is None or now - window_start >= timedelta(minutes=90):
         entry.update_window_start = now
@@ -4877,16 +5128,22 @@ def database_update(request: HttpRequest, pk: int) -> HttpResponse:
     tracked_ids = [req.submission_id for req in tracked_qs]
 
     try:
-        result = refresh_entry_cache(entry, refresh_ids=tracked_ids)
+        refresh_ids = None if full_refresh else tracked_ids
+        if full_refresh:
+            delete_entry_cache(entry)
+            DatabaseEntryEditRequest.objects.filter(entry=entry).delete()
+
+        result = refresh_entry_cache(entry, refresh_ids=refresh_ids)
         entry.status = True
         entry.last_error = ''
         entry.last_manual_update = now
         entry.last_sync = now
         entry.save(update_fields=['status', 'last_error', 'last_manual_update', 'last_sync'])
+        message_prefix = 'Database fully refreshed.' if full_refresh else 'Database updated successfully.'
         messages.success(
             request,
             (
-                'Database updated successfully. '
+                f"{message_prefix} "
                 f"Added {result.added} and updated {result.updated} submissions (total {result.total})."
             ),
         )

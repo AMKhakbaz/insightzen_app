@@ -393,6 +393,13 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
                     'visible': True,
                 },
                 {
+                    'icon': 'aperture',
+                    'label': {'en': 'Sample Size Calculator', 'fa': 'محاسبه‌گر حجم نمونه'},
+                    'url': _resolve_url('sample_size_calculator'),
+                    'disabled': not panel_active('sample_size_calculator'),
+                    'visible': True,
+                },
+                {
                     'icon': 'filter',
                     'label': {'en': 'Funnel Analysis', 'fa': 'تحلیل قیف'},
                     'url': '#',

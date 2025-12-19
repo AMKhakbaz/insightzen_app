@@ -2,11 +2,127 @@
 {% load i18n static %}
 
 {% block content %}
-<div class="container py-4">
-  <div class="d-flex align-items-center mb-3">
-    <img src="{% static 'core/icons/feather/activity.svg' %}" alt="" class="me-2" width="24" height="24">
-    <h1 class="h4 mb-0">{% if lang == 'fa' %}کارایی QC{% else %}QC Performance{% endif %}</h1>
-  </div>
-  <p class="text-muted">{% if lang == 'fa' %}نمای کلی کارایی کنترل کیفیت.{% else %}Overview of quality control performance.{% endif %}</p>
+<div class="container py-3">
+    <div class="d-flex align-items-center mb-2">
+        <img src="{% static 'core/icons/feather/activity.svg' %}" alt="" class="me-2" width="20" height="20">
+        <h1 class="h5 mb-0">{% if lang == 'fa' %}کارایی QC{% else %}QC Performance{% endif %}</h1>
+    </div>
+    <p class="text-muted small mb-3">
+        {% if lang == 'fa' %}
+            کارایی بازبین‌ها در پنل «Review Data» را ببینید؛ تعداد وظایف، رکوردهای بررسی‌شده و میانگین زمان رسیدگی نمایش داده می‌شود.
+        {% else %}
+            Track reviewer output from the Review Data panel: tasks assigned, reviewed rows, completion rate, and average turnaround times.
+        {% endif %}
+    </p>
+
+    <form method="get" class="card p-2 mb-3">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label mb-1" for="projects">{% if lang == 'fa' %}پروژه‌ها{% else %}Projects{% endif %}</label>
+                <select id="projects" name="projects" multiple class="form-select form-select-sm">
+                    {% for project in projects %}
+                        <option value="{{ project.id }}" {% if project.id in selected_projects %}selected{% endif %}>{{ project.name }}</option>
+                    {% endfor %}
+                </select>
+                <small class="text-muted">
+                    {% if lang == 'fa' %}در صورت عدم انتخاب، همه پروژه‌های مجاز لحاظ می‌شوند.{% else %}Leave empty to include all accessible projects.{% endif %}
+                </small>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1" for="start">{% if lang == 'fa' %}از تاریخ{% else %}Start date{% endif %}</label>
+                <input type="date" id="start" name="start" class="form-control form-control-sm" value="{{ filters.start }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1" for="end">{% if lang == 'fa' %}تا تاریخ{% else %}End date{% endif %}</label>
+                <input type="date" id="end" name="end" class="form-control form-control-sm" value="{{ filters.end }}">
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary btn-sm w-100">{% if lang == 'fa' %}اعمال{% else %}Apply{% endif %}</button>
+            </div>
+        </div>
+    </form>
+
+    <div class="row g-2 mb-3">
+        <div class="col-md-3">
+            <div class="card p-2">
+                <div class="text-muted small">{% if lang == 'fa' %}کل وظایف QC{% else %}Total QC tasks{% endif %}</div>
+                <div class="fs-5 fw-semibold">{{ summary.total_tasks }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-2">
+                <div class="text-muted small">{% if lang == 'fa' %}رکورد بررسی‌شده{% else %}Reviewed rows{% endif %}</div>
+                <div class="fs-5 fw-semibold">{{ summary.completed_rows }} / {{ summary.total_rows }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-2">
+                <div class="text-muted small">{% if lang == 'fa' %}نرخ تکمیل{% else %}Completion rate{% endif %}</div>
+                <div class="fs-5 fw-semibold">{{ summary.completion_rate }}%</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-2">
+                <div class="text-muted small">{% if lang == 'fa' %}بازبین‌های فعال{% else %}Active reviewers{% endif %}</div>
+                <div class="fs-5 fw-semibold">{{ summary.active_reviewers }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-2 mb-3">
+        <div class="col-md-6">
+            <div class="card p-2">
+                <div class="text-muted small">{% if lang == 'fa' %}میانگین زمان بررسی (دقیقه){% else %}Avg. review time (minutes){% endif %}</div>
+                <div class="fs-5 fw-semibold">{% if summary.avg_review_minutes %}{{ summary.avg_review_minutes|floatformat:2 }}{% else %}—{% endif %}</div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card p-2">
+                <div class="text-muted small">{% if lang == 'fa' %}میانگین زمان چرخه (دقیقه){% else %}Avg. cycle time (minutes){% endif %}</div>
+                <div class="fs-5 fw-semibold">{% if summary.avg_cycle_minutes %}{{ summary.avg_cycle_minutes|floatformat:2 }}{% else %}—{% endif %}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-3">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <h2 class="h6 mb-0">{% if lang == 'fa' %}کارایی بازبین‌ها{% else %}Reviewer performance{% endif %}</h2>
+            <span class="text-muted small">{% if lang == 'fa' %}مرتب‌سازی بر اساس نرخ تکمیل{% else %}Sorted by completion rate{% endif %}</span>
+        </div>
+        {% if reviewer_rows %}
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead>
+                        <tr>
+                            <th class="small">{% if lang == 'fa' %}بازبین{% else %}Reviewer{% endif %}</th>
+                            <th class="small">{% if lang == 'fa' %}وظایف{% else %}Tasks{% endif %}</th>
+                            <th class="small">{% if lang == 'fa' %}کل رکورد{% else %}Rows{% endif %}</th>
+                            <th class="small">{% if lang == 'fa' %}بررسی‌شده{% else %}Reviewed{% endif %}</th>
+                            <th class="small">{% if lang == 'fa' %}نرخ تکمیل{% else %}Completion{% endif %}</th>
+                            <th class="small">{% if lang == 'fa' %}میانگین بررسی (دقیقه){% else %}Avg. review (min){% endif %}</th>
+                            <th class="small">{% if lang == 'fa' %}میانگین چرخه (دقیقه){% else %}Avg. cycle (min){% endif %}</th>
+                            <th class="small">{% if lang == 'fa' %}آخرین فعالیت{% else %}Last activity{% endif %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in reviewer_rows %}
+                            <tr>
+                                <td class="small">{{ row.user.get_full_name|default:row.user.username }}</td>
+                                <td class="small">{{ row.tasks }}</td>
+                                <td class="small">{{ row.total_rows }}</td>
+                                <td class="small">{{ row.completed_rows }}</td>
+                                <td class="small">{{ row.completion_rate }}%</td>
+                                <td class="small">{% if row.avg_review_minutes %}{{ row.avg_review_minutes|floatformat:2 }}{% else %}—{% endif %}</td>
+                                <td class="small">{% if row.avg_cycle_minutes %}{{ row.avg_cycle_minutes|floatformat:2 }}{% else %}—{% endif %}</td>
+                                <td class="small">{% if row.last_activity %}{{ row.last_activity|date:'Y-m-d H:i' }}{% else %}—{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted small mb-0">{% if lang == 'fa' %}داده‌ای برای نمایش وجود ندارد.{% else %}No reviewer data available for the selected filters.{% endif %}</p>
+        {% endif %}
+    </div>
 </div>
 {% endblock %}

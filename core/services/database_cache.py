@@ -1,4 +1,4 @@
-"""Utilities for caching Kobo payloads as JSON snapshots.
+"""Utilities for caching Kobo payloads and uploaded datasets as JSON snapshots.
 
 This module centralises the logic required to fetch Kobo submissions for a
 ``DatabaseEntry`` and persist them to disk as JSON payloads.  A lightweight
@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
+import pandas as pd
 from django.conf import settings
 from django.utils import timezone
 
@@ -70,6 +71,131 @@ def get_cache_root() -> Path:
 def _safe_segment(value: str) -> str:
     cleaned = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value).strip())
     return cleaned or 'entry'
+
+
+def _base_type(field_type: str) -> str:
+    """Return the base XLSForm type (e.g. ``select_multiple`` from ``select_multiple list``)."""
+
+    if not field_type:
+        return ''
+    return str(field_type).strip().split()[0]
+
+
+def _normalise_choice_name(value: str) -> str:
+    """Strip whitespace and trailing punctuation from a choice name."""
+
+    return re.sub(r'[\s,;؛،]+$', '', str(value).strip())
+
+
+def _build_choice_map(metadata: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Extract ``list_name -> [choices]`` mapping from the asset metadata."""
+
+    content = metadata.get('content') or {}
+    choices = content.get('choices') or []
+    choice_map: Dict[str, List[str]] = {}
+    for choice in choices:
+        list_name = str(choice.get('list_name', '')).strip()
+        name = _normalise_choice_name(choice.get('name', ''))
+        if not list_name or not name:
+            continue
+        choice_map.setdefault(list_name, []).append(name)
+    return choice_map
+
+
+def _build_select_multiple_map(metadata: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Return mapping of full question path -> choice names for multi-select questions."""
+
+    content = metadata.get('content') or {}
+    survey = content.get('survey') or []
+    choice_map = _build_choice_map(metadata)
+    multi_map: Dict[str, List[str]] = {}
+
+    def walk(nodes: Iterable[Dict[str, Any]], prefix: str = '') -> None:
+        for node in nodes:
+            field_type = str(node.get('type', '')).strip()
+            name = str(node.get('name', '')).strip()
+            base = _base_type(field_type)
+
+            if base in {'begin_group', 'begin_repeat'}:
+                child_prefix = f"{prefix}/{name}" if prefix and name else (name or prefix)
+                walk(node.get('children') or [], child_prefix)
+                continue
+
+            if not name:
+                continue
+            if base != 'select_multiple':
+                continue
+
+            list_name = ''
+            parts = field_type.split()
+            if len(parts) > 1:
+                list_name = parts[1]
+            full_path = f"{prefix}/{name}" if prefix else name
+            if not full_path:
+                continue
+            choices = choice_map.get(list_name, [])
+            if choices:
+                multi_map[full_path] = choices
+
+    walk(survey)
+    return multi_map
+
+
+def _load_uploaded_dataset(entry: DatabaseEntry) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Read an uploaded Excel/CSV file into a list of records."""
+
+    if not entry.upload_file:
+        raise DatabaseCacheError('No uploaded file is attached to this database entry.')
+    file_path = Path(entry.upload_file.path)
+    if not file_path.exists():
+        raise DatabaseCacheError('Uploaded file is missing from storage.')
+
+    ext = file_path.suffix.lower()
+    try:
+        if ext == '.csv':
+            df = pd.read_csv(file_path)
+        elif ext in {'.xlsx', '.xls'}:
+            sheet = (entry.upload_sheet_name or '').strip() or 0
+            df = pd.read_excel(file_path, sheet_name=sheet)
+        else:
+            raise DatabaseCacheError('Unsupported upload format; please provide CSV, XLSX, or XLS.')
+    except Exception as exc:
+        raise DatabaseCacheError(f'Failed to read uploaded file: {exc}')
+
+    df = df.where(pd.notna(df), None)
+    records = df.to_dict(orient='records')
+    metadata = {
+        'source_type': 'upload',
+        'columns': list(df.columns),
+        'sheet_name': entry.upload_sheet_name or '',
+        'filename': file_path.name,
+    }
+    return metadata, records
+
+
+def _apply_select_multiple_expansion(record: Dict[str, Any], multi_map: Dict[str, List[str]]) -> Dict[str, Any]:
+    """Expand select_multiple answers into dedicated columns (one per option)."""
+
+    if not multi_map:
+        return record
+
+    expanded = dict(record)
+    for path, choices in multi_map.items():
+        if path not in expanded:
+            selected: set[str] = set()
+        else:
+            value = expanded.get(path)
+            if value in (None, ''):
+                selected = set()
+            elif isinstance(value, str):
+                selected = set(filter(None, value.split()))
+            elif isinstance(value, (list, tuple, set)):
+                selected = set(map(str, value))
+            else:
+                selected = set(filter(None, str(value).split()))
+        for choice in choices:
+            expanded[f"{path}/{choice}"] = 1 if choice in selected else 0
+    return expanded
 
 
 def get_entry_cache_path(entry: DatabaseEntry) -> Path:
@@ -137,8 +263,16 @@ def refresh_entry_cache(entry: DatabaseEntry, refresh_ids: Optional[Iterable[str
             useful when manual edits were triggered for historical rows.
     """
 
-    metadata, submissions = _fetch_remote_payload(entry.token, entry.asset_id)
-    if refresh_ids:
+    if entry.source_type == DatabaseEntry.SourceType.UPLOAD:
+        metadata, submissions = _load_uploaded_dataset(entry)
+        select_multiple_map: Dict[str, List[str]] = {}
+    else:
+        if not entry.token or not entry.asset_id:
+            raise DatabaseCacheError('Token and asset ID are required for Surveyzen/Kobo sources.')
+        metadata, submissions = _fetch_remote_payload(entry.token, entry.asset_id)
+        select_multiple_map = _build_select_multiple_map(metadata)
+
+    if refresh_ids and entry.source_type != DatabaseEntry.SourceType.UPLOAD:
         query_ids = _prepare_submission_query(refresh_ids)
         if query_ids:
             _, targeted = _fetch_remote_payload(
@@ -148,8 +282,13 @@ def refresh_entry_cache(entry: DatabaseEntry, refresh_ids: Optional[Iterable[str
             )
             if targeted:
                 submissions.extend(targeted)
+
+    submissions = [_apply_select_multiple_expansion(rec, select_multiple_map) for rec in submissions]
     snapshot = load_entry_snapshot(entry)
-    merged_records, added, updated = _merge_records(snapshot.records, submissions)
+    expanded_existing = [
+        _apply_select_multiple_expansion(rec, select_multiple_map) for rec in snapshot.records
+    ]
+    merged_records, added, updated = _merge_records(expanded_existing, submissions)
     now_iso = timezone.now().isoformat()
     payload = {
         'entry': {

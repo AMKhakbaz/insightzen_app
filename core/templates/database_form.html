@@ -9,7 +9,7 @@
             &times;
         </a>
     </div>
-    <form method="post">
+    <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
         {{ form.non_field_errors }}
         {# Project select #}
@@ -24,6 +24,19 @@
             {{ form.db_name }}
             {{ form.db_name.errors }}
         </div>
+        {# Source type #}
+        <div>
+            {{ form.source_type.label_tag }}
+            {{ form.source_type }}
+            <small class="text-muted">
+                {% if lang == 'fa' %}
+                    انتخاب «Surveyzen / Kobo» برای فرم‌های آنلاین یا «Uploaded file» برای آپلود اکسل/CSV.
+                {% else %}
+                    Choose “Surveyzen / Kobo” for live forms or “Uploaded file” to upload Excel/CSV.
+                {% endif %}
+            </small>
+            {{ form.source_type.errors }}
+        </div>
         {# Token #}
         <div>
             {{ form.token.label_tag }}
@@ -35,6 +48,24 @@
             {{ form.asset_id.label_tag }}
             {{ form.asset_id }}
             {{ form.asset_id.errors }}
+        </div>
+        {# Upload file #}
+        <div>
+            {{ form.upload_file.label_tag }}
+            {{ form.upload_file }}
+            <small class="text-muted">
+                {% if lang == 'fa' %}از فرمت‌های CSV، XLSX یا XLS پشتیبانی می‌شود.{% else %}Supports CSV, XLSX, or XLS files.{% endif %}
+            </small>
+            {{ form.upload_file.errors }}
+        </div>
+        {# Sheet name (optional) #}
+        <div>
+            {{ form.upload_sheet_name.label_tag }}
+            {{ form.upload_sheet_name }}
+            <small class="text-muted">
+                {% if lang == 'fa' %}در صورت چند شیت بودن فایل اکسل، نام شیت مدنظر را وارد کنید؛ در غیر این صورت خالی بگذارید.{% else %}If the Excel file has multiple sheets, enter the sheet name; leave blank otherwise.{% endif %}
+            </small>
+            {{ form.upload_sheet_name.errors }}
         </div>
         <button type="submit" class="btn" style="margin-top:1rem;">
             {% if lang == 'fa' %}

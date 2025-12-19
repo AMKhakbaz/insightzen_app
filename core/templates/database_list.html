@@ -31,18 +31,24 @@
                     </th>
                     <th scope="col">
                         <button type="button" class="table-sort" data-sort-column="2" data-sort-type="text">
-                            <span>{% if lang == 'fa' %}توکن{% else %}Token{% endif %}</span>
+                            <span>{% if lang == 'fa' %}منبع{% else %}Source{% endif %}</span>
                             <span class="sort-icon" aria-hidden="true"></span>
                         </button>
                     </th>
                     <th scope="col">
                         <button type="button" class="table-sort" data-sort-column="3" data-sort-type="text">
-                            <span>{% if lang == 'fa' %}شناسه دارایی{% else %}Asset ID{% endif %}</span>
+                            <span>{% if lang == 'fa' %}توکن{% else %}Token{% endif %}</span>
                             <span class="sort-icon" aria-hidden="true"></span>
                         </button>
                     </th>
                     <th scope="col">
                         <button type="button" class="table-sort" data-sort-column="4" data-sort-type="text">
+                            <span>{% if lang == 'fa' %}شناسه دارایی{% else %}Asset ID{% endif %}</span>
+                            <span class="sort-icon" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col">
+                        <button type="button" class="table-sort" data-sort-column="5" data-sort-type="text">
                             <span>{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}</span>
                             <span class="sort-icon" aria-hidden="true"></span>
                         </button>
@@ -52,9 +58,10 @@
                 <tr class="table-filter-row">
                     <th><input type="text" data-filter-column="0" placeholder="{% if lang == 'fa' %}نام پروژه{% else %}Project{% endif %}" autocomplete="off"></th>
                     <th><input type="text" data-filter-column="1" placeholder="{% if lang == 'fa' %}نام پایگاه{% else %}Database{% endif %}" autocomplete="off"></th>
-                    <th><input type="text" data-filter-column="2" placeholder="{% if lang == 'fa' %}توکن{% else %}Token{% endif %}" autocomplete="off"></th>
-                    <th><input type="text" data-filter-column="3" placeholder="{% if lang == 'fa' %}شناسه{% else %}Asset ID{% endif %}" autocomplete="off"></th>
-                    <th><input type="text" data-filter-column="4" placeholder="{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="2" placeholder="{% if lang == 'fa' %}منبع{% else %}Source{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="3" placeholder="{% if lang == 'fa' %}توکن{% else %}Token{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="4" placeholder="{% if lang == 'fa' %}شناسه{% else %}Asset ID{% endif %}" autocomplete="off"></th>
+                    <th><input type="text" data-filter-column="5" placeholder="{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}" autocomplete="off"></th>
                     <th></th>
                 </tr>
             </thead>
@@ -63,8 +70,15 @@
                 <tr>
                     <td>{{ entry.project.name }}</td>
                     <td>{{ entry.db_name }}</td>
-                    <td>{{ entry.token|truncatechars:15 }}</td>
-                    <td>{{ entry.asset_id }}</td>
+                    <td>
+                        {% if entry.source_type == 'upload' %}
+                            {% if lang == 'fa' %}فایل آپلودی{% else %}Uploaded file{% endif %}
+                        {% else %}
+                            Surveyzen / Kobo
+                        {% endif %}
+                    </td>
+                    <td>{{ entry.token|default_if_none:''|truncatechars:15 }}</td>
+                    <td>{{ entry.asset_id|default_if_none:'' }}</td>
                     <td>{% if entry.status %}<span class="text-success">✓</span>{% else %}<span class="text-danger">×</span>{% endif %}</td>
                     <td>
                         <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary">
@@ -76,6 +90,11 @@
                         <form action="{% url 'database_update' entry.pk %}" method="post" style="display:inline;">
                             {% csrf_token %}
                             <button type="submit" class="btn btn-sm btn-outline">{% if lang == 'fa' %}به‌روزرسانی{% else %}Update{% endif %}</button>
+                        </form>
+                        <form action="{% url 'database_update' entry.pk %}" method="post" style="display:inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="mode" value="full">
+                            <button type="submit" class="btn btn-sm btn-outline btn-danger">{% if lang == 'fa' %}به‌روزرسانی کامل{% else %}Full Refresh{% endif %}</button>
                         </form>
                         <form action="{% url 'database_delete' entry.pk %}" method="post" style="display:inline;" onsubmit="return confirm('{% if lang == 'fa' %}آیا مطمئن هستید؟{% else %}Are you sure?{% endif %}');">
                             {% csrf_token %}
@@ -90,7 +109,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr data-empty-row><td colspan="6" class="text-center">{% if lang == 'fa' %}اطلاعاتی یافت نشد{% else %}No entries found{% endif %}</td></tr>
+                <tr data-empty-row><td colspan="7" class="text-center">{% if lang == 'fa' %}اطلاعاتی یافت نشد{% else %}No entries found{% endif %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>

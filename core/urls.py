@@ -50,6 +50,7 @@ urlpatterns = [
     # Coding & Category (Qualitative coding) analysis
     path('coding/', views.coding, name='coding'),
     path('coding/analyze/', views.coding_analyze, name='coding_analyze'),
+    path('sample-size-calculator/', views.sample_size_calculator, name='sample_size_calculator'),
     path('tabulation/', views.tabulation_dashboard, name='tabulation'),
     path('qc/management/', views.qc_management_view, name='qc_management'),
     path('qc/management/config/', views.qc_management_config, name='qc_management_config'),
