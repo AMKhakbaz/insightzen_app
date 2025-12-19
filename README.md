@@ -1,38 +1,40 @@
 # InsightZen Deployment Notes
 
-The application requires environment variables for sensitive settings such as the
-Django secret key and database connection details. A checked-in `.env` file
-copied from `.env.sample` already contains the current PostgreSQL and respondent
-bank connection values used in deployment. Update those values in `.env` when
-rotating credentials, and export the file in your process manager or container
-runtime before running any management commands.
+The application reads environment variables for sensitive settings such as the
+Django secret key and database connection details. Copy `.env.sample` to `.env`
+for local development; it defaults to SQLite to keep local runs self-contained.
+Production deployments should set the PostgreSQL variables directly in the
+environment (or a secure secrets store) rather than committing real values.
 
 | Setting | Environment variable | Notes |
 | --- | --- | --- |
-| Django secret key | `DJANGO_SECRET_KEY` | Required. The checked-in `.env` holds the current deployment value; update when rotating secrets. |
+| Django secret key | `DJANGO_SECRET_KEY` | Required. Set per-environment; do not commit real values. |
 | Debug mode | `DJANGO_DEBUG` | Defaults to `False`. Set to `True` in `.env` for local development only. |
-| Django DB host | `PGHOST` | Pre-populated in `.env` with the live PostgreSQL host; update if the host changes. |
-| Django DB port | `PGPORT` | Pre-populated in `.env`; defaults to `5433` if not set. |
-| Django DB user | `PGUSER` | Pre-populated in `.env` with the live PostgreSQL user. |
-| Django DB password | `PGPASSWORD` | Pre-populated in `.env` with the live PostgreSQL password. |
-| Django DB name | `PGDATABASE` | Pre-populated in `.env` with the live PostgreSQL database name. |
-| Respondent DB host | `RESPONDENT_DB_HOST` | Pre-populated in `.env` with the live respondent source DB host. |
-| Respondent DB port | `RESPONDENT_DB_PORT` | Pre-populated in `.env`; defaults to `5433` if not set. |
-| Respondent DB user | `RESPONDENT_DB_USER` | Pre-populated in `.env` with the live respondent source DB user. |
-| Respondent DB password | `RESPONDENT_DB_PASSWORD` | Pre-populated in `.env` with the live respondent source DB password. |
-| Respondent DB name | `RESPONDENT_DB_NAME` | Pre-populated in `.env` with the live respondent source DB name. |
+| Database backend | `DATABASE_ENGINE` | Leave unset (or any value other than `postgres`) to use SQLite. Set to `postgres` (or set any `PG*` variable) to enable PostgreSQL. |
+| Django DB host | `PGHOST` | Required when using PostgreSQL. |
+| Django DB port | `PGPORT` | Optional; defaults to `5432` when using PostgreSQL. |
+| Django DB user | `PGUSER` | Required when using PostgreSQL. |
+| Django DB password | `PGPASSWORD` | Required when using PostgreSQL. |
+| Django DB name | `PGDATABASE` | Required when using PostgreSQL. |
+| Respondent DB host | `RESPONDENT_DB_HOST` | Set when syncing the respondent bank. |
+| Respondent DB port | `RESPONDENT_DB_PORT` | Optional; defaults to `5432` for respondent DB connections. |
+| Respondent DB user | `RESPONDENT_DB_USER` | Set when syncing the respondent bank. |
+| Respondent DB password | `RESPONDENT_DB_PASSWORD` | Set when syncing the respondent bank. |
+| Respondent DB name | `RESPONDENT_DB_NAME` | Set when syncing the respondent bank. |
 
 Export these variables (for example via `.env` or your process manager) before
-running the Django management commands. Production environments should still
-load the checked-in `.env` securely and leave `DJANGO_DEBUG` unset (the default
-`False`) in production.
+running the Django management commands. Leave `DJANGO_DEBUG` unset (the default
+`False`) in production, and populate PostgreSQL variables only in the
+environments that need them.
 
 ## Applying migrations on PostgreSQL deployments
 
 Enable the built-in PostgreSQL helpers in Django by ensuring
 `django.contrib.postgres` is in `INSTALLED_APPS` (already set in
-`insightzen/settings.py`). After updating deployments or local environments, run
-the migrations so Django can perform system checks without errors:
+`insightzen/settings.py`). When `DATABASE_ENGINE=postgres` (or any `PG*`
+variable is set), Django will connect to PostgreSQL; otherwise it uses SQLite.
+After updating deployments or local environments, run the migrations so Django
+can perform system checks without errors:
 
 ```bash
 python manage.py migrate
