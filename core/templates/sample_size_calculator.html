@@ -2,52 +2,360 @@
 {% block title %}{% if lang == 'fa' %}محاسبه‌گر حجم نمونه{% else %}Sample Size Calculator{% endif %}{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width:720px;margin:2rem auto;padding:1.5rem;">
-    <h1 style="margin-top:0;">{% if lang == 'fa' %}محاسبه‌گر حجم نمونه{% else %}Sample Size Calculator{% endif %}</h1>
-    <p class="card-intro">
+<style>
+    .calc-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 1.25rem;
+    }
+    .calc-card {
+        padding: 1.25rem;
+        border: 1px solid var(--border-subtle, #e2e8f0);
+        border-radius: 14px;
+        background: var(--surface, #0f172a);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+    .calc-card h3 {
+        margin-top: 0;
+        margin-bottom: 0.35rem;
+    }
+    .calc-card form {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+    }
+    .calc-card .form-control, .calc-card .form-select {
+        width: 100%;
+    }
+    .result-box {
+        margin-top: 1rem;
+        padding: 0.9rem;
+        border-radius: 12px;
+        background: var(--surface-muted, #111827);
+        border: 1px solid var(--border-strong, #1f2937);
+    }
+    .result-values {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+    .result-number {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--accent, #22d3ee);
+        margin: 0.15rem 0;
+    }
+    .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.3rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        background: rgba(34, 211, 238, 0.12);
+        color: var(--accent, #22d3ee);
+    }
+    .feature-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 0.6rem;
+        margin: 0.75rem 0 0;
+        padding: 0;
+        list-style: none;
+    }
+    .feature-list li {
+        display: flex;
+        gap: 0.5rem;
+        align-items: flex-start;
+    }
+    .feature-list svg {
+        flex-shrink: 0;
+        margin-top: 0.2rem;
+    }
+    .eyebrow {
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.8rem;
+        color: var(--text-muted, #94a3b8);
+        margin: 0;
+    }
+</style>
+
+<div class="card calc-card" style="margin-bottom:1.5rem;">
+    <p class="eyebrow">{% if lang == 'fa' %}پنل MRAnalysis{% else %}MRAnalysis panel{% endif %}</p>
+    <h1 style="margin:0 0 0.25rem 0;">{% if lang == 'fa' %}آزمایشگاه محاسبه حجم نمونه{% else %}Sample Size Lab{% endif %}</h1>
+    <p style="margin:0;color:var(--text-muted,#94a3b8);max-width:920px;">
         {% if lang == 'fa' %}
-            پارامترهای جمعیت، سطح اطمینان و خطای مجاز را وارد کنید تا حجم نمونه پیشنهادی محاسبه شود.
+            برای برآورد نسبت یا میانگین، و همچنین طراحی آزمون A/B روی نرخ تبدیل یا متغیرهای پیوسته، حجم نمونه مناسب را محاسبه کنید. اصلاح جامعه محدود، آزمون یک‌طرفه/دوطرفه، و توان آزمون به‌صورت پیش‌فرض در نظر گرفته شده‌اند.
         {% else %}
-            Enter the population, confidence level, and margin of error to calculate the recommended sample size.
+            Compute defensible sample sizes for estimating proportions or means, plus A/B tests on conversion rates or continuous KPIs. Finite population correction, one- vs two-sided tests, and statistical power are baked in.
         {% endif %}
     </p>
-    <form method="post" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:end;">
-        {% csrf_token %}
-        <div style="grid-column: span 2;">
-            <label for="population">{% if lang == 'fa' %}اندازه جامعه (اختیاری){% else %}Population size (optional){% endif %}</label>
-            <input type="number" min="0" id="population" name="population" class="form-control" value="{{ inputs.population }}">
+    <ul class="feature-list">
+        <li>
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+            <span>{% if lang == 'fa' %}برآورد نسبت و میانگین با خطای مجاز مشخص و اصلاح جامعه محدود{% else %}Proportion & mean estimators with target margin of error and finite population correction{% endif %}</span>
+        </li>
+        <li>
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+            <span>{% if lang == 'fa' %}طراحی آزمون A/B: توان، اثر قابل تشخیص و آزمون یک‌طرفه/دوطرفه{% else %}A/B test design with power, minimum detectable effect, and one/two-sided options{% endif %}</span>
+        </li>
+        <li>
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+            <span>{% if lang == 'fa' %}خروجی‌های شفاف شامل فرض‌ها و پارامترهای کلیدی برای مستندسازی{% else %}Transparent outputs listing the assumptions you can drop into documentation{% endif %}</span>
+        </li>
+    </ul>
+</div>
+
+<h2 style="margin:0 0 0.5rem 0;">{% if lang == 'fa' %}برآورد و اطمینان{% else %}Estimation & confidence{% endif %}</h2>
+<div class="calc-grid" style="margin-bottom:1.25rem;">
+    <div class="calc-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
+            <div>
+                <p class="eyebrow">{% if lang == 'fa' %}نسبت‌ها{% else %}Proportions{% endif %}</p>
+                <h3>{% if lang == 'fa' %}حجم نمونه برای نسبت{% else %}Sample size for proportions{% endif %}</h3>
+                <p style="margin:0;color:var(--text-muted,#94a3b8);">{% if lang == 'fa' %}برای برآورد نرخ‌ها یا نسبت‌ها با خطای مجاز مشخص.{% else %}Estimate a proportion (conversion, incidence, agreement) with a target margin of error.{% endif %}</p>
+            </div>
+            <span class="pill">{% if lang == 'fa' %}اصلاح جامعه محدود{% else %}FPC ready{% endif %}</span>
         </div>
-        <div>
-            <label for="confidence">{% if lang == 'fa' %}سطح اطمینان{% else %}Confidence level{% endif %}</label>
-            <select id="confidence" name="confidence" class="form-select">
-                {% for level in '90,95,99'.split(',') %}
-                    <option value="{{ level }}" {% if inputs.confidence == level %}selected{% endif %}>{{ level }}%</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div>
-            <label for="margin">{% if lang == 'fa' %}خطای مجاز (%)‌{% else %}Margin of error (%) {% endif %}</label>
-            <input type="number" step="0.01" min="0.01" max="99" id="margin" name="margin" class="form-control" value="{{ inputs.margin }}">
-        </div>
-        <div>
-            <label for="proportion">{% if lang == 'fa' %}نسبت برآورد شده (٪){% else %}Estimated proportion (%) {% endif %}</label>
-            <input type="number" step="0.01" min="0.01" max="99" id="proportion" name="proportion" class="form-control" value="{{ inputs.proportion }}">
-            <small class="text-muted">
-                {% if lang == 'fa' %}در صورت عدم اطلاع، مقدار ۵۰٪ توصیه می‌شود.{% else %}Use 50% when unsure to get the most conservative size.{% endif %}
-            </small>
-        </div>
-        <div style="display:flex;align-items:flex-end;">
-            <button type="submit" class="btn">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
-        </div>
-    </form>
-    {% if result %}
-        <div class="alert alert-success" role="alert" style="margin-top:1.25rem;">
-            {% if lang == 'fa' %}
-                حجم نمونه پیشنهادی: <strong>{{ result }}</strong>
-            {% else %}
-                Recommended sample size: <strong>{{ result }}</strong>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="mode" value="proportion_estimate">
+            <label>
+                <span>{% if lang == 'fa' %}اندازه جامعه (اختیاری){% else %}Population size (optional){% endif %}</span>
+                <input type="number" min="0" class="form-control" name="population" value="{{ inputs.proportion_estimate.population }}" placeholder="{% if lang == 'fa' %}بدون سقف جامعه{% else %}Leave blank for unlimited{% endif %}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}سطح اطمینان (٪){% else %}Confidence level (%) {% endif %}</span>
+                <input type="number" step="0.1" min="50" max="99.9" class="form-control" name="confidence" value="{{ inputs.proportion_estimate.confidence }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}آزمون{% else %}Test side{% endif %}</span>
+                <select class="form-select" name="tail">
+                    <option value="two-sided" {% if inputs.proportion_estimate.tail == 'two-sided' %}selected{% endif %}>{% if lang == 'fa' %}دوطرفه{% else %}Two-sided{% endif %}</option>
+                    <option value="one-sided" {% if inputs.proportion_estimate.tail == 'one-sided' %}selected{% endif %}>{% if lang == 'fa' %}یک‌طرفه{% else %}One-sided{% endif %}</option>
+                </select>
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}خطای مجاز (٪){% else %}Margin of error (%) {% endif %}</span>
+                <input type="number" step="0.01" min="0.01" max="99" class="form-control" name="margin" value="{{ inputs.proportion_estimate.margin }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}نسبت برآوردی (٪){% else %}Assumed proportion (%) {% endif %}</span>
+                <input type="number" step="0.01" min="0.01" max="99" class="form-control" name="proportion" value="{{ inputs.proportion_estimate.proportion }}">
+            </label>
+            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+                <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
+            </div>
+        </form>
+        {% with result=results.proportion_estimate %}
+            {% if result %}
+                <div class="result-box">
+                    <div class="result-values">
+                        <div>
+                            <p class="eyebrow">{{ result.primary_label }}</p>
+                            <p class="result-number">{{ result.primary_value }}</p>
+                        </div>
+                    </div>
+                    <ul style="margin:0;padding-left:1rem;color:var(--text-muted,#94a3b8);">
+                        {% for line in result.details %}
+                            <li>{{ line }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
             {% endif %}
+        {% endwith %}
+    </div>
+
+    <div class="calc-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
+            <div>
+                <p class="eyebrow">{% if lang == 'fa' %}متغیرهای پیوسته{% else %}Continuous KPIs{% endif %}</p>
+                <h3>{% if lang == 'fa' %}حجم نمونه برای میانگین{% else %}Sample size for means{% endif %}</h3>
+                <p style="margin:0;color:var(--text-muted,#94a3b8);">{% if lang == 'fa' %}برای میانگین‌هایی با انحراف معیار معلوم یا برآوردی.{% else %}Estimate a population mean using a target absolute error and a known/estimated standard deviation.{% endif %}</p>
+            </div>
+            <span class="pill">{% if lang == 'fa' %}حاشیه خطای مطلق{% else %}Absolute error{% endif %}</span>
         </div>
-    {% endif %}
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="mode" value="mean_estimate">
+            <label>
+                <span>{% if lang == 'fa' %}اندازه جامعه (اختیاری){% else %}Population size (optional){% endif %}</span>
+                <input type="number" min="0" class="form-control" name="population" value="{{ inputs.mean_estimate.population }}" placeholder="{% if lang == 'fa' %}بدون سقف جامعه{% else %}Leave blank for unlimited{% endif %}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}سطح اطمینان (٪){% else %}Confidence level (%) {% endif %}</span>
+                <input type="number" step="0.1" min="50" max="99.9" class="form-control" name="confidence" value="{{ inputs.mean_estimate.confidence }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}آزمون{% else %}Test side{% endif %}</span>
+                <select class="form-select" name="tail">
+                    <option value="two-sided" {% if inputs.mean_estimate.tail == 'two-sided' %}selected{% endif %}>{% if lang == 'fa' %}دوطرفه{% else %}Two-sided{% endif %}</option>
+                    <option value="one-sided" {% if inputs.mean_estimate.tail == 'one-sided' %}selected{% endif %}>{% if lang == 'fa' %}یک‌طرفه{% else %}One-sided{% endif %}</option>
+                </select>
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}خطای مجاز (مقدار){% else %}Margin of error (units) {% endif %}</span>
+                <input type="number" step="0.01" min="0.0001" class="form-control" name="margin" value="{{ inputs.mean_estimate.margin }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}انحراف معیار{% else %}Standard deviation{% endif %}</span>
+                <input type="number" step="0.01" min="0.0001" class="form-control" name="stddev" value="{{ inputs.mean_estimate.stddev }}">
+            </label>
+            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+                <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
+            </div>
+        </form>
+        {% with result=results.mean_estimate %}
+            {% if result %}
+                <div class="result-box">
+                    <div class="result-values">
+                        <div>
+                            <p class="eyebrow">{{ result.primary_label }}</p>
+                            <p class="result-number">{{ result.primary_value }}</p>
+                        </div>
+                    </div>
+                    <ul style="margin:0;padding-left:1rem;color:var(--text-muted,#94a3b8);">
+                        {% for line in result.details %}
+                            <li>{{ line }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        {% endwith %}
+    </div>
+</div>
+
+<h2 style="margin:1.25rem 0 0.5rem 0;">{% if lang == 'fa' %}آزمون فرض و A/B{% else %}Hypothesis testing & A/B{% endif %}</h2>
+<div class="calc-grid">
+    <div class="calc-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
+            <div>
+                <p class="eyebrow">{% if lang == 'fa' %}نرخ تبدیل{% else %}Conversion{% endif %}</p>
+                <h3>{% if lang == 'fa' %}A/B روی نسبت‌ها{% else %}A/B test on proportions{% endif %}</h3>
+                <p style="margin:0;color:var(--text-muted,#94a3b8);">{% if lang == 'fa' %}برای نرخ‌های کلیک، ثبت‌نام یا موفقیت پیام.{% else %}Designed for click-through, signup, or success rates with a target lift (MDE).{% endif %}</p>
+            </div>
+            <span class="pill">{% if lang == 'fa' %}توان + MDE{% else %}Power + MDE{% endif %}</span>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="mode" value="ab_proportion">
+            <label>
+                <span>{% if lang == 'fa' %}سطح معنی‌داری (٪){% else %}Significance / confidence (%) {% endif %}</span>
+                <input type="number" step="0.1" min="50" max="99.9" class="form-control" name="confidence" value="{{ inputs.ab_proportion.confidence }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}توان آزمون (٪){% else %}Power (%) {% endif %}</span>
+                <input type="number" step="0.1" min="50" max="99.9" class="form-control" name="power" value="{{ inputs.ab_proportion.power }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}آزمون{% else %}Test side{% endif %}</span>
+                <select class="form-select" name="tail">
+                    <option value="two-sided" {% if inputs.ab_proportion.tail == 'two-sided' %}selected{% endif %}>{% if lang == 'fa' %}دوطرفه{% else %}Two-sided{% endif %}</option>
+                    <option value="one-sided" {% if inputs.ab_proportion.tail == 'one-sided' %}selected{% endif %}>{% if lang == 'fa' %}یک‌طرفه{% else %}One-sided{% endif %}</option>
+                </select>
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}نرخ پایه (٪){% else %}Baseline rate (%) {% endif %}</span>
+                <input type="number" step="0.01" min="0.01" max="99" class="form-control" name="baseline" value="{{ inputs.ab_proportion.baseline }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}اثر قابل تشخیص (تفاوت مطلق، ٪){% else %}Min detectable effect (% absolute) {% endif %}</span>
+                <input type="number" step="0.01" min="0.01" max="99" class="form-control" name="mde" value="{{ inputs.ab_proportion.mde }}">
+            </label>
+            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+                <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
+            </div>
+        </form>
+        {% with result=results.ab_proportion %}
+            {% if result %}
+                <div class="result-box">
+                    <div class="result-values">
+                        <div>
+                            <p class="eyebrow">{{ result.primary_label }}</p>
+                            <p class="result-number">{{ result.primary_value }}</p>
+                        </div>
+                        {% if result.secondary_value %}
+                            <div>
+                                <p class="eyebrow">{{ result.secondary_label }}</p>
+                                <p class="result-number">{{ result.secondary_value }}</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                    <ul style="margin:0;padding-left:1rem;color:var(--text-muted,#94a3b8);">
+                        {% for line in result.details %}
+                            <li>{{ line }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <div class="calc-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
+            <div>
+                <p class="eyebrow">{% if lang == 'fa' %}KPIهای پیوسته{% else %}Continuous KPIs{% endif %}</p>
+                <h3>{% if lang == 'fa' %}A/B روی میانگین‌ها{% else %}A/B test on means{% endif %}</h3>
+                <p style="margin:0;color:var(--text-muted,#94a3b8);">{% if lang == 'fa' %}برای KPIهایی مثل زمان، امتیاز یا مبلغ با انحراف معیار مشخص.{% else %}For continuous outcomes such as session time, satisfaction score, or spend with a known/estimated sigma.{% endif %}</p>
+            </div>
+            <span class="pill">{% if lang == 'fa' %}دو گروه برابر{% else %}Balanced groups{% endif %}</span>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="mode" value="ab_mean">
+            <label>
+                <span>{% if lang == 'fa' %}سطح معنی‌داری (٪){% else %}Significance / confidence (%) {% endif %}</span>
+                <input type="number" step="0.1" min="50" max="99.9" class="form-control" name="confidence" value="{{ inputs.ab_mean.confidence }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}توان آزمون (٪){% else %}Power (%) {% endif %}</span>
+                <input type="number" step="0.1" min="50" max="99.9" class="form-control" name="power" value="{{ inputs.ab_mean.power }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}آزمون{% else %}Test side{% endif %}</span>
+                <select class="form-select" name="tail">
+                    <option value="two-sided" {% if inputs.ab_mean.tail == 'two-sided' %}selected{% endif %}>{% if lang == 'fa' %}دوطرفه{% else %}Two-sided{% endif %}</option>
+                    <option value="one-sided" {% if inputs.ab_mean.tail == 'one-sided' %}selected{% endif %}>{% if lang == 'fa' %}یک‌طرفه{% else %}One-sided{% endif %}</option>
+                </select>
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}انحراف معیار{% else %}Standard deviation{% endif %}</span>
+                <input type="number" step="0.01" min="0.0001" class="form-control" name="stddev" value="{{ inputs.ab_mean.stddev }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}اثر قابل تشخیص (تفاوت مطلق){% else %}Min detectable difference (absolute) {% endif %}</span>
+                <input type="number" step="0.01" min="0.0001" class="form-control" name="mde" value="{{ inputs.ab_mean.mde }}">
+            </label>
+            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+                <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
+            </div>
+        </form>
+        {% with result=results.ab_mean %}
+            {% if result %}
+                <div class="result-box">
+                    <div class="result-values">
+                        <div>
+                            <p class="eyebrow">{{ result.primary_label }}</p>
+                            <p class="result-number">{{ result.primary_value }}</p>
+                        </div>
+                        {% if result.secondary_value %}
+                            <div>
+                                <p class="eyebrow">{{ result.secondary_label }}</p>
+                                <p class="result-number">{{ result.secondary_value }}</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                    <ul style="margin:0;padding-left:1rem;color:var(--text-muted,#94a3b8);">
+                        {% for line in result.details %}
+                            <li>{{ line }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        {% endwith %}
+    </div>
 </div>
 {% endblock %}
