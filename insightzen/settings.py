@@ -124,23 +124,36 @@ WSGI_APPLICATION = 'insightzen.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/4.0/ref/settings/#databases
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        # Managed PostgreSQL instance that ships with the appliance.
-        'NAME': os.getenv('PGDATABASE', 'insightzen3'),
-        'USER': os.getenv('PGUSER', 'insightzen'),
-        'PASSWORD': os.getenv('PGPASSWORD', 'K8RwWAPT5F7-?mrMBzR<'),
-        'HOST': os.getenv('PGHOST', '185.204.171.78'),
-        'PORT': os.getenv('PGPORT', '5433'),
-        # Keep connections open for a minute to improve performance for repeated queries
-        'CONN_MAX_AGE': 60,
-        'OPTIONS': {
-            # Prefer encrypted connections; can be overridden via PGSSLMODE
-            'sslmode': os.getenv('PGSSLMODE', 'prefer'),
-        },
+_postgres_requested = (
+    os.getenv("DATABASE_ENGINE", "").lower() in {"postgres", "postgresql"}
+    or os.getenv("USE_POSTGRES", "").lower() in {"1", "true", "yes"}
+    or any(os.getenv(var) for var in ["PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE"])
+)
+
+if _postgres_requested:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': env_required('PGDATABASE'),
+            'USER': env_required('PGUSER'),
+            'PASSWORD': env_required('PGPASSWORD'),
+            'HOST': os.getenv('PGHOST', 'localhost'),
+            'PORT': os.getenv('PGPORT', '5432'),
+            # Keep connections open for a minute to improve performance for repeated queries
+            'CONN_MAX_AGE': 60,
+            'OPTIONS': {
+                # Prefer encrypted connections; can be overridden via PGSSLMODE
+                'sslmode': os.getenv('PGSSLMODE', 'prefer'),
+            },
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/4.0/ref/settings/#auth-password-validators
