@@ -18,9 +18,10 @@ from datetime import datetime, timedelta
 from functools import cmp_to_key
 from io import BytesIO, StringIO
 from collections import defaultdict
-from math import ceil
+from math import ceil, sqrt
 from typing import Any, Dict, Iterable, List, Tuple, Optional
 from types import SimpleNamespace
+from statistics import NormalDist
 
 import pandas as pd
 
@@ -1927,6 +1928,173 @@ def qc_assignment_assign(request: HttpRequest) -> JsonResponse:
     return JsonResponse({'ok': True, 'assigned_count': submission_count, 'recipient': recipient.pk})
 
 
+def _aggregate_qc_performance(tasks_qs: Iterable[ReviewTask], rows_qs: Iterable[ReviewRow]) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Aggregate QC performance data for dashboards and exports."""
+
+    tasks = list(tasks_qs)
+    rows = list(rows_qs)
+
+    reviewer_stats: Dict[int, Dict[str, Any]] = {}
+    project_stats: Dict[int, Dict[str, Any]] = {}
+    tasks_by_user: defaultdict[int, set] = defaultdict(set)
+    tasks_by_project: defaultdict[int, set] = defaultdict(set)
+
+    for task in tasks:
+        tasks_by_user[task.reviewer_id].add(task.pk)
+        tasks_by_project[task.entry.project_id].add(task.pk)
+        project_stats.setdefault(
+            task.entry.project_id,
+            {
+                'project': task.entry.project,
+                'total_rows': 0,
+                'completed_rows': 0,
+                'sum_review_minutes': 0.0,
+                'review_duration_count': 0,
+                'sum_cycle_minutes': 0.0,
+                'cycle_duration_count': 0,
+                'last_activity': None,
+            },
+        )
+
+    total_rows = len(rows)
+    completed_rows = 0
+    sum_review_minutes = 0.0
+    review_duration_count = 0
+    sum_cycle_minutes = 0.0
+    cycle_duration_count = 0
+
+    for row in rows:
+        reviewer_id = row.task.reviewer_id
+        project_id = row.task.entry.project_id
+        reviewer_stats.setdefault(
+            reviewer_id,
+            {
+                'user': row.task.reviewer,
+                'total_rows': 0,
+                'completed_rows': 0,
+                'sum_review_minutes': 0.0,
+                'review_duration_count': 0,
+                'sum_cycle_minutes': 0.0,
+                'cycle_duration_count': 0,
+                'last_activity': None,
+            },
+        )
+        stats = reviewer_stats[reviewer_id]
+        project_stats.setdefault(
+            project_id,
+            {
+                'project': row.task.entry.project,
+                'total_rows': 0,
+                'completed_rows': 0,
+                'sum_review_minutes': 0.0,
+                'review_duration_count': 0,
+                'sum_cycle_minutes': 0.0,
+                'cycle_duration_count': 0,
+                'last_activity': None,
+            },
+        )
+        proj_stats = project_stats[project_id]
+
+        stats['total_rows'] += 1
+        proj_stats['total_rows'] += 1
+        if row.completed_at:
+            stats['completed_rows'] += 1
+            proj_stats['completed_rows'] += 1
+            completed_rows += 1
+        last_activity = row.review_submitted_at or row.review_started_at or row.started_at or row.created_at
+        for container in (stats, proj_stats):
+            if last_activity and (container['last_activity'] is None or last_activity > container['last_activity']):
+                container['last_activity'] = last_activity
+        if row.review_started_at and row.review_submitted_at:
+            delta = row.review_submitted_at - row.review_started_at
+            minutes = delta.total_seconds() / 60.0
+            stats['sum_review_minutes'] += minutes
+            stats['review_duration_count'] += 1
+            proj_stats['sum_review_minutes'] += minutes
+            proj_stats['review_duration_count'] += 1
+            sum_review_minutes += minutes
+            review_duration_count += 1
+        if row.completed_at:
+            cycle_delta = row.completed_at - row.created_at
+            minutes = cycle_delta.total_seconds() / 60.0
+            stats['sum_cycle_minutes'] += minutes
+            stats['cycle_duration_count'] += 1
+            proj_stats['sum_cycle_minutes'] += minutes
+            proj_stats['cycle_duration_count'] += 1
+            sum_cycle_minutes += minutes
+            cycle_duration_count += 1
+
+    def _completion_rate(done: int, total: int) -> float:
+        return round((done / total) * 100, 2) if total else 0.0
+
+    reviewer_rows: List[Dict[str, Any]] = []
+    for reviewer_id, stats in reviewer_stats.items():
+        total_rows_user = stats['total_rows']
+        completed_rows_user = stats['completed_rows']
+        avg_review_minutes_user = (
+            stats['sum_review_minutes'] / stats['review_duration_count'] if stats['review_duration_count'] else None
+        )
+        avg_cycle_minutes_user = (
+            stats['sum_cycle_minutes'] / stats['cycle_duration_count'] if stats['cycle_duration_count'] else None
+        )
+        user_label = stats['user'].get_full_name() or stats['user'].username
+        reviewer_rows.append(
+            {
+                'user': stats['user'],
+                'user_name': user_label,
+                'tasks': len(tasks_by_user.get(reviewer_id, [])),
+                'total_rows': total_rows_user,
+                'completed_rows': completed_rows_user,
+                'completion_rate': _completion_rate(completed_rows_user, total_rows_user),
+                'avg_review_minutes': avg_review_minutes_user,
+                'avg_cycle_minutes': avg_cycle_minutes_user,
+                'last_activity': stats['last_activity'],
+            }
+        )
+
+    reviewer_rows.sort(key=lambda r: (r['completion_rate'], r['completed_rows']), reverse=True)
+
+    project_rows: List[Dict[str, Any]] = []
+    for project_id, stats in project_stats.items():
+        avg_review_minutes_proj = (
+            stats['sum_review_minutes'] / stats['review_duration_count'] if stats['review_duration_count'] else None
+        )
+        avg_cycle_minutes_proj = (
+            stats['sum_cycle_minutes'] / stats['cycle_duration_count'] if stats['cycle_duration_count'] else None
+        )
+        project_rows.append(
+            {
+                'project': stats['project'],
+                'project_name': stats['project'].name,
+                'tasks': len(tasks_by_project.get(project_id, [])),
+                'total_rows': stats['total_rows'],
+                'completed_rows': stats['completed_rows'],
+                'completion_rate': _completion_rate(stats['completed_rows'], stats['total_rows']),
+                'avg_review_minutes': avg_review_minutes_proj,
+                'avg_cycle_minutes': avg_cycle_minutes_proj,
+                'last_activity': stats['last_activity'],
+            }
+        )
+
+    project_rows.sort(key=lambda r: (r['completion_rate'], r['completed_rows']), reverse=True)
+
+    completion_rate = _completion_rate(completed_rows, total_rows)
+    avg_review_minutes = sum_review_minutes / review_duration_count if review_duration_count else None
+    avg_cycle_minutes = sum_cycle_minutes / cycle_duration_count if cycle_duration_count else None
+
+    summary = {
+        'total_tasks': len(tasks),
+        'total_rows': total_rows,
+        'completed_rows': completed_rows,
+        'completion_rate': completion_rate,
+        'avg_review_minutes': avg_review_minutes,
+        'avg_cycle_minutes': avg_cycle_minutes,
+        'active_reviewers': len(reviewer_rows),
+    }
+
+    return summary, reviewer_rows, project_rows
+
+
 @login_required
 def qc_performance_dashboard(request: HttpRequest) -> HttpResponse:
     """Dashboard summarising review performance for QC reviewers."""
@@ -1968,105 +2136,13 @@ def qc_performance_dashboard(request: HttpRequest) -> HttpResponse:
     if end:
         tasks_qs = tasks_qs.filter(created_at__lte=end)
 
-    rows_qs = ReviewRow.objects.filter(task__in=tasks_qs).select_related('task__reviewer')
+    rows_qs = ReviewRow.objects.filter(task__in=tasks_qs).select_related('task__reviewer', 'task__entry__project')
     if start:
         rows_qs = rows_qs.filter(created_at__gte=start)
     if end:
         rows_qs = rows_qs.filter(created_at__lte=end)
 
-    tasks = list(tasks_qs)
-    rows = list(rows_qs)
-
-    # Aggregate per reviewer
-    reviewer_stats: Dict[int, Dict[str, Any]] = {}
-    tasks_by_user: defaultdict[int, set] = defaultdict(set)
-    for task in tasks:
-        tasks_by_user[task.reviewer_id].add(task.pk)
-
-    total_rows = len(rows)
-    completed_rows = 0
-    sum_review_minutes = 0.0
-    review_duration_count = 0
-    sum_cycle_minutes = 0.0
-    cycle_duration_count = 0
-
-    for row in rows:
-        reviewer_id = row.task.reviewer_id
-        reviewer_stats.setdefault(
-            reviewer_id,
-            {
-                'user': row.task.reviewer,
-                'total_rows': 0,
-                'completed_rows': 0,
-                'sum_review_minutes': 0.0,
-                'review_duration_count': 0,
-                'sum_cycle_minutes': 0.0,
-                'cycle_duration_count': 0,
-                'last_activity': None,
-            },
-        )
-        stats = reviewer_stats[reviewer_id]
-        stats['total_rows'] += 1
-        if row.completed_at:
-            stats['completed_rows'] += 1
-            completed_rows += 1
-        last_activity = row.review_submitted_at or row.review_started_at or row.started_at or row.created_at
-        if last_activity and (stats['last_activity'] is None or last_activity > stats['last_activity']):
-            stats['last_activity'] = last_activity
-        if row.review_started_at and row.review_submitted_at:
-            delta = row.review_submitted_at - row.review_started_at
-            minutes = delta.total_seconds() / 60.0
-            stats['sum_review_minutes'] += minutes
-            stats['review_duration_count'] += 1
-            sum_review_minutes += minutes
-            review_duration_count += 1
-        if row.completed_at:
-            cycle_delta = row.completed_at - row.created_at
-            minutes = cycle_delta.total_seconds() / 60.0
-            stats['sum_cycle_minutes'] += minutes
-            stats['cycle_duration_count'] += 1
-            sum_cycle_minutes += minutes
-            cycle_duration_count += 1
-
-    reviewer_rows: List[Dict[str, Any]] = []
-    for reviewer_id, stats in reviewer_stats.items():
-        total_rows_user = stats['total_rows']
-        completed_rows_user = stats['completed_rows']
-        completion_rate_user = round((completed_rows_user / total_rows_user) * 100, 2) if total_rows_user else 0.0
-        avg_review_minutes_user = (
-            stats['sum_review_minutes'] / stats['review_duration_count'] if stats['review_duration_count'] else None
-        )
-        avg_cycle_minutes_user = (
-            stats['sum_cycle_minutes'] / stats['cycle_duration_count'] if stats['cycle_duration_count'] else None
-        )
-        reviewer_rows.append(
-            {
-                'user': stats['user'],
-                'tasks': len(tasks_by_user.get(reviewer_id, [])),
-                'total_rows': total_rows_user,
-                'completed_rows': completed_rows_user,
-                'completion_rate': completion_rate_user,
-                'avg_review_minutes': avg_review_minutes_user,
-                'avg_cycle_minutes': avg_cycle_minutes_user,
-                'last_activity': stats['last_activity'],
-            }
-        )
-
-    reviewer_rows.sort(key=lambda r: r['completion_rate'], reverse=True)
-
-    completion_rate = round((completed_rows / total_rows) * 100, 2) if total_rows else 0.0
-    avg_review_minutes = sum_review_minutes / review_duration_count if review_duration_count else None
-    avg_cycle_minutes = sum_cycle_minutes / cycle_duration_count if cycle_duration_count else None
-
-    summary = {
-        'total_tasks': len(tasks),
-        'total_rows': total_rows,
-        'completed_rows': completed_rows,
-        'completion_rate': completion_rate,
-        'avg_review_minutes': avg_review_minutes,
-        'avg_cycle_minutes': avg_cycle_minutes,
-        'active_reviewers': len(reviewer_rows),
-    }
+    summary, reviewer_rows, project_rows = _aggregate_qc_performance(tasks_qs, rows_qs)
 
     context = {
         'lang': lang,
@@ -2078,6 +2154,7 @@ def qc_performance_dashboard(request: HttpRequest) -> HttpResponse:
         },
         'summary': summary,
         'reviewer_rows': reviewer_rows,
+        'project_rows': project_rows,
         'breadcrumbs': _build_breadcrumbs(
             lang,
             (_localise_text(lang, 'Quality Control', 'کنترل کیفیت'), ''),
@@ -2636,6 +2713,162 @@ def _build_collection_top_export_dataset(request: HttpRequest, params: Dict[str,
     return {'columns': columns, 'rows': rows, 'filename': 'collection-top'}
 
 
+def _build_qc_performance_reviewer_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'qc_performance'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    accessible_projects = _get_accessible_projects(user, panel='qc_performance')
+    if not accessible_projects:
+        raise ValueError(_localise_text(lang, 'No projects available for export.', 'پروژه‌ای برای خروجی در دسترس نیست.'))
+
+    accessible_ids = {project.pk for project in accessible_projects}
+    project_ids = _parse_int_param_list(params.get('projects') or params.get('project') or params.get('projectId'))
+    if project_ids:
+        invalid = [pk for pk in project_ids if pk not in accessible_ids]
+        if invalid:
+            raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    else:
+        project_ids = list(accessible_ids)
+
+    start_dt = _parse_iso_datetime_param(params.get('start') or params.get('startDate') or params.get('start_date'))
+    end_dt = _parse_iso_datetime_param(params.get('end') or params.get('endDate') or params.get('end_date'))
+
+    tasks_qs = (
+        ReviewTask.objects.filter(entry__project__in=project_ids)
+        .select_related('reviewer', 'entry__project')
+    )
+    if start_dt:
+        tasks_qs = tasks_qs.filter(created_at__gte=start_dt)
+    if end_dt:
+        tasks_qs = tasks_qs.filter(created_at__lte=end_dt)
+    rows_qs = ReviewRow.objects.filter(task__in=tasks_qs).select_related('task__reviewer', 'task__entry__project')
+    if start_dt:
+        rows_qs = rows_qs.filter(created_at__gte=start_dt)
+    if end_dt:
+        rows_qs = rows_qs.filter(created_at__lte=end_dt)
+
+    _, reviewer_rows, _ = _aggregate_qc_performance(tasks_qs, rows_qs)
+
+    reviewer_label = _localise_text(lang, 'Reviewer', 'بازبین')
+    tasks_label = _localise_text(lang, 'Tasks', 'وظایف')
+    rows_label = _localise_text(lang, 'Rows', 'رکوردها')
+    reviewed_label = _localise_text(lang, 'Reviewed', 'بررسی‌شده')
+    completion_label = _localise_text(lang, 'Completion %', 'نرخ تکمیل (%)')
+    avg_review_label = _localise_text(lang, 'Avg. Review (min)', 'میانگین بررسی (دقیقه)')
+    avg_cycle_label = _localise_text(lang, 'Avg. Cycle (min)', 'میانگین چرخه (دقیقه)')
+    last_activity_label = _localise_text(lang, 'Last Activity', 'آخرین فعالیت')
+
+    columns = [
+        {'field': 'reviewer', 'label': reviewer_label, 'type': 'text', 'export': True},
+        {'field': 'tasks', 'label': tasks_label, 'type': 'number', 'export': True},
+        {'field': 'total_rows', 'label': rows_label, 'type': 'number', 'export': True},
+        {'field': 'completed_rows', 'label': reviewed_label, 'type': 'number', 'export': True},
+        {'field': 'completion_rate', 'label': completion_label, 'type': 'number', 'export': True},
+        {'field': 'avg_review_minutes', 'label': avg_review_label, 'type': 'number', 'export': True},
+        {'field': 'avg_cycle_minutes', 'label': avg_cycle_label, 'type': 'number', 'export': True},
+        {'field': 'last_activity', 'label': last_activity_label, 'type': 'text', 'export': True},
+    ]
+
+    def _fmt(value: Optional[datetime]) -> str:
+        return value.isoformat() if value else ''
+
+    rows: List[Dict[str, Any]] = []
+    for row in reviewer_rows:
+        rows.append(
+            {
+                'reviewer': row.get('user_name') or '',
+                'tasks': row.get('tasks', 0),
+                'total_rows': row.get('total_rows', 0),
+                'completed_rows': row.get('completed_rows', 0),
+                'completion_rate': row.get('completion_rate', 0.0),
+                'avg_review_minutes': row.get('avg_review_minutes') or '',
+                'avg_cycle_minutes': row.get('avg_cycle_minutes') or '',
+                'last_activity': _fmt(row.get('last_activity')),
+            }
+        )
+
+    return {'columns': columns, 'rows': rows, 'filename': 'qc-performance-reviewers'}
+
+
+def _build_qc_performance_project_dataset(request: HttpRequest, params: Dict[str, Any]) -> Dict[str, Any]:
+    lang = request.session.get('lang', 'en')
+    user = request.user
+    if not _user_has_panel(user, 'qc_performance'):
+        raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    accessible_projects = _get_accessible_projects(user, panel='qc_performance')
+    if not accessible_projects:
+        raise ValueError(_localise_text(lang, 'No projects available for export.', 'پروژه‌ای برای خروجی در دسترس نیست.'))
+
+    accessible_ids = {project.pk for project in accessible_projects}
+    project_ids = _parse_int_param_list(params.get('projects') or params.get('project') or params.get('projectId'))
+    if project_ids:
+        invalid = [pk for pk in project_ids if pk not in accessible_ids]
+        if invalid:
+            raise PermissionError(_localise_text(lang, 'Access denied.', 'دسترسی مجاز نیست.'))
+    else:
+        project_ids = list(accessible_ids)
+
+    start_dt = _parse_iso_datetime_param(params.get('start') or params.get('startDate') or params.get('start_date'))
+    end_dt = _parse_iso_datetime_param(params.get('end') or params.get('endDate') or params.get('end_date'))
+
+    tasks_qs = (
+        ReviewTask.objects.filter(entry__project__in=project_ids)
+        .select_related('reviewer', 'entry__project')
+    )
+    if start_dt:
+        tasks_qs = tasks_qs.filter(created_at__gte=start_dt)
+    if end_dt:
+        tasks_qs = tasks_qs.filter(created_at__lte=end_dt)
+    rows_qs = ReviewRow.objects.filter(task__in=tasks_qs).select_related('task__reviewer', 'task__entry__project')
+    if start_dt:
+        rows_qs = rows_qs.filter(created_at__gte=start_dt)
+    if end_dt:
+        rows_qs = rows_qs.filter(created_at__lte=end_dt)
+
+    _, _, project_rows = _aggregate_qc_performance(tasks_qs, rows_qs)
+
+    project_label = _localise_text(lang, 'Project', 'پروژه')
+    tasks_label = _localise_text(lang, 'Tasks', 'وظایف')
+    rows_label = _localise_text(lang, 'Rows', 'رکوردها')
+    reviewed_label = _localise_text(lang, 'Reviewed', 'بررسی‌شده')
+    completion_label = _localise_text(lang, 'Completion %', 'نرخ تکمیل (%)')
+    avg_review_label = _localise_text(lang, 'Avg. Review (min)', 'میانگین بررسی (دقیقه)')
+    avg_cycle_label = _localise_text(lang, 'Avg. Cycle (min)', 'میانگین چرخه (دقیقه)')
+    last_activity_label = _localise_text(lang, 'Last Activity', 'آخرین فعالیت')
+
+    columns = [
+        {'field': 'project', 'label': project_label, 'type': 'text', 'export': True},
+        {'field': 'tasks', 'label': tasks_label, 'type': 'number', 'export': True},
+        {'field': 'total_rows', 'label': rows_label, 'type': 'number', 'export': True},
+        {'field': 'completed_rows', 'label': reviewed_label, 'type': 'number', 'export': True},
+        {'field': 'completion_rate', 'label': completion_label, 'type': 'number', 'export': True},
+        {'field': 'avg_review_minutes', 'label': avg_review_label, 'type': 'number', 'export': True},
+        {'field': 'avg_cycle_minutes', 'label': avg_cycle_label, 'type': 'number', 'export': True},
+        {'field': 'last_activity', 'label': last_activity_label, 'type': 'text', 'export': True},
+    ]
+
+    def _fmt(value: Optional[datetime]) -> str:
+        return value.isoformat() if value else ''
+
+    rows: List[Dict[str, Any]] = []
+    for row in project_rows:
+        rows.append(
+            {
+                'project': row.get('project_name') or '',
+                'tasks': row.get('tasks', 0),
+                'total_rows': row.get('total_rows', 0),
+                'completed_rows': row.get('completed_rows', 0),
+                'completion_rate': row.get('completion_rate', 0.0),
+                'avg_review_minutes': row.get('avg_review_minutes') or '',
+                'avg_cycle_minutes': row.get('avg_cycle_minutes') or '',
+                'last_activity': _fmt(row.get('last_activity')),
+            }
+        )
+
+    return {'columns': columns, 'rows': rows, 'filename': 'qc-performance-projects'}
+
+
 def _build_qc_assignment_export_dataset(
     request: HttpRequest, params: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -2821,6 +3054,8 @@ TABLE_EXPORT_BUILDERS: Dict[str, Any] = {
     'quota_management': _build_quota_export_dataset,
     'collection_performance_raw': _build_collection_raw_export_dataset,
     'collection_performance_top': _build_collection_top_export_dataset,
+    'qc_performance_reviewers': _build_qc_performance_reviewer_dataset,
+    'qc_performance_projects': _build_qc_performance_project_dataset,
 }
 
 
@@ -4524,34 +4759,101 @@ def _prepare_crosstab(df: pd.DataFrame, row_dimension: str, column_dimension: st
     }
 
 
-def _z_score(confidence: float) -> float:
-    """Return an approximate z-score for common confidence levels."""
+def _z_value(probability: float) -> float:
+    """Return a z-score for a probability (0-1)."""
 
-    lookup = {
-        90: 1.645,
-        95: 1.96,
-        99: 2.576,
-    }
-    return lookup.get(int(confidence), 1.96)
+    if not 0 < probability < 1:
+        raise ValueError('Probability must be between 0 and 1.')
+    clipped = max(min(probability, 1 - 1e-12), 1e-12)
+    return float(NormalDist().inv_cdf(clipped))
 
 
-def _calculate_sample_size(population: Optional[float], confidence: float, margin: float, proportion: float = 0.5) -> int:
+def _z_score(confidence: float, tail: str = 'two-sided') -> float:
+    """Return a z-score for a desired confidence level and tail type."""
+
+    if not 0 < confidence < 100:
+        raise ValueError('Confidence must be between 0 and 100.')
+    alpha = 1 - (confidence / 100.0)
+    adjusted_alpha = alpha / 2 if tail == 'two-sided' else alpha
+    return _z_value(1 - adjusted_alpha)
+
+
+def _finite_population_correction(n0: float, population: Optional[float]) -> float:
+    """Apply finite population correction when population is provided."""
+
+    if population and population > 0:
+        return (n0 * population) / (n0 + population - 1)
+    return n0
+
+
+def _calculate_sample_size(population: Optional[float], confidence: float, margin: float, proportion: float = 0.5, tail: str = 'two-sided') -> int:
     """Compute a sample size for proportion estimates with finite population correction."""
 
-    z = _z_score(confidence)
+    z = _z_score(confidence, tail=tail)
     p = proportion
     e = margin
+    if e <= 0:
+        raise ValueError('Margin of error must be positive.')
+    if not 0 < p < 1:
+        raise ValueError('Proportion must be between 0 and 1.')
     n0 = (z * z * p * (1 - p)) / (e * e)
-    if population and population > 0:
-        n = (n0 * population) / (n0 + population - 1)
-    else:
-        n = n0
+    n = _finite_population_correction(n0, population)
+    return int(ceil(n))
+
+
+def _calculate_mean_sample_size(population: Optional[float], confidence: float, std_dev: float, margin: float, tail: str = 'two-sided') -> int:
+    """Compute a sample size for estimating a mean with a target margin of error."""
+
+    if std_dev <= 0:
+        raise ValueError('Standard deviation must be positive.')
+    if margin <= 0:
+        raise ValueError('Margin of error must be positive.')
+    z = _z_score(confidence, tail=tail)
+    n0 = ((z * std_dev) / margin) ** 2
+    n = _finite_population_correction(n0, population)
+    return int(ceil(n))
+
+
+def _calculate_ab_proportions(confidence: float, power: float, baseline: float, detectable_diff: float, tail: str = 'two-sided') -> int:
+    """Compute per-group sample size for an A/B test on proportions."""
+
+    if not 0 < baseline < 1:
+        raise ValueError('Baseline proportion must be between 0 and 1.')
+    if detectable_diff <= 0:
+        raise ValueError('Minimum detectable effect must be positive.')
+    variant = baseline + detectable_diff
+    if not 0 < variant < 1:
+        raise ValueError('Variant proportion must be between 0 and 1.')
+
+    z_alpha = _z_score(confidence, tail=tail)
+    z_beta = _z_value(power)
+
+    p_bar = (baseline + variant) / 2
+    pooled_term = 2 * p_bar * (1 - p_bar)
+    variance_term = baseline * (1 - baseline) + variant * (1 - variant)
+    numerator = (z_alpha * sqrt(pooled_term) + z_beta * sqrt(variance_term)) ** 2
+    n = numerator / (detectable_diff ** 2)
+    return int(ceil(n))
+
+
+def _calculate_ab_means(confidence: float, power: float, std_dev: float, detectable_diff: float, tail: str = 'two-sided') -> int:
+    """Compute per-group sample size for an A/B test on means (two-sample t approximation)."""
+
+    if std_dev <= 0:
+        raise ValueError('Standard deviation must be positive.')
+    if detectable_diff <= 0:
+        raise ValueError('Minimum detectable difference must be positive.')
+
+    z_alpha = _z_score(confidence, tail=tail)
+    z_beta = _z_value(power)
+    numerator = 2 * (std_dev ** 2) * (z_alpha + z_beta) ** 2
+    n = numerator / (detectable_diff ** 2)
     return int(ceil(n))
 
 
 @login_required
 def sample_size_calculator(request: HttpRequest) -> HttpResponse:
-    """Simple sample size calculator panel (MRAnalysis group)."""
+    """Advanced sample size calculator panel (MRAnalysis group)."""
 
     user = request.user
     lang = _get_lang(request)
@@ -4559,43 +4861,201 @@ def sample_size_calculator(request: HttpRequest) -> HttpResponse:
         messages.error(request, 'Access denied: you do not have permission to access the Sample Size Calculator.')
         return redirect('home')
 
-    result: Optional[int] = None
-    input_values: Dict[str, Any] = {
-        'population': '',
-        'confidence': '95',
-        'margin': '5',
-        'proportion': '50',
+    tail_labels = {
+        'two-sided': _localise_text(lang, 'Two-sided', 'دوطرفه'),
+        'one-sided': _localise_text(lang, 'One-sided', 'یک‌طرفه'),
     }
-    if request.method == 'POST':
-        input_values['population'] = request.POST.get('population', '').strip()
-        input_values['confidence'] = request.POST.get('confidence', '95').strip()
-        input_values['margin'] = request.POST.get('margin', '5').strip()
-        input_values['proportion'] = request.POST.get('proportion', '50').strip()
+
+    default_inputs: Dict[str, Dict[str, str]] = {
+        'proportion_estimate': {
+            'population': '',
+            'confidence': '95',
+            'margin': '5',
+            'proportion': '50',
+            'tail': 'two-sided',
+        },
+        'mean_estimate': {
+            'population': '',
+            'confidence': '95',
+            'margin': '5',
+            'stddev': '15',
+            'tail': 'two-sided',
+        },
+        'ab_proportion': {
+            'confidence': '95',
+            'power': '80',
+            'baseline': '15',
+            'mde': '5',
+            'tail': 'two-sided',
+        },
+        'ab_mean': {
+            'confidence': '95',
+            'power': '80',
+            'stddev': '10',
+            'mde': '2',
+            'tail': 'two-sided',
+        },
+    }
+
+    results: Dict[str, Dict[str, Any]] = {}
+    input_values = {k: v.copy() for k, v in default_inputs.items()}
+    active_mode = request.POST.get('mode', 'proportion_estimate')
+
+    def _population_or_none(value: str) -> Optional[float]:
+        if not value:
+            return None
+        population_val = float(value)
+        if population_val <= 0:
+            raise ValueError('Population must be positive.')
+        return population_val
+
+    def _localised_error(message: str) -> str:
+        return _localise_text(lang, message, message)
+
+    if request.method == 'POST' and active_mode in input_values:
+        for key in input_values[active_mode]:
+            input_values[active_mode][key] = request.POST.get(key, default_inputs[active_mode].get(key, '')).strip()
+
         try:
-            population_val = float(input_values['population']) if input_values['population'] else None
-            confidence_val = float(input_values['confidence'])
-            margin_pct = float(input_values['margin'])
-            proportion_pct = float(input_values['proportion'])
-            if margin_pct <= 0 or margin_pct >= 100:
-                raise ValueError('Invalid margin.')
-            if proportion_pct <= 0 or proportion_pct >= 100:
-                raise ValueError('Invalid proportion.')
-            result = _calculate_sample_size(
-                population=population_val,
-                confidence=confidence_val,
-                margin=margin_pct / 100.0,
-                proportion=proportion_pct / 100.0,
-            )
-        except ValueError:
-            messages.error(
-                request,
-                _localise_text(lang, 'Please provide valid numeric inputs.', 'لطفاً مقادیر عددی معتبر وارد کنید.'),
-            )
+            if active_mode == 'proportion_estimate':
+                population_val = _population_or_none(input_values['proportion_estimate']['population'])
+                confidence_val = float(input_values['proportion_estimate']['confidence'])
+                margin_pct = float(input_values['proportion_estimate']['margin'])
+                proportion_pct = float(input_values['proportion_estimate']['proportion'])
+                tail = input_values['proportion_estimate']['tail']
+                if not 0 < margin_pct < 100:
+                    raise ValueError('Margin of error must be between 0 and 100.')
+                if not 0 < proportion_pct < 100:
+                    raise ValueError('Proportion must be between 0 and 100.')
+                recommended = _calculate_sample_size(
+                    population=population_val,
+                    confidence=confidence_val,
+                    margin=margin_pct / 100.0,
+                    proportion=proportion_pct / 100.0,
+                    tail=tail,
+                )
+                results['proportion_estimate'] = {
+                    'primary_value': recommended,
+                    'primary_label': _localise_text(lang, 'Total sample size', 'حجم نمونه کل'),
+                    'details': [
+                        _localise_text(
+                            lang,
+                            f'Confidence: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                            f'سطح اطمینان: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                        ),
+                        _localise_text(lang, f'Margin of error: {margin_pct}%', f'خطای مجاز: {margin_pct}%'),
+                        _localise_text(lang, f'Proportion assumption: {proportion_pct}%', f'فرض نسبت: {proportion_pct}%'),
+                        _localise_text(
+                            lang,
+                            'Finite population correction applied' if population_val else 'Infinite population assumption',
+                            'اصلاح جامعه محدود اعمال شد' if population_val else 'فرض جامعه نامحدود',
+                        ),
+                    ],
+                }
+
+            elif active_mode == 'mean_estimate':
+                population_val = _population_or_none(input_values['mean_estimate']['population'])
+                confidence_val = float(input_values['mean_estimate']['confidence'])
+                margin_abs = float(input_values['mean_estimate']['margin'])
+                std_dev = float(input_values['mean_estimate']['stddev'])
+                tail = input_values['mean_estimate']['tail']
+                recommended = _calculate_mean_sample_size(
+                    population=population_val,
+                    confidence=confidence_val,
+                    std_dev=std_dev,
+                    margin=margin_abs,
+                    tail=tail,
+                )
+                results['mean_estimate'] = {
+                    'primary_value': recommended,
+                    'primary_label': _localise_text(lang, 'Total sample size', 'حجم نمونه کل'),
+                    'details': [
+                        _localise_text(
+                            lang,
+                            f'Confidence: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                            f'سطح اطمینان: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                        ),
+                        _localise_text(lang, f'Margin of error: {margin_abs}', f'خطای مجاز: {margin_abs}'),
+                        _localise_text(lang, f'Standard deviation: {std_dev}', f'انحراف معیار: {std_dev}'),
+                        _localise_text(
+                            lang,
+                            'Finite population correction applied' if population_val else 'Infinite population assumption',
+                            'اصلاح جامعه محدود اعمال شد' if population_val else 'فرض جامعه نامحدود',
+                        ),
+                    ],
+                }
+
+            elif active_mode == 'ab_proportion':
+                confidence_val = float(input_values['ab_proportion']['confidence'])
+                power_pct = float(input_values['ab_proportion']['power'])
+                baseline_pct = float(input_values['ab_proportion']['baseline'])
+                mde_pct = float(input_values['ab_proportion']['mde'])
+                tail = input_values['ab_proportion']['tail']
+                if not 0 < power_pct < 100:
+                    raise ValueError('Power must be between 0 and 100.')
+                per_group = _calculate_ab_proportions(
+                    confidence=confidence_val,
+                    power=power_pct / 100.0,
+                    baseline=baseline_pct / 100.0,
+                    detectable_diff=mde_pct / 100.0,
+                    tail=tail,
+                )
+                results['ab_proportion'] = {
+                    'primary_value': per_group,
+                    'primary_label': _localise_text(lang, 'Per group', 'برای هر گروه'),
+                    'secondary_value': per_group * 2,
+                    'secondary_label': _localise_text(lang, 'Total (balanced groups)', 'مجموع (گروه‌های مساوی)'),
+                    'details': [
+                        _localise_text(
+                            lang,
+                            f'Significance: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                            f'سطح معنی‌داری: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                        ),
+                        _localise_text(lang, f'Power: {power_pct}%', f'توان آزمون: {power_pct}%'),
+                        _localise_text(lang, f'Baseline conversion: {baseline_pct}%', f'نرخ تبدیل پایه: {baseline_pct}%'),
+                        _localise_text(lang, f'Min detectable effect: {mde_pct}%', f'اثر قابل تشخیص: {mde_pct}%'),
+                    ],
+                }
+
+            elif active_mode == 'ab_mean':
+                confidence_val = float(input_values['ab_mean']['confidence'])
+                power_pct = float(input_values['ab_mean']['power'])
+                std_dev = float(input_values['ab_mean']['stddev'])
+                mde_abs = float(input_values['ab_mean']['mde'])
+                tail = input_values['ab_mean']['tail']
+                if not 0 < power_pct < 100:
+                    raise ValueError('Power must be between 0 and 100.')
+                per_group = _calculate_ab_means(
+                    confidence=confidence_val,
+                    power=power_pct / 100.0,
+                    std_dev=std_dev,
+                    detectable_diff=mde_abs,
+                    tail=tail,
+                )
+                results['ab_mean'] = {
+                    'primary_value': per_group,
+                    'primary_label': _localise_text(lang, 'Per group', 'برای هر گروه'),
+                    'secondary_value': per_group * 2,
+                    'secondary_label': _localise_text(lang, 'Total (balanced groups)', 'مجموع (گروه‌های مساوی)'),
+                    'details': [
+                        _localise_text(
+                            lang,
+                            f'Significance: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                            f'سطح معنی‌داری: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                        ),
+                        _localise_text(lang, f'Power: {power_pct}%', f'توان آزمون: {power_pct}%'),
+                        _localise_text(lang, f'Standard deviation: {std_dev}', f'انحراف معیار: {std_dev}'),
+                        _localise_text(lang, f'Min detectable difference: {mde_abs}', f'حداقل اختلاف قابل تشخیص: {mde_abs}'),
+                    ],
+                }
+        except ValueError as exc:
+            messages.error(request, _localised_error(str(exc)))
 
     context = {
         'lang': lang,
-        'result': result,
+        'results': results,
         'inputs': input_values,
+        'active_mode': active_mode,
         'breadcrumbs': _build_breadcrumbs(
             lang,
             (_localise_text(lang, 'MRAnalysis', 'تحلیل تحقیقات بازار'), ''),

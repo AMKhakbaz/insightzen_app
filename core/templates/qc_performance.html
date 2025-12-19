@@ -2,106 +2,204 @@
 {% load i18n static %}
 
 {% block content %}
-<div class="container py-3">
-    <div class="d-flex align-items-center mb-2">
-        <img src="{% static 'core/icons/feather/activity.svg' %}" alt="" class="me-2" width="20" height="20">
-        <h1 class="h5 mb-0">{% if lang == 'fa' %}کارایی QC{% else %}QC Performance{% endif %}</h1>
+<style>
+    .qc-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+    .qc-card {
+        border: 1px solid var(--color-border, #1f2937);
+        background: var(--color-surface, #0f172a);
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    }
+    .qc-card h3 {
+        margin: 0;
+    }
+    .qc-label {
+        color: var(--color-text-muted, #94a3b8);
+        font-size: 0.9rem;
+        margin: 0;
+    }
+    .qc-value {
+        font-size: 1.6rem;
+        font-weight: 700;
+        margin: 0.15rem 0 0;
+    }
+    .filter-shell {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 0.8rem;
+        margin-top: 0.8rem;
+    }
+    .filter-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+    .filter-field select,
+    .filter-field input {
+        width: 100%;
+    }
+    .table-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.35rem;
+    }
+    .table-header .actions {
+        display: flex;
+        gap: 0.35rem;
+    }
+    .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.2rem 0.65rem;
+        border-radius: 999px;
+        background: rgba(34,211,238,0.12);
+        color: var(--accent, #22d3ee);
+        font-size: 0.9rem;
+    }
+</style>
+
+<div class="card qc-card" style="margin:1.5rem auto;max-width:1200px;">
+    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
+        <img src="{% static 'core/icons/feather/activity.svg' %}" alt="" width="20" height="20">
+        <h1 style="margin:0;font-size:1.4rem;">{% if lang == 'fa' %}داشبورد کارایی QC{% else %}QC Performance Dashboard{% endif %}</h1>
     </div>
-    <p class="text-muted small mb-3">
+    <p class="qc-label" style="margin:0 0 0.5rem 0;">
         {% if lang == 'fa' %}
-            کارایی بازبین‌ها در پنل «Review Data» را ببینید؛ تعداد وظایف، رکوردهای بررسی‌شده و میانگین زمان رسیدگی نمایش داده می‌شود.
+            خروجی بازبین‌ها در پنل «Review Data» را رصد کنید: وظایف، رکوردهای بررسی‌شده، نرخ تکمیل و سرعت رسیدگی.
         {% else %}
-            Track reviewer output from the Review Data panel: tasks assigned, reviewed rows, completion rate, and average turnaround times.
+            Monitor reviewer throughput from the Review Data panel: tasks handled, reviewed rows, completion rate, and speed.
         {% endif %}
     </p>
 
-    <form method="get" class="card p-2 mb-3">
-        <div class="row g-2 align-items-end">
-            <div class="col-md-5">
-                <label class="form-label mb-1" for="projects">{% if lang == 'fa' %}پروژه‌ها{% else %}Projects{% endif %}</label>
+    <form method="get" class="qc-card" style="padding:0.9rem;margin:0 0 1rem 0;box-shadow:none;">
+        <div class="filter-shell">
+            <div class="filter-field">
+                <label class="qc-label" for="projects">{% if lang == 'fa' %}پروژه‌ها{% else %}Projects{% endif %}</label>
                 <select id="projects" name="projects" multiple class="form-select form-select-sm">
                     {% for project in projects %}
                         <option value="{{ project.id }}" {% if project.id in selected_projects %}selected{% endif %}>{{ project.name }}</option>
                     {% endfor %}
                 </select>
                 <small class="text-muted">
-                    {% if lang == 'fa' %}در صورت عدم انتخاب، همه پروژه‌های مجاز لحاظ می‌شوند.{% else %}Leave empty to include all accessible projects.{% endif %}
+                    {% if lang == 'fa' %}خالی بگذارید تا همه پروژه‌های مجاز نمایش داده شوند.{% else %}Leave blank to include all permitted projects.{% endif %}
                 </small>
             </div>
-            <div class="col-md-3">
-                <label class="form-label mb-1" for="start">{% if lang == 'fa' %}از تاریخ{% else %}Start date{% endif %}</label>
+            <div class="filter-field">
+                <label class="qc-label" for="start">{% if lang == 'fa' %}از تاریخ{% else %}Start date{% endif %}</label>
                 <input type="date" id="start" name="start" class="form-control form-control-sm" value="{{ filters.start }}">
             </div>
-            <div class="col-md-3">
-                <label class="form-label mb-1" for="end">{% if lang == 'fa' %}تا تاریخ{% else %}End date{% endif %}</label>
+            <div class="filter-field">
+                <label class="qc-label" for="end">{% if lang == 'fa' %}تا تاریخ{% else %}End date{% endif %}</label>
                 <input type="date" id="end" name="end" class="form-control form-control-sm" value="{{ filters.end }}">
             </div>
-            <div class="col-md-1 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary btn-sm w-100">{% if lang == 'fa' %}اعمال{% else %}Apply{% endif %}</button>
+            <div class="filter-field" style="align-self:end;">
+                <button type="submit" class="btn btn-primary btn-sm w-100">{% if lang == 'fa' %}اعمال فیلتر{% else %}Apply filters{% endif %}</button>
             </div>
         </div>
     </form>
 
-    <div class="row g-2 mb-3">
-        <div class="col-md-3">
-            <div class="card p-2">
-                <div class="text-muted small">{% if lang == 'fa' %}کل وظایف QC{% else %}Total QC tasks{% endif %}</div>
-                <div class="fs-5 fw-semibold">{{ summary.total_tasks }}</div>
-            </div>
+    <div class="qc-grid">
+        <div class="qc-card">
+            <p class="qc-label">{% if lang == 'fa' %}وظایف QC{% else %}QC tasks{% endif %}</p>
+            <p class="qc-value">{{ summary.total_tasks|default:0 }}</p>
         </div>
-        <div class="col-md-3">
-            <div class="card p-2">
-                <div class="text-muted small">{% if lang == 'fa' %}رکورد بررسی‌شده{% else %}Reviewed rows{% endif %}</div>
-                <div class="fs-5 fw-semibold">{{ summary.completed_rows }} / {{ summary.total_rows }}</div>
-            </div>
+        <div class="qc-card">
+            <p class="qc-label">{% if lang == 'fa' %}رکورد بررسی‌شده{% else %}Reviewed rows{% endif %}</p>
+            <p class="qc-value">{{ summary.completed_rows|default:0 }} / {{ summary.total_rows|default:0 }}</p>
         </div>
-        <div class="col-md-3">
-            <div class="card p-2">
-                <div class="text-muted small">{% if lang == 'fa' %}نرخ تکمیل{% else %}Completion rate{% endif %}</div>
-                <div class="fs-5 fw-semibold">{{ summary.completion_rate }}%</div>
-            </div>
+        <div class="qc-card">
+            <p class="qc-label">{% if lang == 'fa' %}نرخ تکمیل{% else %}Completion rate{% endif %}</p>
+            <p class="qc-value">{{ summary.completion_rate|default:0 }}%</p>
         </div>
-        <div class="col-md-3">
-            <div class="card p-2">
-                <div class="text-muted small">{% if lang == 'fa' %}بازبین‌های فعال{% else %}Active reviewers{% endif %}</div>
-                <div class="fs-5 fw-semibold">{{ summary.active_reviewers }}</div>
-            </div>
+        <div class="qc-card">
+            <p class="qc-label">{% if lang == 'fa' %}بازبین‌های فعال{% else %}Active reviewers{% endif %}</p>
+            <p class="qc-value">{{ summary.active_reviewers|default:0 }}</p>
         </div>
-    </div>
-
-    <div class="row g-2 mb-3">
-        <div class="col-md-6">
-            <div class="card p-2">
-                <div class="text-muted small">{% if lang == 'fa' %}میانگین زمان بررسی (دقیقه){% else %}Avg. review time (minutes){% endif %}</div>
-                <div class="fs-5 fw-semibold">{% if summary.avg_review_minutes %}{{ summary.avg_review_minutes|floatformat:2 }}{% else %}—{% endif %}</div>
-            </div>
+        <div class="qc-card">
+            <p class="qc-label">{% if lang == 'fa' %}میانگین زمان بررسی (دقیقه){% else %}Avg. review time (minutes){% endif %}</p>
+            <p class="qc-value">{% if summary.avg_review_minutes %}{{ summary.avg_review_minutes|floatformat:2 }}{% else %}—{% endif %}</p>
         </div>
-        <div class="col-md-6">
-            <div class="card p-2">
-                <div class="text-muted small">{% if lang == 'fa' %}میانگین زمان چرخه (دقیقه){% else %}Avg. cycle time (minutes){% endif %}</div>
-                <div class="fs-5 fw-semibold">{% if summary.avg_cycle_minutes %}{{ summary.avg_cycle_minutes|floatformat:2 }}{% else %}—{% endif %}</div>
-            </div>
+        <div class="qc-card">
+            <p class="qc-label">{% if lang == 'fa' %}میانگین زمان چرخه (دقیقه){% else %}Avg. cycle time (minutes){% endif %}</p>
+            <p class="qc-value">{% if summary.avg_cycle_minutes %}{{ summary.avg_cycle_minutes|floatformat:2 }}{% else %}—{% endif %}</p>
         </div>
     </div>
 
-    <div class="card p-3">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-            <h2 class="h6 mb-0">{% if lang == 'fa' %}کارایی بازبین‌ها{% else %}Reviewer performance{% endif %}</h2>
-            <span class="text-muted small">{% if lang == 'fa' %}مرتب‌سازی بر اساس نرخ تکمیل{% else %}Sorted by completion rate{% endif %}</span>
+    <div class="qc-card" style="margin-top:1rem;">
+        <div class="table-header">
+            <div>
+                <p class="qc-label" style="margin:0;">{% if lang == 'fa' %}داده‌های بازبین‌ها{% else %}Reviewer performance{% endif %}</p>
+                <h3 style="margin:0;">{% if lang == 'fa' %}خروجی «Review Data» بر اساس افراد{% else %}Review Data output by reviewer{% endif %}</h3>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn-outline btn-sm" data-table-export-target="qc-reviewers-table" data-export-format="xlsx">{% if lang == 'fa' %}اکسل{% else %}Excel{% endif %}</button>
+                <button type="button" class="btn btn-outline btn-sm" data-table-export-target="qc-reviewers-table" data-export-format="csv">{% if lang == 'fa' %}CSV{% else %}CSV{% endif %}</button>
+            </div>
         </div>
+        <span class="text-muted small" id="qc-reviewers-status" data-table-export-status="qc-reviewers-table" role="status" aria-live="polite"></span>
         {% if reviewer_rows %}
             <div class="table-responsive">
-                <table class="table table-sm align-middle">
+                <table id="qc-reviewers-table" class="table table-sm align-middle" data-table="interactive" data-filter-context="qc_performance_reviewers" data-export-endpoint="{% url 'table_export' %}" data-export-filename="qc-reviewers" data-export-placement="header" data-export-status-target="qc-reviewers-status" data-export-param-projects="{{ selected_projects|join:',' }}" data-export-param-start="{{ filters.start }}" data-export-param-end="{{ filters.end }}">
                     <thead>
                         <tr>
-                            <th class="small">{% if lang == 'fa' %}بازبین{% else %}Reviewer{% endif %}</th>
-                            <th class="small">{% if lang == 'fa' %}وظایف{% else %}Tasks{% endif %}</th>
-                            <th class="small">{% if lang == 'fa' %}کل رکورد{% else %}Rows{% endif %}</th>
-                            <th class="small">{% if lang == 'fa' %}بررسی‌شده{% else %}Reviewed{% endif %}</th>
-                            <th class="small">{% if lang == 'fa' %}نرخ تکمیل{% else %}Completion{% endif %}</th>
-                            <th class="small">{% if lang == 'fa' %}میانگین بررسی (دقیقه){% else %}Avg. review (min){% endif %}</th>
-                            <th class="small">{% if lang == 'fa' %}میانگین چرخه (دقیقه){% else %}Avg. cycle (min){% endif %}</th>
-                            <th class="small">{% if lang == 'fa' %}آخرین فعالیت{% else %}Last activity{% endif %}</th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                                    <span>{% if lang == 'fa' %}بازبین{% else %}Reviewer{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="1" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}وظایف{% else %}Tasks{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="2" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}کل رکورد{% else %}Rows{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="3" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}بررسی‌شده{% else %}Reviewed{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="4" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}نرخ تکمیل{% else %}Completion{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="5" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}میانگین بررسی{% else %}Avg. review{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="6" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}میانگین چرخه{% else %}Avg. cycle{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="7" data-sort-type="text">
+                                    <span>{% if lang == 'fa' %}آخرین فعالیت{% else %}Last activity{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -123,6 +221,103 @@
         {% else %}
             <p class="text-muted small mb-0">{% if lang == 'fa' %}داده‌ای برای نمایش وجود ندارد.{% else %}No reviewer data available for the selected filters.{% endif %}</p>
         {% endif %}
+    </div>
+
+    <div class="qc-card" style="margin-top:1rem;">
+        <div class="table-header">
+            <div>
+                <p class="qc-label" style="margin:0;">{% if lang == 'fa' %}نمای کلی پروژه‌ها{% else %}Projects overview{% endif %}</p>
+                <h3 style="margin:0;">{% if lang == 'fa' %}پیشرفت QC به تفکیک پروژه{% else %}QC progress by project{% endif %}</h3>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn-outline btn-sm" data-table-export-target="qc-projects-table" data-export-format="xlsx">{% if lang == 'fa' %}اکسل{% else %}Excel{% endif %}</button>
+                <button type="button" class="btn btn-outline btn-sm" data-table-export-target="qc-projects-table" data-export-format="csv">{% if lang == 'fa' %}CSV{% else %}CSV{% endif %}</button>
+            </div>
+        </div>
+        <span class="text-muted small" id="qc-projects-status" data-table-export-status="qc-projects-table" role="status" aria-live="polite"></span>
+        {% if project_rows %}
+            <div class="table-responsive">
+                <table id="qc-projects-table" class="table table-sm align-middle" data-table="interactive" data-filter-context="qc_performance_projects" data-export-endpoint="{% url 'table_export' %}" data-export-filename="qc-projects" data-export-placement="header" data-export-status-target="qc-projects-status" data-export-param-projects="{{ selected_projects|join:',' }}" data-export-param-start="{{ filters.start }}" data-export-param-end="{{ filters.end }}">
+                    <thead>
+                        <tr>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="0" data-sort-type="text">
+                                    <span>{% if lang == 'fa' %}پروژه{% else %}Project{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="1" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}وظایف{% else %}Tasks{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="2" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}کل رکورد{% else %}Rows{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="3" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}بررسی‌شده{% else %}Reviewed{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="4" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}نرخ تکمیل{% else %}Completion{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="5" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}میانگین بررسی{% else %}Avg. review{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="6" data-sort-type="number">
+                                    <span>{% if lang == 'fa' %}میانگین چرخه{% else %}Avg. cycle{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th scope="col">
+                                <button type="button" class="table-sort" data-sort-column="7" data-sort-type="text">
+                                    <span>{% if lang == 'fa' %}آخرین فعالیت{% else %}Last activity{% endif %}</span>
+                                    <span class="sort-icon" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in project_rows %}
+                            <tr>
+                                <td class="small">{{ row.project.name }}</td>
+                                <td class="small">{{ row.tasks }}</td>
+                                <td class="small">{{ row.total_rows }}</td>
+                                <td class="small">{{ row.completed_rows }}</td>
+                                <td class="small">{{ row.completion_rate }}%</td>
+                                <td class="small">{% if row.avg_review_minutes %}{{ row.avg_review_minutes|floatformat:2 }}{% else %}—{% endif %}</td>
+                                <td class="small">{% if row.avg_cycle_minutes %}{{ row.avg_cycle_minutes|floatformat:2 }}{% else %}—{% endif %}</td>
+                                <td class="small">{% if row.last_activity %}{{ row.last_activity|date:'Y-m-d H:i' }}{% else %}—{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted small mb-0">{% if lang == 'fa' %}برای این فیلترها گزارشی وجود ندارد.{% else %}No project-level data for the chosen filters.{% endif %}</p>
+        {% endif %}
+    </div>
+
+    <div class="qc-card" style="margin-top:1rem;">
+        <p class="qc-label" style="margin:0;">{% if lang == 'fa' %}نکات سریع{% else %}Quick insights{% endif %}</p>
+        <ul style="margin:0.35rem 0 0 1rem; color:var(--color-text-muted,#94a3b8);">
+            <li>{% if lang == 'fa' %}می‌توانید خروجی جداول را برای گزارش‌های مدیریتی دانلود کنید.{% else %}Export reviewer and project tables for leadership updates.{% endif %}</li>
+            <li>{% if lang == 'fa' %}نرخ تکمیل بر اساس رکوردهای ارسال‌شده محاسبه می‌شود.{% else %}Completion rate reflects submitted review rows within the filter window.{% endif %}</li>
+            <li>{% if lang == 'fa' %}فیلترهای تاریخ و پروژه محدودهٔ داده‌ها را کنترل می‌کنند.{% else %}Date and project filters scope the entire dashboard data.{% endif %}</li>
+        </ul>
     </div>
 </div>
 {% endblock %}
