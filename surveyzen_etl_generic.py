@@ -162,6 +162,28 @@ def sanitize_identifier(path: str) -> str:
 def split_path(p: str) -> List[str]:
     return [seg for seg in p.split("/") if seg]
 
+def build_choice_lookup(asset_detail: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Return mapping of list_name -> choice names from an asset definition."""
+    content = asset_detail.get("content", {}) if isinstance(asset_detail, dict) else {}
+    raw_choices = []
+    if isinstance(content, dict):
+        raw_choices = content.get("choices") or []
+    elif isinstance(content, list):
+        for node in content:
+            if isinstance(node, dict) and node.get("type") == "choices":
+                raw_choices = node.get("children") or []
+                break
+    mapping: Dict[str, List[str]] = {}
+    for choice in raw_choices or []:
+        if not isinstance(choice, dict):
+            continue
+        list_name = str(choice.get("list_name", "")).strip()
+        name = str(choice.get("name", "")).strip()
+        if not list_name or not name:
+            continue
+        mapping.setdefault(list_name, []).append(name)
+    return mapping
+
 # ---------------------------------------------------------------------------
 # XLSForm parsing
 #
@@ -472,10 +494,31 @@ def last_segment(path: str) -> str:
     segs = split_path(path)
     return segs[-1] if segs else path
 
+def expand_select_multiple_fields(
+    row: Dict[str, Any],
+    select_multi_map: Dict[str, List[str]],
+) -> Dict[str, Any]:
+    """Populate per-choice boolean columns for select_multiple responses."""
+
+    expanded = dict(row)
+    for field, choices in select_multi_map.items():
+        raw_val = expanded.get(field)
+        selected: set[str] = set()
+        if isinstance(raw_val, list):
+            selected = {str(v) for v in raw_val}
+        elif isinstance(raw_val, str):
+            selected = {part for part in raw_val.split() if part}
+        elif raw_val not in (None, ""):
+            selected = {part for part in str(raw_val).split() if part}
+        for choice in choices:
+            expanded[f"{field}/{choice}"] = choice in selected
+    return expanded
+
 def prepare_rows_for_form(
     sub: Dict[str, Any],
     repeat_roots: List[str],
     label: str,
+    select_multi_map: Optional[Dict[str, List[str]]] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, List[Dict[str, Any]]]]:
     """
     Transform a single submission into a main row and repeat rows.
@@ -484,6 +527,7 @@ def prepare_rows_for_form(
       - main_row: a sanitized dictionary for the main table
       - repeat_rows_by_root: mapping of repeat root path to list of sanitized rows
     """
+    select_multi_map = select_multi_map or {}
     sub_copy = dict(sub)
     repeat_rows_by_root: Dict[str, List[Dict[str, Any]]] = {}
     for root in repeat_roots:
@@ -502,10 +546,11 @@ def prepare_rows_for_form(
                 full[k] = v
             full["_submission_id"] = sub.get("_id")
             full["repeat_index"] = idx
-            rows.append(to_sanitized_row(full))
+            rows.append(to_sanitized_row(expand_select_multiple_fields(full, select_multi_map)))
         repeat_rows_by_root[root] = rows
     main_row_flat = flatten(sub_copy)
-    main_row = to_sanitized_row(main_row_flat)
+    main_row_expanded = expand_select_multiple_fields(main_row_flat, select_multi_map)
+    main_row = to_sanitized_row(main_row_expanded)
     return main_row, repeat_rows_by_root
 
 # ---------------------------------------------------------------------------
@@ -600,7 +645,9 @@ def cleanup_duplicate_repeat_columns(conn, table: str, repeat_prefix: str) -> No
 # ---------------------------------------------------------------------------
 # Core ETL logic
 
-def extract_schema_from_asset(asset_detail: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Dict[str, List[Tuple[str, str]]]]:
+def extract_schema_from_asset(
+    asset_detail: Dict[str, Any]
+) -> Tuple[List[Tuple[str, str]], Dict[str, List[Tuple[str, str]]], Dict[str, List[str]]]:
     """Derive main and repeat column definitions from an asset payload."""
     if not isinstance(asset_detail, dict):
         raise ValueError("Asset detail payload is missing or invalid.")
@@ -617,6 +664,8 @@ def extract_schema_from_asset(asset_detail: Dict[str, Any]) -> Tuple[List[Tuple[
 
     main_cols: List[Tuple[str, str]] = []
     repeat_cols: Dict[str, List[Tuple[str, str]]] = {}
+    select_multiple_map: Dict[str, List[str]] = {}
+    choices_lookup = build_choice_lookup(asset_detail)
 
     def dedupe(items: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
         seen: set[str] = set()
@@ -655,10 +704,16 @@ def extract_schema_from_asset(asset_detail: Dict[str, Any]) -> Tuple[List[Tuple[
             path_parts = parent_parts + [node_name]
             full_path = "/".join([p for p in path_parts if p]) or node_name
             sql_type = map_xls_to_pg(node_type)
-            if repeat_key:
-                repeat_cols.setdefault(repeat_key, []).append((full_path, sql_type))
-            else:
-                main_cols.append((full_path, sql_type))
+            targets = repeat_cols.setdefault(repeat_key, []) if repeat_key else main_cols
+            targets.append((full_path, sql_type))
+            if node_base == "select_multiple":
+                parts = str(node_type).split()
+                list_name = parts[1] if len(parts) > 1 else ""
+                choices = choices_lookup.get(list_name, [])
+                if choices:
+                    select_multiple_map[full_path] = choices
+                    for choice in choices:
+                        targets.append((f"{full_path}/{choice}", "BOOLEAN"))
             if children:
                 walk(children, path_parts, repeat_key)
 
@@ -670,7 +725,7 @@ def extract_schema_from_asset(asset_detail: Dict[str, Any]) -> Tuple[List[Tuple[
     if not main_cols and not repeat_cols:
         raise ValueError("Asset definition did not contain any survey questions.")
 
-    return main_cols, repeat_cols
+    return main_cols, repeat_cols, select_multiple_map
 
 
 @dataclass
@@ -681,14 +736,16 @@ class FormSpec:
     asset_detail: Optional[Dict[str, Any]] = None
     definition_main_cols: List[Tuple[str, str]] = field(default_factory=list)
     definition_repeat_cols: Dict[str, List[Tuple[str, str]]] = field(default_factory=dict)
+    select_multiple_map: Dict[str, List[str]] = field(default_factory=dict)
 
 def ensure_tables_for_form(conn, form: FormSpec) -> Dict[str, str]:
     """Ensure the main and repeat tables exist for a form."""
     if not form.asset_detail:
         raise ValueError("FormSpec.asset_detail must be populated before ensuring tables.")
-    main_cols, rep_cols = extract_schema_from_asset(form.asset_detail)
+    main_cols, rep_cols, select_multi_map = extract_schema_from_asset(form.asset_detail)
     form.definition_main_cols = main_cols
     form.definition_repeat_cols = rep_cols
+    form.select_multiple_map = select_multi_map
     ensure_main_table(conn, form.main_table, form.definition_main_cols)
     repeat_map: Dict[str, str] = {}
     for root in form.definition_repeat_cols.keys():
@@ -728,7 +785,12 @@ def run_once(form: FormSpec) -> Tuple[int, int]:
         repeat_roots_full = list(form.definition_repeat_cols.keys())
         label = f"{form.main_table}/{form.asset_uid}"
         for sub in fetch_new_submissions(session, data_url, last_id, label=label):
-            main_row, rep_rows_by_root = prepare_rows_for_form(sub, repeat_roots_full, label=label)
+            main_row, rep_rows_by_root = prepare_rows_for_form(
+                sub,
+                repeat_roots_full,
+                label=label,
+                select_multi_map=form.select_multiple_map,
+            )
             if sample_main_seen < 3:
                 sample_main_keys |= set(main_row.keys())
                 sample_main_seen += 1

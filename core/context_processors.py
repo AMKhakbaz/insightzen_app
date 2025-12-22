@@ -30,7 +30,7 @@ def language(request) -> Dict[str, Any]:
         'collection_performance', 'telephone_interviewer', 'fieldwork_interviewer',
         'focus_group_panel', 'qc_management', 'qc_performance', 'review_data', 'edit_data',
         'voice_review', 'callback_qc', 'coding', 'product_matrix_ai',
-        'statistical_health_check', 'tabulation',
+        'statistical_health_check', 'sample_size_calculator', 'tabulation',
         'statistics', 'funnel_analysis', 'conjoint_analysis', 'segmentation_analysis'
     ]
     for pf in panel_fields:
