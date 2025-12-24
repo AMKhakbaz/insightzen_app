@@ -1403,6 +1403,55 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         project_qs = project_qs.filter(memberships__user=user, memberships__qc_management=True)
     projects = list(project_qs.distinct().order_by('name'))
 
+    perf_project_ids = _parse_int_param_list(request.GET.get('perf_projects'))
+    selected_perf_projects = [p for p in projects if not perf_project_ids or p.id in perf_project_ids]
+    if perf_project_ids and not selected_perf_projects:
+        messages.warning(
+            request,
+            _localise_text(
+                lang,
+                'No matching projects for the selected performance filters.',
+                'هیچ پروژه‌ای با فیلترهای کارایی انتخاب‌شده یافت نشد.',
+            ),
+        )
+
+    perf_start = _parse_iso_datetime_param(request.GET.get('perf_start'))
+    perf_end = _parse_iso_datetime_param(request.GET.get('perf_end'))
+
+    perf_tasks_qs = ReviewTask.objects.filter(entry__project__in=selected_perf_projects).select_related(
+        'reviewer',
+        'entry__project',
+    )
+    if perf_start:
+        perf_tasks_qs = perf_tasks_qs.filter(created_at__gte=perf_start)
+    if perf_end:
+        perf_tasks_qs = perf_tasks_qs.filter(created_at__lte=perf_end)
+
+    perf_rows_qs = ReviewRow.objects.filter(task__in=perf_tasks_qs).select_related(
+        'task__reviewer',
+        'task__entry__project',
+    )
+    if perf_start:
+        perf_rows_qs = perf_rows_qs.filter(created_at__gte=perf_start)
+    if perf_end:
+        perf_rows_qs = perf_rows_qs.filter(created_at__lte=perf_end)
+
+    perf_summary, perf_reviewer_rows, perf_project_rows = _aggregate_qc_performance(
+        perf_tasks_qs,
+        perf_rows_qs,
+    )
+
+    reviewer_chart_rows = perf_reviewer_rows[:8]
+    project_chart_rows = perf_project_rows[:8]
+    perf_charts = {
+        'reviewer_labels': [row['user_name'] for row in reviewer_chart_rows],
+        'reviewer_completed': [row['completed_rows'] for row in reviewer_chart_rows],
+        'reviewer_completion_rate': [row['completion_rate'] for row in reviewer_chart_rows],
+        'project_labels': [row['project_name'] for row in project_chart_rows],
+        'project_completed': [row['completed_rows'] for row in project_chart_rows],
+        'project_completion_rate': [row['completion_rate'] for row in project_chart_rows],
+    }
+
     selected_project: Optional[Project] = None
     selected_entry: Optional[DatabaseEntry] = None
     entries: List[DatabaseEntry] = []
@@ -1679,6 +1728,16 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         'default_qc_measure': default_qc_measure,
         'measure_saved': measure_saved,
         'qc_assignment_endpoint': reverse('qc_assignment_assign'),
+        'perf_projects': projects,
+        'selected_perf_projects': [p.id for p in selected_perf_projects],
+        'perf_filters': {
+            'start': request.GET.get('perf_start', ''),
+            'end': request.GET.get('perf_end', ''),
+        },
+        'perf_summary': perf_summary,
+        'perf_reviewer_rows': perf_reviewer_rows,
+        'perf_project_rows': perf_project_rows,
+        'perf_charts': perf_charts,
         'lang': lang,
         'breadcrumbs': _build_breadcrumbs(
             lang,
@@ -3428,6 +3487,7 @@ def project_add(request: HttpRequest) -> HttpResponse:
                     callback_qc=True,
                     coding=True,
                     statistical_health_check=True,
+                    sample_size_calculator=True,
                     tabulation=True,
                     statistics=True,
                     funnel_analysis=True,
