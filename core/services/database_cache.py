@@ -403,44 +403,72 @@ def request_enketo_edit_url(entry: DatabaseEntry, submission_id: str, return_url
         raise EnketoLinkError(
             f"Submission id '{submission_segment}' is not valid; a numeric id is required.", status=400
         )
-    endpoint = f"{api_base.rstrip('/')}/assets/{entry.asset_id}/data/{submission_segment}/enketo/edit/"
     params: Dict[str, Any] = {}
     if return_url is not None:
         params['return_url'] = return_url
     attempts = getattr(settings, 'KOBO_RETRY_ATTEMPTS', 3)
     backoff_seconds = getattr(settings, 'KOBO_RETRY_BACKOFF', 1)
-    last_error: Optional[str] = None
-    for attempt in range(1, max(attempts, 1) + 1):
-        try:
-            response = session.get(endpoint, params=params, timeout=timeout, verify=verify_param)
-        except requests.Timeout:
-            last_error = f'Request timed out after {timeout} seconds.'
-        except requests.RequestException as exc:  # pragma: no cover - depends on network
-            last_error = f'Failed to reach the Kobo API: {exc}'
-        else:
-            if response.status_code != 200:
-                try:
-                    error_payload = response.json()
-                    error_detail = error_payload.get('detail') if isinstance(error_payload, dict) else None
-                except ValueError:
-                    error_detail = response.text.strip()
-                detail_suffix = f": {error_detail}" if error_detail else ''
-                last_error = (
-                    f'Kobo API returned {response.status_code} when requesting an edit link{detail_suffix}.'
-                )
+
+    def _request_url(endpoint: str) -> str:
+        last_error: Optional[str] = None
+        last_status: int = 502
+        for attempt in range(1, max(attempts, 1) + 1):
+            try:
+                response = session.get(endpoint, params=params, timeout=timeout, verify=verify_param)
+            except requests.Timeout:
+                last_error = f'Request timed out after {timeout} seconds.'
+                last_status = 504
+            except requests.RequestException as exc:  # pragma: no cover - depends on network
+                last_error = f'Failed to reach the Kobo API: {exc}'
+                last_status = 502
             else:
-                try:
-                    payload = response.json()
-                except ValueError:
-                    last_error = 'Kobo API returned invalid JSON when requesting an edit link.'
+                last_status = response.status_code
+                if response.status_code != 200:
+                    try:
+                        error_payload = response.json()
+                        error_detail = error_payload.get('detail') if isinstance(error_payload, dict) else None
+                    except ValueError:
+                        error_detail = response.text.strip()
+                    detail_suffix = f": {error_detail}" if error_detail else ''
+                    last_error = (
+                        f'Kobo API returned {response.status_code} when requesting an edit link{detail_suffix}.'
+                    )
                 else:
-                    url = payload.get('url')
-                    if url:
-                        return url
-                    last_error = 'Enketo edit URL was not returned by the Kobo API.'
-        if attempt < attempts and last_error:
-            time.sleep(backoff_seconds * attempt)
-    raise EnketoLinkError(last_error or 'Unknown error while requesting an Enketo edit link.')
+                    try:
+                        payload = response.json()
+                    except ValueError:
+                        last_error = 'Kobo API returned invalid JSON when requesting an edit link.'
+                    else:
+                        url = payload.get('url')
+                        if url:
+                            return url
+                        last_error = 'Enketo edit URL was not returned by the Kobo API.'
+            if attempt < attempts and last_error:
+                time.sleep(backoff_seconds * attempt)
+        raise EnketoLinkError(last_error or 'Unknown error while requesting an Enketo edit link.', status=last_status)
+
+    base = api_base.rstrip('/')
+    primary_endpoint = f"{base}/assets/{entry.asset_id}/data/{submission_segment}/enketo/edit/"
+    fallback_endpoint = f"{base}/asset_snapshots/{entry.asset_id}/data/{submission_segment}/enketo/edit/"
+    endpoints = [primary_endpoint]
+    if fallback_endpoint not in endpoints:
+        # Prioritise the snapshot endpoint when the asset id is already a snapshot identifier.
+        if str(entry.asset_id).startswith('sg'):
+            endpoints.insert(0, fallback_endpoint)
+        else:
+            endpoints.append(fallback_endpoint)
+
+    errors: List[EnketoLinkError] = []
+    for endpoint in endpoints:
+        try:
+            return _request_url(endpoint)
+        except EnketoLinkError as exc:
+            errors.append(exc)
+    if errors:
+        message = '; '.join(str(err) for err in errors)
+        status = errors[-1].status if hasattr(errors[-1], 'status') else 502
+        raise EnketoLinkError(message, status=status)
+    raise EnketoLinkError('Unknown error while requesting an Enketo edit link.')
 
 
 def infer_columns(records: Iterable[Dict[str, Any]]) -> List[str]:
