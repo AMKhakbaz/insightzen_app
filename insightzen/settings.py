@@ -81,9 +81,13 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'django.contrib.postgres',
     'core',
 ]
+
+# Ensure PostgreSQL helpers stay loaded even if INSTALLED_APPS is extended via
+# environment-specific overrides (some deployments replace the list entirely).
+if 'django.contrib.postgres' not in INSTALLED_APPS:
+    INSTALLED_APPS.append('django.contrib.postgres')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
