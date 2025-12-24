@@ -74,6 +74,24 @@
         flex-shrink: 0;
         margin-top: 0.2rem;
     }
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.85rem;
+        margin-top: 1rem;
+    }
+    .dashboard-card {
+        padding: 0.9rem;
+        border-radius: 12px;
+        border: 1px solid var(--border-subtle, #1f2937);
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(17, 24, 39, 0.92));
+    }
+    .dashboard-card .metric {
+        font-size: 1.6rem;
+        font-weight: 700;
+        margin: 0.25rem 0;
+        color: var(--accent, #22d3ee);
+    }
     .eyebrow {
         text-transform: uppercase;
         letter-spacing: 0.08em;
@@ -107,6 +125,41 @@
             <span>{% if lang == 'fa' %}خروجی‌های شفاف شامل فرض‌ها و پارامترهای کلیدی برای مستندسازی{% else %}Transparent outputs listing the assumptions you can drop into documentation{% endif %}</span>
         </li>
     </ul>
+</div>
+
+<div class="calc-card" style="margin-bottom:1.5rem;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
+        <div>
+            <p class="eyebrow">{% if lang == 'fa' %}داشبورد خلاصه{% else %}Summary dashboard{% endif %}</p>
+            <h2 style="margin:0;">{% if lang == 'fa' %}نمای کلی نتایج محاسبه‌شده{% else %}Snapshot of your latest calculations{% endif %}</h2>
+            <p style="margin:0.35rem 0 0;color:var(--text-muted,#94a3b8);">
+                {% if lang == 'fa' %}
+                    خروجی هر محاسبه به‌صورت کارت‌های سریع نمایش داده می‌شود تا بتوانید حجم نمونه، دقت و نیازمندی‌های میدانی را یکجا ببینید.
+                {% else %}
+                    Each calculation result is summarized below so you can compare sample size, precision, and fieldwork needs at a glance.
+                {% endif %}
+            </p>
+        </div>
+        <span class="pill">{% if lang == 'fa' %}نمایش سریع{% else %}Quick view{% endif %}</span>
+    </div>
+    <div class="dashboard-grid">
+        {% if dashboard_cards %}
+            {% for card in dashboard_cards %}
+                <div class="dashboard-card">
+                    <p class="eyebrow">{{ card.title }}</p>
+                    <p class="metric">{{ card.value }}</p>
+                    <p style="margin:0;color:var(--text-muted,#94a3b8);">{{ card.subtitle }}</p>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="dashboard-card">
+                <p class="eyebrow">{% if lang == 'fa' %}بدون محاسبه{% else %}No calculations yet{% endif %}</p>
+                <p style="margin:0;color:var(--text-muted,#94a3b8);">
+                    {% if lang == 'fa' %}برای دیدن خروجی‌ها یکی از ابزارهای زیر را اجرا کنید.{% else %}Run any calculator below to populate this dashboard.{% endif %}
+                </p>
+            </div>
+        {% endif %}
+    </div>
 </div>
 
 <h2 style="margin:0 0 0.5rem 0;">{% if lang == 'fa' %}برآورد و اطمینان{% else %}Estimation & confidence{% endif %}</h2>
@@ -216,6 +269,132 @@
                             <p class="eyebrow">{{ result.primary_label }}</p>
                             <p class="result-number">{{ result.primary_value }}</p>
                         </div>
+                    </div>
+                    <ul style="margin:0;padding-left:1rem;color:var(--text-muted,#94a3b8);">
+                        {% for line in result.details %}
+                            <li>{{ line }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        {% endwith %}
+    </div>
+</div>
+
+<h2 style="margin:1.25rem 0 0.5rem 0;">{% if lang == 'fa' %}کنترل دقت و برنامه‌ریزی اجرا{% else %}Precision checks & fieldwork{% endif %}</h2>
+<div class="calc-grid" style="margin-bottom:1.25rem;">
+    <div class="calc-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
+            <div>
+                <p class="eyebrow">{% if lang == 'fa' %}کنترل دقت{% else %}Precision check{% endif %}</p>
+                <h3>{% if lang == 'fa' %}خطای مجاز برای نمونه موجود{% else %}Margin of error for an existing sample{% endif %}</h3>
+                <p style="margin:0;color:var(--text-muted,#94a3b8);">{% if lang == 'fa' %}برای زمانی که اندازه نمونه ثابت است و می‌خواهید بدانید دقت چقدر خواهد بود.{% else %}Use when the sample size is fixed and you need to quantify precision.{% endif %}</p>
+            </div>
+            <span class="pill">{% if lang == 'fa' %}دقت اندازه‌گیری{% else %}Precision{% endif %}</span>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="mode" value="precision_check">
+            <label>
+                <span>{% if lang == 'fa' %}اندازه جامعه (اختیاری){% else %}Population size (optional){% endif %}</span>
+                <input type="number" min="0" class="form-control" name="population" value="{{ inputs.precision_check.population }}" placeholder="{% if lang == 'fa' %}بدون سقف جامعه{% else %}Leave blank for unlimited{% endif %}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}سطح اطمینان (٪){% else %}Confidence level (%) {% endif %}</span>
+                <input type="number" step="0.1" min="50" max="99.9" class="form-control" name="confidence" value="{{ inputs.precision_check.confidence }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}آزمون{% else %}Test side{% endif %}</span>
+                <select class="form-select" name="tail">
+                    <option value="two-sided" {% if inputs.precision_check.tail == 'two-sided' %}selected{% endif %}>{% if lang == 'fa' %}دوطرفه{% else %}Two-sided{% endif %}</option>
+                    <option value="one-sided" {% if inputs.precision_check.tail == 'one-sided' %}selected{% endif %}>{% if lang == 'fa' %}یک‌طرفه{% else %}One-sided{% endif %}</option>
+                </select>
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}اندازه نمونه{% else %}Sample size{% endif %}</span>
+                <input type="number" step="1" min="1" class="form-control" name="sample_size" value="{{ inputs.precision_check.sample_size }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}نسبت برآوردی (٪){% else %}Assumed proportion (%) {% endif %}</span>
+                <input type="number" step="0.01" min="0.01" max="99" class="form-control" name="proportion" value="{{ inputs.precision_check.proportion }}">
+            </label>
+            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+                <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
+            </div>
+        </form>
+        {% with result=results.precision_check %}
+            {% if result %}
+                <div class="result-box">
+                    <div class="result-values">
+                        <div>
+                            <p class="eyebrow">{{ result.primary_label }}</p>
+                            <p class="result-number">{{ result.primary_value }}</p>
+                        </div>
+                    </div>
+                    <ul style="margin:0;padding-left:1rem;color:var(--text-muted,#94a3b8);">
+                        {% for line in result.details %}
+                            <li>{{ line }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <div class="calc-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
+            <div>
+                <p class="eyebrow">{% if lang == 'fa' %}برنامه‌ریزی اجرا{% else %}Fieldwork planning{% endif %}</p>
+                <h3>{% if lang == 'fa' %}تخمین تعداد تماس موردنیاز{% else %}Estimate required contacts{% endif %}</h3>
+                <p style="margin:0;color:var(--text-muted,#94a3b8);">{% if lang == 'fa' %}به‌کمک نرخ وقوع، نرخ پاسخگویی و نرخ تکمیل، تعداد تماس لازم را تعیین کنید.{% else %}Use incidence, response, and completion rates to size your outreach efforts.{% endif %}</p>
+            </div>
+            <span class="pill">{% if lang == 'fa' %}هدف‌گذاری میدانی{% else %}Field targets{% endif %}</span>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="mode" value="fieldwork_planner">
+            <label>
+                <span>{% if lang == 'fa' %}حجم نمونه هدف{% else %}Target sample size{% endif %}</span>
+                <input type="number" step="1" min="1" class="form-control" name="target_sample" value="{{ inputs.fieldwork_planner.target_sample }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}نرخ وقوع (٪){% else %}Incidence rate (%) {% endif %}</span>
+                <input type="number" step="0.1" min="0.1" max="100" class="form-control" name="incidence_rate" value="{{ inputs.fieldwork_planner.incidence_rate }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}نرخ پاسخگویی (٪){% else %}Response rate (%) {% endif %}</span>
+                <input type="number" step="0.1" min="0.1" max="100" class="form-control" name="response_rate" value="{{ inputs.fieldwork_planner.response_rate }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}نرخ تکمیل (٪){% else %}Completion rate (%) {% endif %}</span>
+                <input type="number" step="0.1" min="0.1" max="100" class="form-control" name="completion_rate" value="{{ inputs.fieldwork_planner.completion_rate }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}ضریب طراحی{% else %}Design effect{% endif %}</span>
+                <input type="number" step="0.01" min="0.1" class="form-control" name="design_effect" value="{{ inputs.fieldwork_planner.design_effect }}">
+            </label>
+            <label>
+                <span>{% if lang == 'fa' %}حاشیه اطمینان اضافه (٪){% else %}Reserve buffer (%) {% endif %}</span>
+                <input type="number" step="0.1" min="0" class="form-control" name="reserve" value="{{ inputs.fieldwork_planner.reserve }}">
+            </label>
+            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+                <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
+            </div>
+        </form>
+        {% with result=results.fieldwork_planner %}
+            {% if result %}
+                <div class="result-box">
+                    <div class="result-values">
+                        <div>
+                            <p class="eyebrow">{{ result.primary_label }}</p>
+                            <p class="result-number">{{ result.primary_value }}</p>
+                        </div>
+                        {% if result.secondary_value %}
+                            <div>
+                                <p class="eyebrow">{{ result.secondary_label }}</p>
+                                <p class="result-number">{{ result.secondary_value }}</p>
+                            </div>
+                        {% endif %}
                     </div>
                     <ul style="margin:0;padding-left:1rem;color:var(--text-muted,#94a3b8);">
                         {% for line in result.details %}

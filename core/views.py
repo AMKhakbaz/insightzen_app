@@ -4851,6 +4851,60 @@ def _calculate_ab_means(confidence: float, power: float, std_dev: float, detecta
     return int(ceil(n))
 
 
+def _calculate_margin_of_error(
+    population: Optional[float],
+    confidence: float,
+    proportion: float,
+    sample_size: float,
+    tail: str = 'two-sided',
+) -> float:
+    """Calculate margin of error for a proportion given a sample size."""
+
+    if sample_size <= 0:
+        raise ValueError('Sample size must be positive.')
+    if not 0 < proportion < 1:
+        raise ValueError('Assumed proportion must be between 0 and 1.')
+    z = _z_score(confidence, tail=tail)
+    base = z * sqrt((proportion * (1 - proportion)) / sample_size)
+    if population and population > 1 and sample_size < population:
+        base *= sqrt((population - sample_size) / (population - 1))
+    return base
+
+
+def _calculate_fieldwork_contacts(
+    target_sample: float,
+    incidence_rate: float,
+    response_rate: float,
+    completion_rate: float,
+    design_effect: float,
+    reserve_pct: float,
+) -> Dict[str, int]:
+    """Estimate the total contacts needed to reach a target sample."""
+
+    if target_sample <= 0:
+        raise ValueError('Target sample size must be positive.')
+    if not 0 < incidence_rate <= 1:
+        raise ValueError('Incidence rate must be between 0 and 1.')
+    if not 0 < response_rate <= 1:
+        raise ValueError('Response rate must be between 0 and 1.')
+    if not 0 < completion_rate <= 1:
+        raise ValueError('Completion rate must be between 0 and 1.')
+    if design_effect <= 0:
+        raise ValueError('Design effect must be positive.')
+    if reserve_pct < 0:
+        raise ValueError('Reserve percentage cannot be negative.')
+
+    adjusted_sample = target_sample * design_effect
+    effective_rate = incidence_rate * response_rate * completion_rate
+    contacts_needed = adjusted_sample / effective_rate
+    reserve = contacts_needed * reserve_pct
+    return {
+        'adjusted_sample': int(ceil(adjusted_sample)),
+        'contacts_needed': int(ceil(contacts_needed)),
+        'contacts_with_reserve': int(ceil(contacts_needed + reserve)),
+    }
+
+
 @login_required
 def sample_size_calculator(request: HttpRequest) -> HttpResponse:
     """Advanced sample size calculator panel (MRAnalysis group)."""
@@ -4894,6 +4948,21 @@ def sample_size_calculator(request: HttpRequest) -> HttpResponse:
             'stddev': '10',
             'mde': '2',
             'tail': 'two-sided',
+        },
+        'precision_check': {
+            'population': '',
+            'confidence': '95',
+            'sample_size': '500',
+            'proportion': '50',
+            'tail': 'two-sided',
+        },
+        'fieldwork_planner': {
+            'target_sample': '400',
+            'incidence_rate': '60',
+            'response_rate': '45',
+            'completion_rate': '85',
+            'design_effect': '1.0',
+            'reserve': '5',
         },
     }
 
@@ -5048,14 +5117,106 @@ def sample_size_calculator(request: HttpRequest) -> HttpResponse:
                         _localise_text(lang, f'Min detectable difference: {mde_abs}', f'حداقل اختلاف قابل تشخیص: {mde_abs}'),
                     ],
                 }
+            elif active_mode == 'precision_check':
+                population_val = _population_or_none(input_values['precision_check']['population'])
+                confidence_val = float(input_values['precision_check']['confidence'])
+                sample_size_val = float(input_values['precision_check']['sample_size'])
+                proportion_pct = float(input_values['precision_check']['proportion'])
+                tail = input_values['precision_check']['tail']
+                if not 0 < proportion_pct < 100:
+                    raise ValueError('Proportion must be between 0 and 100.')
+                margin = _calculate_margin_of_error(
+                    population=population_val,
+                    confidence=confidence_val,
+                    proportion=proportion_pct / 100.0,
+                    sample_size=sample_size_val,
+                    tail=tail,
+                )
+                results['precision_check'] = {
+                    'primary_value': f"{margin * 100:.2f}%",
+                    'primary_label': _localise_text(lang, 'Margin of error', 'خطای مجاز'),
+                    'details': [
+                        _localise_text(
+                            lang,
+                            f'Confidence: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                            f'سطح اطمینان: {confidence_val}% ({tail_labels.get(tail, tail_labels["two-sided"])})',
+                        ),
+                        _localise_text(lang, f'Sample size: {int(sample_size_val)}', f'حجم نمونه: {int(sample_size_val)}'),
+                        _localise_text(lang, f'Assumed proportion: {proportion_pct}%', f'فرض نسبت: {proportion_pct}%'),
+                        _localise_text(
+                            lang,
+                            'Finite population correction applied' if population_val else 'Infinite population assumption',
+                            'اصلاح جامعه محدود اعمال شد' if population_val else 'فرض جامعه نامحدود',
+                        ),
+                    ],
+                }
+            elif active_mode == 'fieldwork_planner':
+                target_sample = float(input_values['fieldwork_planner']['target_sample'])
+                incidence_rate = float(input_values['fieldwork_planner']['incidence_rate'])
+                response_rate = float(input_values['fieldwork_planner']['response_rate'])
+                completion_rate = float(input_values['fieldwork_planner']['completion_rate'])
+                design_effect = float(input_values['fieldwork_planner']['design_effect'])
+                reserve_pct = float(input_values['fieldwork_planner']['reserve'])
+                if not 0 < incidence_rate <= 100:
+                    raise ValueError('Incidence rate must be between 0 and 100.')
+                if not 0 < response_rate <= 100:
+                    raise ValueError('Response rate must be between 0 and 100.')
+                if not 0 < completion_rate <= 100:
+                    raise ValueError('Completion rate must be between 0 and 100.')
+                if design_effect <= 0:
+                    raise ValueError('Design effect must be positive.')
+                if reserve_pct < 0:
+                    raise ValueError('Reserve must be zero or positive.')
+                fieldwork = _calculate_fieldwork_contacts(
+                    target_sample=target_sample,
+                    incidence_rate=incidence_rate / 100.0,
+                    response_rate=response_rate / 100.0,
+                    completion_rate=completion_rate / 100.0,
+                    design_effect=design_effect,
+                    reserve_pct=reserve_pct / 100.0,
+                )
+                results['fieldwork_planner'] = {
+                    'primary_value': fieldwork['contacts_with_reserve'],
+                    'primary_label': _localise_text(lang, 'Total contacts needed', 'کل تماس موردنیاز'),
+                    'secondary_value': fieldwork['adjusted_sample'],
+                    'secondary_label': _localise_text(lang, 'Design-effect adjusted sample', 'حجم نمونه تعدیل‌شده'),
+                    'details': [
+                        _localise_text(lang, f'Incidence rate: {incidence_rate}%', f'نرخ وقوع: {incidence_rate}%'),
+                        _localise_text(lang, f'Response rate: {response_rate}%', f'نرخ پاسخگویی: {response_rate}%'),
+                        _localise_text(lang, f'Completion rate: {completion_rate}%', f'نرخ تکمیل: {completion_rate}%'),
+                        _localise_text(lang, f'Design effect: {design_effect}', f'ضریب طراحی: {design_effect}'),
+                        _localise_text(lang, f'Reserve: {reserve_pct}%', f'حاشیه اطمینان: {reserve_pct}%'),
+                    ],
+                }
         except ValueError as exc:
             messages.error(request, _localised_error(str(exc)))
+
+    dashboard_cards: List[Dict[str, str]] = []
+    for key, result in results.items():
+        if not result:
+            continue
+        title_map = {
+            'proportion_estimate': _localise_text(lang, 'Proportion sample size', 'حجم نمونه نسبت'),
+            'mean_estimate': _localise_text(lang, 'Mean sample size', 'حجم نمونه میانگین'),
+            'ab_proportion': _localise_text(lang, 'A/B proportions', 'آزمون A/B نسبت'),
+            'ab_mean': _localise_text(lang, 'A/B means', 'آزمون A/B میانگین'),
+            'precision_check': _localise_text(lang, 'Precision check', 'بررسی دقت'),
+            'fieldwork_planner': _localise_text(lang, 'Fieldwork planning', 'برنامه‌ریزی اجرا'),
+        }
+        dashboard_cards.append(
+            {
+                'title': title_map.get(key, key),
+                'value': str(result.get('primary_value', '')),
+                'subtitle': result.get('primary_label', ''),
+            }
+        )
 
     context = {
         'lang': lang,
         'results': results,
         'inputs': input_values,
         'active_mode': active_mode,
+        'dashboard_cards': dashboard_cards,
         'breadcrumbs': _build_breadcrumbs(
             lang,
             (_localise_text(lang, 'MRAnalysis', 'تحلیل تحقیقات بازار'), ''),
@@ -5315,6 +5476,60 @@ def database_list(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
+@require_POST
+def respondent_bank_import(request: HttpRequest) -> HttpResponse:
+    """Import the respondent bank into the application database."""
+
+    user = request.user
+    lang = _get_lang(request)
+    if not getattr(user, 'is_superuser', False):
+        messages.error(request, 'Access denied: only super admins can import the respondent bank.')
+        return redirect('database_list')
+
+    force = str(request.POST.get('force', '')).lower() in {'1', 'true', 'yes', 'on'}
+
+    from core.models import Person
+
+    if Person.objects.exists() and not force:
+        messages.warning(
+            request,
+            _localise_text(
+                lang,
+                'Respondent bank already contains data. Use force import to overwrite.',
+                'بانک پاسخگو از قبل داده دارد. برای بارگذاری مجدد از گزینه اجباری استفاده کنید.',
+            ),
+        )
+        return redirect('database_list')
+
+    from core import data_load_utils
+
+    try:
+        data_load_utils.load_people_and_mobile()
+    except Exception as exc:  # pragma: no cover - passthrough to existing helper
+        messages.error(
+            request,
+            _localise_text(
+                lang,
+                f'Failed to import respondent bank: {exc}',
+                f'خطا در انتقال بانک پاسخگو: {exc}',
+            ),
+        )
+        log_activity(user, 'Respondent bank import failed', str(exc))
+        return redirect('database_list')
+
+    messages.success(
+        request,
+        _localise_text(
+            lang,
+            'Respondent bank imported successfully.',
+            'بانک پاسخگو با موفقیت منتقل شد.',
+        ),
+    )
+    log_activity(user, 'Imported respondent bank', 'Respondent bank sync executed')
+    return redirect('database_list')
+
+
+@login_required
 def database_add(request: HttpRequest) -> HttpResponse:
     """Add a new database entry for a project.
 
@@ -5349,9 +5564,27 @@ def database_add(request: HttpRequest) -> HttpResponse:
             if entry.source_type == DatabaseEntry.SourceType.UPLOAD:
                 entry.token = None
                 entry.asset_id = None
+                entry.db_host = None
+                entry.db_port = None
+                entry.db_username = None
+                entry.db_password = None
+                entry.db_database = None
+                entry.db_table = None
             else:
-                entry.upload_file = None
-                entry.upload_sheet_name = ''
+                if entry.source_type == DatabaseEntry.SourceType.KOBO:
+                    entry.upload_file = None
+                    entry.upload_sheet_name = ''
+                    entry.db_host = None
+                    entry.db_port = None
+                    entry.db_username = None
+                    entry.db_password = None
+                    entry.db_database = None
+                    entry.db_table = None
+                elif entry.source_type == DatabaseEntry.SourceType.POSTGRES:
+                    entry.token = None
+                    entry.asset_id = None
+                    entry.upload_file = None
+                    entry.upload_sheet_name = ''
             entry.status = False
             entry.last_sync = None
             entry.last_error = ''
@@ -5432,14 +5665,66 @@ def database_edit(request: HttpRequest, pk: int) -> HttpResponse:
             if entry.source_type == DatabaseEntry.SourceType.UPLOAD:
                 entry.token = None
                 entry.asset_id = None
-                entry.save(update_fields=['token', 'asset_id'])
+                entry.db_host = None
+                entry.db_port = None
+                entry.db_username = None
+                entry.db_password = None
+                entry.db_database = None
+                entry.db_table = None
+                entry.save(
+                    update_fields=[
+                        'token',
+                        'asset_id',
+                        'db_host',
+                        'db_port',
+                        'db_username',
+                        'db_password',
+                        'db_database',
+                        'db_table',
+                    ]
+                )
             else:
-                # Clear any previously uploaded file when switching back to Kobo
-                if entry.upload_file:
-                    entry.upload_file.delete(save=False)
-                entry.upload_file = None
-                entry.upload_sheet_name = ''
-                entry.save(update_fields=['token', 'asset_id', 'upload_file', 'upload_sheet_name'])
+                if entry.source_type == DatabaseEntry.SourceType.KOBO:
+                    # Clear any previously uploaded file when switching back to Kobo
+                    if entry.upload_file:
+                        entry.upload_file.delete(save=False)
+                    entry.upload_file = None
+                    entry.upload_sheet_name = ''
+                    entry.db_host = None
+                    entry.db_port = None
+                    entry.db_username = None
+                    entry.db_password = None
+                    entry.db_database = None
+                    entry.db_table = None
+                    entry.save(
+                        update_fields=[
+                            'token',
+                            'asset_id',
+                            'upload_file',
+                            'upload_sheet_name',
+                            'db_host',
+                            'db_port',
+                            'db_username',
+                            'db_password',
+                            'db_database',
+                            'db_table',
+                        ]
+                    )
+                elif entry.source_type == DatabaseEntry.SourceType.POSTGRES:
+                    entry.token = None
+                    entry.asset_id = None
+                    if entry.upload_file:
+                        entry.upload_file.delete(save=False)
+                    entry.upload_file = None
+                    entry.upload_sheet_name = ''
+                    entry.save(
+                        update_fields=[
+                            'token',
+                            'asset_id',
+                            'upload_file',
+                            'upload_sheet_name',
+                        ]
+                    )
             entry.last_update_requested = timezone.now()
             entry.save(update_fields=['last_update_requested'])
             sync_message = ''

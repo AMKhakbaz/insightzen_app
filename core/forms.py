@@ -384,7 +384,29 @@ class DatabaseEntryForm(forms.ModelForm):
 
     class Meta:
         model = DatabaseEntry
-        fields = ['project', 'db_name', 'source_type', 'token', 'asset_id', 'upload_file', 'upload_sheet_name']
+        fields = [
+            'project',
+            'db_name',
+            'source_type',
+            'token',
+            'asset_id',
+            'upload_file',
+            'upload_sheet_name',
+            'db_host',
+            'db_port',
+            'db_username',
+            'db_password',
+            'db_database',
+            'db_table',
+        ]
+        labels = {
+            'db_host': 'Host / IP',
+            'db_port': 'Port',
+            'db_username': 'Username',
+            'db_password': 'Password',
+            'db_database': 'Database name',
+            'db_table': 'Table name',
+        }
         widgets = {
             'project': forms.Select(attrs={'class': 'form-select'}),
             'db_name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -392,6 +414,12 @@ class DatabaseEntryForm(forms.ModelForm):
             'token': forms.TextInput(attrs={'class': 'form-control'}),
             'asset_id': forms.TextInput(attrs={'class': 'form-control'}),
             'upload_sheet_name': forms.TextInput(attrs={'class': 'form-control'}),
+            'db_host': forms.TextInput(attrs={'class': 'form-control'}),
+            'db_port': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
+            'db_username': forms.TextInput(attrs={'class': 'form-control'}),
+            'db_password': forms.PasswordInput(attrs={'class': 'form-control', 'render_value': True}),
+            'db_database': forms.TextInput(attrs={'class': 'form-control'}),
+            'db_table': forms.TextInput(attrs={'class': 'form-control'}),
         }
 
     def clean(self):
@@ -410,4 +438,16 @@ class DatabaseEntryForm(forms.ModelForm):
         elif source_type == DatabaseEntry.SourceType.UPLOAD:
             if not upload_file and not self.instance.upload_file:
                 self.add_error('upload_file', 'Please upload an Excel or CSV file.')
+        elif source_type == DatabaseEntry.SourceType.POSTGRES:
+            required_fields = {
+                'db_host': 'Host is required for PostgreSQL sources.',
+                'db_port': 'Port is required for PostgreSQL sources.',
+                'db_username': 'Username is required for PostgreSQL sources.',
+                'db_password': 'Password is required for PostgreSQL sources.',
+                'db_database': 'Database name is required for PostgreSQL sources.',
+                'db_table': 'Table name is required for PostgreSQL sources.',
+            }
+            for field, message in required_fields.items():
+                if not cleaned.get(field):
+                    self.add_error(field, message)
         return cleaned

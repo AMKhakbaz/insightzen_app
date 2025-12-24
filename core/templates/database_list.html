@@ -13,7 +13,65 @@
             {% if lang == 'fa' %}افزودن پایگاه داده{% else %}Add Database{% endif %}
         </a>
     </div>
+    {% if request.user.is_superuser %}
+    <div class="card" style="background:#f9fafb;border:1px solid #e5e7eb;padding:1rem;margin-bottom:1.5rem;">
+        <h2 style="margin-top:0;">{% if lang == 'fa' %}انتقال بانک پاسخگو{% else %}Respondent Bank Sync{% endif %}</h2>
+        <p class="card-intro" style="margin-bottom:0.75rem;">
+            {% if lang == 'fa' %}برای انتقال بانک پاسخگو از دیتابیس A به دیتابیس برنامه از گزینه‌های زیر استفاده کنید.{% else %}Use the actions below to transfer the respondent bank from database A to the application database.{% endif %}
+        </p>
+        <form action="{% url 'respondent_bank_import' %}" method="post" style="display:inline;" onsubmit="return confirm('{% if lang == 'fa' %}آیا از انتقال بانک پاسخگو مطمئن هستید؟{% else %}Are you sure you want to import the respondent bank?{% endif %}');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline">{% if lang == 'fa' %}انتقال بانک پاسخگو{% else %}Import Respondent Bank{% endif %}</button>
+        </form>
+        <form action="{% url 'respondent_bank_import' %}" method="post" style="display:inline;" onsubmit="return confirm('{% if lang == 'fa' %}انتقال اجباری باعث ورود مجدد داده‌ها می‌شود. مطمئن هستید؟{% else %}Force import will re-copy all data. Continue?{% endif %}');">
+            {% csrf_token %}
+            <input type="hidden" name="force" value="1">
+            <button type="submit" class="btn btn-outline btn-danger">{% if lang == 'fa' %}انتقال اجباری{% else %}Force Import{% endif %}</button>
+        </form>
+    </div>
+    {% endif %}
     <div class="table-responsive">
+        <style>
+            .database-actions {
+                position: relative;
+                display: inline-flex;
+            }
+            .database-actions summary {
+                list-style: none;
+                cursor: pointer;
+            }
+            .database-actions summary::-webkit-details-marker {
+                display: none;
+            }
+            .database-actions__toggle {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 36px;
+                height: 32px;
+                border-radius: 8px;
+                border: 1px solid #e2e8f0;
+                background: #fff;
+            }
+            .database-actions__menu {
+                position: absolute;
+                right: 0;
+                top: calc(100% + 0.5rem);
+                min-width: 200px;
+                background: #fff;
+                border-radius: 12px;
+                border: 1px solid #e2e8f0;
+                box-shadow: 0 16px 24px rgba(15, 23, 42, 0.12);
+                padding: 0.5rem;
+                z-index: 10;
+                display: grid;
+                gap: 0.35rem;
+            }
+            .database-actions__menu .btn {
+                justify-content: flex-start;
+                width: 100%;
+            }
+        </style>
         <table id="database-table" class="table" data-table="interactive" data-filter-context="database_list" data-empty-text="{% if lang == 'fa' %}هیچ پایگاه داده‌ای مطابق فیلتر نیست.{% else %}No databases match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
             <thead>
                 <tr>
@@ -73,6 +131,8 @@
                     <td>
                         {% if entry.source_type == 'upload' %}
                             {% if lang == 'fa' %}فایل آپلودی{% else %}Uploaded file{% endif %}
+                        {% elif entry.source_type == 'postgres' %}
+                            {% if lang == 'fa' %}PostgreSQL{% else %}PostgreSQL{% endif %}
                         {% else %}
                             Surveyzen / Kobo
                         {% endif %}
@@ -81,31 +141,38 @@
                     <td>{{ entry.asset_id|default_if_none:'' }}</td>
                     <td>{% if entry.status %}<span class="text-success">✓</span>{% else %}<span class="text-danger">×</span>{% endif %}</td>
                     <td>
-                        <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary">
-                            <span class="btn__icon" aria-hidden="true">
-                                <img src="{% static 'core/icons/edit.svg' %}" alt="">
-                            </span>
-                            <span>{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</span>
-                        </a>
-                        <form action="{% url 'database_update' entry.pk %}" method="post" style="display:inline;">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-outline">{% if lang == 'fa' %}به‌روزرسانی{% else %}Update{% endif %}</button>
-                        </form>
-                        <form action="{% url 'database_update' entry.pk %}" method="post" style="display:inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="mode" value="full">
-                            <button type="submit" class="btn btn-sm btn-outline btn-danger">{% if lang == 'fa' %}به‌روزرسانی کامل{% else %}Full Refresh{% endif %}</button>
-                        </form>
-                        <form action="{% url 'database_delete' entry.pk %}" method="post" style="display:inline;" onsubmit="return confirm('{% if lang == 'fa' %}آیا مطمئن هستید؟{% else %}Are you sure?{% endif %}');">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-outline">
-                                <span class="btn__icon" aria-hidden="true">
-                                    <img src="{% static 'core/icons/delete.svg' %}" alt="">
-                                </span>
-                                <span>{% if lang == 'fa' %}حذف{% else %}Delete{% endif %}</span>
-                            </button>
-                        </form>
-                        <a href="{% url 'database_view' entry.pk %}" class="btn btn-sm btn-outline">{% if lang == 'fa' %}نمایش داده‌ها{% else %}View Data{% endif %}</a>
+                        <details class="database-actions">
+                            <summary class="database-actions__toggle" aria-label="{% if lang == 'fa' %}بیشتر{% else %}More actions{% endif %}">
+                                <span aria-hidden="true">⋯</span>
+                            </summary>
+                            <div class="database-actions__menu">
+                                <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary">
+                                    <span class="btn__icon" aria-hidden="true">
+                                        <img src="{% static 'core/icons/edit.svg' %}" alt="">
+                                    </span>
+                                    <span>{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</span>
+                                </a>
+                                <form action="{% url 'database_update' entry.pk %}" method="post">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline">{% if lang == 'fa' %}به‌روزرسانی{% else %}Update{% endif %}</button>
+                                </form>
+                                <form action="{% url 'database_update' entry.pk %}" method="post">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="mode" value="full">
+                                    <button type="submit" class="btn btn-sm btn-outline btn-danger">{% if lang == 'fa' %}به‌روزرسانی کامل{% else %}Full Refresh{% endif %}</button>
+                                </form>
+                                <a href="{% url 'database_view' entry.pk %}" class="btn btn-sm btn-outline">{% if lang == 'fa' %}نمایش داده‌ها{% else %}View Data{% endif %}</a>
+                                <form action="{% url 'database_delete' entry.pk %}" method="post" onsubmit="return confirm('{% if lang == 'fa' %}آیا مطمئن هستید؟{% else %}Are you sure?{% endif %}');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline">
+                                        <span class="btn__icon" aria-hidden="true">
+                                            <img src="{% static 'core/icons/delete.svg' %}" alt="">
+                                        </span>
+                                        <span>{% if lang == 'fa' %}حذف{% else %}Delete{% endif %}</span>
+                                    </button>
+                                </form>
+                            </div>
+                        </details>
                     </td>
                 </tr>
                 {% empty %}

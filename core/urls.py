@@ -80,6 +80,7 @@ urlpatterns = [
 
     # Database management
     path('databases/', views.database_list, name='database_list'),
+    path('databases/respondent-bank/import/', views.respondent_bank_import, name='respondent_bank_import'),
     path('databases/add/', views.database_add, name='database_add'),
     path('databases/<int:pk>/edit/', views.database_edit, name='database_edit'),
     path('databases/<int:pk>/delete/', views.database_delete, name='database_delete'),

@@ -436,6 +436,7 @@ class DatabaseEntry(models.Model):
     class SourceType(models.TextChoices):
         KOBO = 'kobo', 'Surveyzen / Kobo'
         UPLOAD = 'upload', 'Uploaded file'
+        POSTGRES = 'postgres', 'PostgreSQL'
 
     """Represents a connection to an external data source.
 
@@ -455,6 +456,12 @@ class DatabaseEntry(models.Model):
     asset_id = models.CharField(max_length=255, blank=True, null=True)
     upload_file = models.FileField(upload_to='database_uploads/', blank=True, null=True)
     upload_sheet_name = models.CharField(max_length=255, blank=True, default='')
+    db_host = models.CharField(max_length=255, blank=True, null=True)
+    db_port = models.PositiveIntegerField(blank=True, null=True)
+    db_username = models.CharField(max_length=255, blank=True, null=True)
+    db_password = models.CharField(max_length=255, blank=True, null=True)
+    db_database = models.CharField(max_length=255, blank=True, null=True)
+    db_table = models.CharField(max_length=255, blank=True, null=True)
     status = models.BooleanField(default=False)
     # Timestamp of the last attempted synchronisation.  Updated by the
     # sync_database_entries management command each time it runs.

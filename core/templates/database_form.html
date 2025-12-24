@@ -30,27 +30,27 @@
             {{ form.source_type }}
             <small class="text-muted">
                 {% if lang == 'fa' %}
-                    انتخاب «Surveyzen / Kobo» برای فرم‌های آنلاین یا «Uploaded file» برای آپلود اکسل/CSV.
+                    انتخاب «Surveyzen / Kobo» برای فرم‌های آنلاین، «Uploaded file» برای آپلود اکسل/CSV یا «PostgreSQL» برای اتصال مستقیم به دیتابیس.
                 {% else %}
-                    Choose “Surveyzen / Kobo” for live forms or “Uploaded file” to upload Excel/CSV.
+                    Choose “Surveyzen / Kobo” for live forms, “Uploaded file” to upload Excel/CSV, or “PostgreSQL” for a direct database connection.
                 {% endif %}
             </small>
             {{ form.source_type.errors }}
         </div>
-        {# Token #}
-        <div>
+        <div class="source-fields" data-source="kobo">
+            {# Token #}
             {{ form.token.label_tag }}
             {{ form.token }}
             {{ form.token.errors }}
         </div>
-        {# Asset ID #}
-        <div>
+        <div class="source-fields" data-source="kobo">
+            {# Asset ID #}
             {{ form.asset_id.label_tag }}
             {{ form.asset_id }}
             {{ form.asset_id.errors }}
         </div>
-        {# Upload file #}
-        <div>
+        <div class="source-fields" data-source="upload">
+            {# Upload file #}
             {{ form.upload_file.label_tag }}
             {{ form.upload_file }}
             <small class="text-muted">
@@ -58,14 +58,47 @@
             </small>
             {{ form.upload_file.errors }}
         </div>
-        {# Sheet name (optional) #}
-        <div>
+        <div class="source-fields" data-source="upload">
+            {# Sheet name (optional) #}
             {{ form.upload_sheet_name.label_tag }}
             {{ form.upload_sheet_name }}
             <small class="text-muted">
                 {% if lang == 'fa' %}در صورت چند شیت بودن فایل اکسل، نام شیت مدنظر را وارد کنید؛ در غیر این صورت خالی بگذارید.{% else %}If the Excel file has multiple sheets, enter the sheet name; leave blank otherwise.{% endif %}
             </small>
             {{ form.upload_sheet_name.errors }}
+        </div>
+        <div class="source-fields" data-source="postgres">
+            {{ form.db_host.label_tag }}
+            {{ form.db_host }}
+            {{ form.db_host.errors }}
+        </div>
+        <div class="source-fields" data-source="postgres">
+            {{ form.db_port.label_tag }}
+            {{ form.db_port }}
+            {{ form.db_port.errors }}
+        </div>
+        <div class="source-fields" data-source="postgres">
+            {{ form.db_username.label_tag }}
+            {{ form.db_username }}
+            {{ form.db_username.errors }}
+        </div>
+        <div class="source-fields" data-source="postgres">
+            {{ form.db_password.label_tag }}
+            {{ form.db_password }}
+            {{ form.db_password.errors }}
+        </div>
+        <div class="source-fields" data-source="postgres">
+            {{ form.db_database.label_tag }}
+            {{ form.db_database }}
+            {{ form.db_database.errors }}
+        </div>
+        <div class="source-fields" data-source="postgres">
+            {{ form.db_table.label_tag }}
+            {{ form.db_table }}
+            {{ form.db_table.errors }}
+            <small class="text-muted">
+                {% if lang == 'fa' %}نام جدول را وارد کنید؛ در صورت نیاز می‌توانید به‌صورت schema.table بنویسید.{% else %}Enter the table name (schema.table is supported if needed).{% endif %}
+            </small>
         </div>
         <button type="submit" class="btn" style="margin-top:1rem;">
             {% if lang == 'fa' %}
@@ -76,4 +109,23 @@
         </button>
     </form>
 </div>
+<script>
+    (function () {
+        const sourceSelect = document.getElementById('id_source_type');
+        const groups = Array.from(document.querySelectorAll('.source-fields'));
+        if (!sourceSelect || !groups.length) {
+            return;
+        }
+        const updateVisibility = () => {
+            const value = sourceSelect.value;
+            groups.forEach((group) => {
+                const sources = (group.dataset.source || '').split(',');
+                const shouldShow = sources.includes(value);
+                group.style.display = shouldShow ? 'block' : 'none';
+            });
+        };
+        sourceSelect.addEventListener('change', updateVisibility);
+        updateVisibility();
+    })();
+</script>
 {% endblock %}

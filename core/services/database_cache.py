@@ -18,6 +18,9 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
 import pandas as pd
+import psycopg2
+from psycopg2 import sql
+import psycopg2
 from django.conf import settings
 from django.utils import timezone
 
@@ -173,6 +176,60 @@ def _load_uploaded_dataset(entry: DatabaseEntry) -> Tuple[Dict[str, Any], List[D
     return metadata, records
 
 
+def _build_table_identifier(table_name: str) -> sql.Composed:
+    """Return a safe SQL identifier for a table name, supporting schema prefixes."""
+
+    if not table_name:
+        raise DatabaseCacheError('Table name is required for PostgreSQL sources.')
+    parts = [segment for segment in table_name.split('.') if segment]
+    if not parts:
+        raise DatabaseCacheError('Table name is invalid.')
+    identifiers = [sql.Identifier(part) for part in parts]
+    composed = identifiers[0]
+    for ident in identifiers[1:]:
+        composed = sql.SQL('.').join([composed, ident])
+    return composed
+
+
+def _load_postgres_dataset(entry: DatabaseEntry) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Load records from a PostgreSQL table."""
+
+    missing_fields = [
+        field
+        for field in ('db_host', 'db_port', 'db_username', 'db_password', 'db_database', 'db_table')
+        if not getattr(entry, field)
+    ]
+    if missing_fields:
+        raise DatabaseCacheError('PostgreSQL connection details are incomplete.')
+
+    conn = psycopg2.connect(
+        host=entry.db_host,
+        port=entry.db_port,
+        user=entry.db_username,
+        password=entry.db_password,
+        dbname=entry.db_database,
+    )
+    try:
+        table_identifier = _build_table_identifier(entry.db_table)
+        with conn.cursor() as cur:
+            cur.execute(sql.SQL('SELECT * FROM {}').format(table_identifier))
+            rows = cur.fetchall()
+            if cur.description is None:
+                raise DatabaseCacheError('Unable to read column metadata for the selected table.')
+            columns = [desc[0] for desc in cur.description]
+    finally:
+        conn.close()
+
+    records = [dict(zip(columns, row)) for row in rows]
+    metadata = {
+        'source_type': 'postgres',
+        'columns': columns,
+        'database': entry.db_database,
+        'table': entry.db_table,
+    }
+    return metadata, records
+
+
 def _apply_select_multiple_expansion(record: Dict[str, Any], multi_map: Dict[str, List[str]]) -> Dict[str, Any]:
     """Expand select_multiple answers into dedicated columns (one per option)."""
 
@@ -266,13 +323,16 @@ def refresh_entry_cache(entry: DatabaseEntry, refresh_ids: Optional[Iterable[str
     if entry.source_type == DatabaseEntry.SourceType.UPLOAD:
         metadata, submissions = _load_uploaded_dataset(entry)
         select_multiple_map: Dict[str, List[str]] = {}
+    elif entry.source_type == DatabaseEntry.SourceType.POSTGRES:
+        metadata, submissions = _load_postgres_dataset(entry)
+        select_multiple_map = {}
     else:
         if not entry.token or not entry.asset_id:
             raise DatabaseCacheError('Token and asset ID are required for Surveyzen/Kobo sources.')
         metadata, submissions = _fetch_remote_payload(entry.token, entry.asset_id)
         select_multiple_map = _build_select_multiple_map(metadata)
 
-    if refresh_ids and entry.source_type != DatabaseEntry.SourceType.UPLOAD:
+    if refresh_ids and entry.source_type == DatabaseEntry.SourceType.KOBO:
         query_ids = _prepare_submission_query(refresh_ids)
         if query_ids:
             _, targeted = _fetch_remote_payload(
