@@ -2095,6 +2095,61 @@ def _aggregate_qc_performance(tasks_qs: Iterable[ReviewTask], rows_qs: Iterable[
     return summary, reviewer_rows, project_rows
 
 
+def _build_qc_performance_charts(rows_qs, reviewer_rows: List[Dict[str, Any]], project_rows: List[Dict[str, Any]]):
+    """Assemble chart-friendly datasets for the QC dashboard."""
+
+    project_labels: List[str] = []
+    project_totals: List[int] = []
+    project_completed: List[int] = []
+    for row in sorted(project_rows, key=lambda r: (r['project'].name or '').lower() if r['project'] else ''):
+        project = row['project']
+        project_label = project.name if project else ''
+        project_labels.append(project_label)
+        project_totals.append(row['total_rows'])
+        project_completed.append(row['completed_rows'])
+
+    reviewer_labels: List[str] = []
+    reviewer_completed: List[int] = []
+    reviewer_totals: List[int] = []
+    for row in sorted(reviewer_rows, key=lambda r: (-r['completed_rows'], r['user'].get_full_name() or r['user'].username)):
+        reviewer_labels.append(row['user'].get_full_name() or row['user'].username)
+        reviewer_completed.append(row['completed_rows'])
+        reviewer_totals.append(row['total_rows'])
+
+    daily_labels: List[str] = []
+    daily_totals: List[int] = []
+    daily_completed: List[int] = []
+    for record in (
+        rows_qs.annotate(day=TruncDate('created_at'))
+        .values('day')
+        .annotate(total=Count('id'), completed=Count('id', filter=Q(completed_at__isnull=False)))
+        .order_by('day')
+    ):
+        day_value = record['day']
+        label = day_value.isoformat() if hasattr(day_value, 'isoformat') else str(day_value)
+        daily_labels.append(label)
+        daily_totals.append(record['total'])
+        daily_completed.append(record['completed'])
+
+    return {
+        'projects': {
+            'labels': project_labels,
+            'totals': project_totals,
+            'completed': project_completed,
+        },
+        'reviewers': {
+            'labels': reviewer_labels,
+            'completed': reviewer_completed,
+            'totals': reviewer_totals,
+        },
+        'timeline': {
+            'labels': daily_labels,
+            'totals': daily_totals,
+            'completed': daily_completed,
+        },
+    }
+
+
 @login_required
 def qc_performance_dashboard(request: HttpRequest) -> HttpResponse:
     """Dashboard summarising review performance for QC reviewers."""
@@ -2143,6 +2198,7 @@ def qc_performance_dashboard(request: HttpRequest) -> HttpResponse:
         rows_qs = rows_qs.filter(created_at__lte=end)
 
     summary, reviewer_rows, project_rows = _aggregate_qc_performance(tasks_qs, rows_qs)
+    chart_data = _build_qc_performance_charts(rows_qs, reviewer_rows, project_rows)
 
     context = {
         'lang': lang,
@@ -2155,6 +2211,7 @@ def qc_performance_dashboard(request: HttpRequest) -> HttpResponse:
         'summary': summary,
         'reviewer_rows': reviewer_rows,
         'project_rows': project_rows,
+        'chart_data': json.dumps(chart_data, default=str),
         'breadcrumbs': _build_breadcrumbs(
             lang,
             (_localise_text(lang, 'Quality Control', 'کنترل کیفیت'), ''),

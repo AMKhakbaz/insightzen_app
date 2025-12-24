@@ -337,7 +337,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
                     'icon': 'activity',
                     'label': {'en': 'QC Performance', 'fa': 'کارایی QC'},
                     'url': _resolve_url('qc_performance_dashboard'),
-                    'disabled': True,
+                    'disabled': not panel_active('qc_performance'),
                     'visible': True,
                 },
                 {

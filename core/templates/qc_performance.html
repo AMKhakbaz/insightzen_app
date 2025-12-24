@@ -66,6 +66,32 @@
         color: var(--accent, #22d3ee);
         font-size: 0.9rem;
     }
+    .chart-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1rem;
+        margin-top: 0.75rem;
+    }
+    .chart-shell {
+        background: var(--color-surface, #0f172a);
+        border: 1px solid var(--color-border, #1f2937);
+        border-radius: 10px;
+        padding: 0.75rem;
+        min-height: 260px;
+    }
+    .chart-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin: 0 0 0.25rem 0;
+        font-weight: 600;
+    }
+    .chart-subtitle {
+        margin: 0;
+        color: var(--color-text-muted, #94a3b8);
+        font-size: 0.9rem;
+    }
 </style>
 
 <div class="card qc-card" style="margin:1.5rem auto;max-width:1200px;">
@@ -132,6 +158,40 @@
         <div class="qc-card">
             <p class="qc-label">{% if lang == 'fa' %}میانگین زمان چرخه (دقیقه){% else %}Avg. cycle time (minutes){% endif %}</p>
             <p class="qc-value">{% if summary.avg_cycle_minutes %}{{ summary.avg_cycle_minutes|floatformat:2 }}{% else %}—{% endif %}</p>
+        </div>
+    </div>
+
+    <div class="qc-card" style="margin-top:1rem;">
+        <p class="qc-label" style="margin:0;">{% if lang == 'fa' %}تصویر کلی عملکرد{% else %}Performance overview{% endif %}</p>
+        <h3 style="margin:0.2rem 0 0.6rem 0;">{% if lang == 'fa' %}نمودارهای کارایی QC{% else %}QC performance charts{% endif %}</h3>
+        <div class="chart-grid">
+            <div class="chart-shell">
+                <div class="chart-title">
+                    <span>{% if lang == 'fa' %}پیشرفت بر اساس پروژه{% else %}Progress by project{% endif %}</span>
+                    <span class="pill">{% if lang == 'fa' %}جدید{% else %}New{% endif %}</span>
+                </div>
+                <p class="chart-subtitle">{% if lang == 'fa' %}رکوردهای بررسی‌شده در مقایسه با کل رکوردهای تخصیص‌یافته.{% else %}Reviewed rows versus all assigned rows.{% endif %}</p>
+                <canvas id="qc-project-chart" height="220" role="img" aria-label="QC performance by project"></canvas>
+                <p class="text-muted small" data-chart-empty="projects" hidden>{% if lang == 'fa' %}داده‌ای برای نمایش نمودار پروژه وجود ندارد.{% else %}No project data available for this view.{% endif %}</p>
+            </div>
+            <div class="chart-shell">
+                <div class="chart-title">
+                    <span>{% if lang == 'fa' %}سهم بازبین‌ها{% else %}Reviewer contribution{% endif %}</span>
+                    <span class="pill">{% if lang == 'fa' %}جدید{% else %}New{% endif %}</span>
+                </div>
+                <p class="chart-subtitle">{% if lang == 'fa' %}سهم رکوردهای تکمیل‌شده توسط هر بازبین.{% else %}Share of completed rows handled by each reviewer.{% endif %}</p>
+                <canvas id="qc-reviewer-chart" height="220" role="img" aria-label="QC reviewer contribution"></canvas>
+                <p class="text-muted small" data-chart-empty="reviewers" hidden>{% if lang == 'fa' %}داده‌ای برای نمایش نمودار بازبین‌ها وجود ندارد.{% else %}No reviewer data available for this view.{% endif %}</p>
+            </div>
+            <div class="chart-shell">
+                <div class="chart-title">
+                    <span>{% if lang == 'fa' %}روند زمانی{% else %}Daily trend{% endif %}</span>
+                    <span class="pill">{% if lang == 'fa' %}جدید{% else %}New{% endif %}</span>
+                </div>
+                <p class="chart-subtitle">{% if lang == 'fa' %}حجم رکوردهای دریافت‌شده و تکمیل‌شده در گذر زمان.{% else %}Rows received and completed over time.{% endif %}</p>
+                <canvas id="qc-timeline-chart" height="220" role="img" aria-label="QC daily trend"></canvas>
+                <p class="text-muted small" data-chart-empty="timeline" hidden>{% if lang == 'fa' %}برای بازهٔ انتخاب‌شده روندی ثبت نشده است.{% else %}No timeline data for the selected filters.{% endif %}</p>
+            </div>
         </div>
     </div>
 
@@ -320,4 +380,149 @@
         </ul>
     </div>
 </div>
+{% block extra_scripts %}
+    {{ block.super }}
+    <script id="qc-chart-data" type="application/json">{{ chart_data|safe }}</script>
+    <script>
+        (function() {
+            if (typeof Chart === 'undefined') { return; }
+            const dataEl = document.getElementById('qc-chart-data');
+            if (!dataEl) { return; }
+            const lang = '{{ lang }}';
+            const chartData = JSON.parse(dataEl.textContent || '{}');
+
+            function palette(opacity) {
+                return {
+                    primary: `rgba(79, 70, 229, ${opacity})`,
+                    accent: `rgba(16, 185, 129, ${opacity})`,
+                    neutral: `rgba(148, 163, 184, ${opacity})`,
+                };
+            }
+
+            function showEmpty(key) {
+                const el = document.querySelector(`[data-chart-empty="${key}"]`);
+                if (el) { el.hidden = false; }
+            }
+
+            function buildProjectChart() {
+                const payload = chartData.projects || {};
+                if (!payload.labels || !payload.labels.length) { showEmpty('projects'); return; }
+                const ctx = document.getElementById('qc-project-chart');
+                if (!ctx) { return; }
+                const colors = palette(0.85);
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: payload.labels,
+                        datasets: [
+                            {
+                                label: lang === 'fa' ? 'کل رکورد' : 'Total rows',
+                                data: payload.totals,
+                                backgroundColor: palette(0.2).neutral,
+                                borderColor: palette(0.75).neutral,
+                                borderWidth: 1,
+                                stack: 'rows',
+                            },
+                            {
+                                label: lang === 'fa' ? 'تکمیل شده' : 'Completed',
+                                data: payload.completed,
+                                backgroundColor: colors.primary,
+                                borderColor: palette(1).primary,
+                                borderWidth: 1,
+                                stack: 'rows',
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: true },
+                            tooltip: { mode: 'index', intersect: false },
+                        },
+                        scales: {
+                            x: { stacked: true },
+                            y: { stacked: true, beginAtZero: true },
+                        },
+                    },
+                });
+            }
+
+            function buildReviewerChart() {
+                const payload = chartData.reviewers || {};
+                if (!payload.labels || !payload.labels.length) { showEmpty('reviewers'); return; }
+                const ctx = document.getElementById('qc-reviewer-chart');
+                if (!ctx) { return; }
+                const colors = payload.labels.map((_, idx) => {
+                    const base = 0.45 + (idx % 4) * 0.1;
+                    return `rgba(14, 165, 233, ${base})`;
+                });
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: payload.labels,
+                        datasets: [
+                            {
+                                label: lang === 'fa' ? 'رکورد تکمیل‌شده' : 'Completed rows',
+                                data: payload.completed,
+                                backgroundColor: colors,
+                                borderColor: palette(1).neutral,
+                                borderWidth: 1,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '55%',
+                        plugins: {
+                            legend: { position: 'bottom' },
+                        },
+                    },
+                });
+            }
+
+            function buildTimelineChart() {
+                const payload = chartData.timeline || {};
+                if (!payload.labels || !payload.labels.length) { showEmpty('timeline'); return; }
+                const ctx = document.getElementById('qc-timeline-chart');
+                if (!ctx) { return; }
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: payload.labels,
+                        datasets: [
+                            {
+                                label: lang === 'fa' ? 'کل رکورد' : 'Total rows',
+                                data: payload.totals,
+                                borderColor: palette(0.9).neutral,
+                                backgroundColor: palette(0.2).neutral,
+                                tension: 0.2,
+                                fill: false,
+                            },
+                            {
+                                label: lang === 'fa' ? 'تکمیل شده' : 'Completed',
+                                data: payload.completed,
+                                borderColor: palette(0.95).accent,
+                                backgroundColor: palette(0.15).accent,
+                                tension: 0.2,
+                                fill: true,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom' } },
+                        scales: { y: { beginAtZero: true } },
+                    },
+                });
+            }
+
+            buildProjectChart();
+            buildReviewerChart();
+            buildTimelineChart();
+        })();
+    </script>
+{% endblock %}
 {% endblock %}
