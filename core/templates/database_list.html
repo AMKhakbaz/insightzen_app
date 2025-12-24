@@ -35,41 +35,62 @@
             .database-actions {
                 position: relative;
                 display: inline-flex;
-            }
-            .database-actions summary {
-                list-style: none;
-                cursor: pointer;
-            }
-            .database-actions summary::-webkit-details-marker {
-                display: none;
+                align-items: center;
+                justify-content: center;
             }
             .database-actions__toggle {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                width: 36px;
-                height: 32px;
-                border-radius: 8px;
+                width: 40px;
+                height: 36px;
+                border-radius: 10px;
                 border: 1px solid #e2e8f0;
                 background: #fff;
+                color: #0f172a;
+                transition: border-color 0.15s ease, box-shadow 0.15s ease;
+            }
+            .database-actions__toggle:hover,
+            .database-actions__toggle:focus-visible {
+                border-color: #94a3b8;
+                box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+                outline: none;
             }
             .database-actions__menu {
                 position: absolute;
                 right: 0;
                 top: calc(100% + 0.5rem);
-                min-width: 200px;
+                min-width: 220px;
                 background: #fff;
-                border-radius: 12px;
+                border-radius: 14px;
                 border: 1px solid #e2e8f0;
-                box-shadow: 0 16px 24px rgba(15, 23, 42, 0.12);
-                padding: 0.5rem;
-                z-index: 10;
-                display: grid;
+                box-shadow: 0 20px 30px rgba(15, 23, 42, 0.18);
+                padding: 0.4rem;
+                z-index: 20;
+                display: none;
+                grid-template-columns: 1fr;
                 gap: 0.35rem;
+            }
+            .database-actions__menu.is-open {
+                display: grid;
             }
             .database-actions__menu .btn {
                 justify-content: flex-start;
                 width: 100%;
+                border-radius: 10px;
+                padding: 0.45rem 0.6rem;
+            }
+            .database-actions__divider {
+                height: 1px;
+                background: #e2e8f0;
+                margin: 0.25rem 0;
+            }
+            .database-actions__label {
+                font-size: 0.75rem;
+                color: #64748b;
+                text-transform: uppercase;
+                letter-spacing: 0.03em;
+                padding: 0 0.4rem;
             }
         </style>
         <table id="database-table" class="table" data-table="interactive" data-filter-context="database_list" data-empty-text="{% if lang == 'fa' %}هیچ پایگاه داده‌ای مطابق فیلتر نیست.{% else %}No databases match your filters.{% endif %}" data-search-text="{% if lang == 'fa' %}در حال جست‌وجو…{% else %}Searching…{% endif %}">
@@ -141,30 +162,36 @@
                     <td>{{ entry.asset_id|default_if_none:'' }}</td>
                     <td>{% if entry.status %}<span class="text-success">✓</span>{% else %}<span class="text-danger">×</span>{% endif %}</td>
                     <td>
-                        <details class="database-actions">
-                            <summary class="database-actions__toggle" aria-label="{% if lang == 'fa' %}بیشتر{% else %}More actions{% endif %}">
+                        <div class="database-actions" data-action-menu>
+                            <button type="button" class="database-actions__toggle" data-action-toggle aria-haspopup="true" aria-expanded="false" aria-label="{% if lang == 'fa' %}بیشتر{% else %}More actions{% endif %}">
                                 <span aria-hidden="true">⋯</span>
-                            </summary>
-                            <div class="database-actions__menu">
-                                <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary">
+                            </button>
+                            <div class="database-actions__menu" data-action-panel role="menu">
+                                <div class="database-actions__label">{% if lang == 'fa' %}مدیریت{% else %}Manage{% endif %}</div>
+                                <a href="{% url 'database_edit' entry.pk %}" class="btn btn-sm btn-secondary" role="menuitem">
                                     <span class="btn__icon" aria-hidden="true">
                                         <img src="{% static 'core/icons/edit.svg' %}" alt="">
                                     </span>
                                     <span>{% if lang == 'fa' %}ویرایش{% else %}Edit{% endif %}</span>
                                 </a>
+                                <a href="{% url 'database_view' entry.pk %}" class="btn btn-sm btn-outline" role="menuitem">
+                                    {% if lang == 'fa' %}نمایش داده‌ها{% else %}View Data{% endif %}
+                                </a>
+                                <div class="database-actions__divider"></div>
+                                <div class="database-actions__label">{% if lang == 'fa' %}همگام‌سازی{% else %}Sync{% endif %}</div>
                                 <form action="{% url 'database_update' entry.pk %}" method="post">
                                     {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-outline">{% if lang == 'fa' %}به‌روزرسانی{% else %}Update{% endif %}</button>
+                                    <button type="submit" class="btn btn-sm btn-outline" role="menuitem">{% if lang == 'fa' %}به‌روزرسانی{% else %}Update{% endif %}</button>
                                 </form>
                                 <form action="{% url 'database_update' entry.pk %}" method="post">
                                     {% csrf_token %}
                                     <input type="hidden" name="mode" value="full">
-                                    <button type="submit" class="btn btn-sm btn-outline btn-danger">{% if lang == 'fa' %}به‌روزرسانی کامل{% else %}Full Refresh{% endif %}</button>
+                                    <button type="submit" class="btn btn-sm btn-outline btn-danger" role="menuitem">{% if lang == 'fa' %}به‌روزرسانی کامل{% else %}Full Refresh{% endif %}</button>
                                 </form>
-                                <a href="{% url 'database_view' entry.pk %}" class="btn btn-sm btn-outline">{% if lang == 'fa' %}نمایش داده‌ها{% else %}View Data{% endif %}</a>
+                                <div class="database-actions__divider"></div>
                                 <form action="{% url 'database_delete' entry.pk %}" method="post" onsubmit="return confirm('{% if lang == 'fa' %}آیا مطمئن هستید؟{% else %}Are you sure?{% endif %}');">
                                     {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-outline">
+                                    <button type="submit" class="btn btn-sm btn-outline" role="menuitem">
                                         <span class="btn__icon" aria-hidden="true">
                                             <img src="{% static 'core/icons/delete.svg' %}" alt="">
                                         </span>
@@ -172,7 +199,7 @@
                                     </button>
                                 </form>
                             </div>
-                        </details>
+                        </div>
                     </td>
                 </tr>
                 {% empty %}
@@ -182,4 +209,46 @@
         </table>
     </div>
 </div>
+<script>
+    (() => {
+        const menus = Array.from(document.querySelectorAll('[data-action-menu]'));
+        if (!menus.length) return;
+
+        const closeAll = () => {
+            menus.forEach((menu) => {
+                const panel = menu.querySelector('[data-action-panel]');
+                const toggle = menu.querySelector('[data-action-toggle]');
+                if (panel) panel.classList.remove('is-open');
+                if (toggle) toggle.setAttribute('aria-expanded', 'false');
+            });
+        };
+
+        menus.forEach((menu) => {
+            const toggle = menu.querySelector('[data-action-toggle]');
+            const panel = menu.querySelector('[data-action-panel]');
+            if (!toggle || !panel) return;
+            toggle.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const isOpen = panel.classList.contains('is-open');
+                closeAll();
+                if (!isOpen) {
+                    panel.classList.add('is-open');
+                    toggle.setAttribute('aria-expanded', 'true');
+                }
+            });
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest('[data-action-menu]')) {
+                closeAll();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeAll();
+            }
+        });
+    })();
+</script>
 {% endblock %}

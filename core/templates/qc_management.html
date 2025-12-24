@@ -100,6 +100,27 @@
                     <label class="qc-performance__label" for="perf-end">{% if lang == 'fa' %}تا تاریخ{% else %}End date{% endif %}</label>
                     <input type="date" id="perf-end" name="perf_end" class="form-control form-control-sm" value="{{ perf_filters.end }}">
                 </div>
+                <div class="filter-field">
+                    <label class="qc-performance__label" for="perf-reviewers">{% if lang == 'fa' %}بازبین‌ها{% else %}Reviewers{% endif %}</label>
+                    <select id="perf-reviewers" name="perf_reviewers" multiple class="form-select form-select-sm">
+                        {% for reviewer in perf_reviewers %}
+                            <option value="{{ reviewer.id }}" {% if reviewer.id in selected_perf_reviewers %}selected{% endif %}>
+                                {{ reviewer.get_full_name|default:reviewer.username }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">
+                        {% if lang == 'fa' %}خالی بگذارید تا همه بازبین‌ها لحاظ شوند.{% else %}Leave blank to include all reviewers.{% endif %}
+                    </small>
+                </div>
+                <div class="filter-field">
+                    <label class="qc-performance__label" for="perf-status">{% if lang == 'fa' %}وضعیت{% else %}Status{% endif %}</label>
+                    <select id="perf-status" name="perf_status" class="form-select form-select-sm">
+                        <option value="all" {% if perf_filters.status == 'all' %}selected{% endif %}>{% if lang == 'fa' %}همه{% else %}All{% endif %}</option>
+                        <option value="completed" {% if perf_filters.status == 'completed' %}selected{% endif %}>{% if lang == 'fa' %}تکمیل‌شده{% else %}Completed{% endif %}</option>
+                        <option value="in_progress" {% if perf_filters.status == 'in_progress' %}selected{% endif %}>{% if lang == 'fa' %}در حال انجام{% else %}In progress{% endif %}</option>
+                    </select>
+                </div>
                 <div class="filter-field" style="align-self:end;">
                     <button type="submit" class="btn btn-primary btn-sm w-100">{% if lang == 'fa' %}اعمال فیلتر{% else %}Apply filters{% endif %}</button>
                 </div>
@@ -307,8 +328,12 @@
         {% for project_id in selected_perf_projects %}
             <input type="hidden" name="perf_projects" value="{{ project_id }}">
         {% endfor %}
+        {% for reviewer_id in selected_perf_reviewers %}
+            <input type="hidden" name="perf_reviewers" value="{{ reviewer_id }}">
+        {% endfor %}
         <input type="hidden" name="perf_start" value="{{ perf_filters.start }}">
         <input type="hidden" name="perf_end" value="{{ perf_filters.end }}">
+        <input type="hidden" name="perf_status" value="{{ perf_filters.status }}">
     </form>
 
     {% if selected_entry %}
@@ -490,6 +515,15 @@
                             <input type="hidden" name="entry" value="{% if selected_entry %}{{ selected_entry.pk }}{% endif %}">
                             <input type="hidden" name="phone_num" value="{{ phone_num }}">
                             <input type="hidden" name="page_size" value="{{ page_size }}">
+                            {% for project_id in selected_perf_projects %}
+                                <input type="hidden" name="perf_projects" value="{{ project_id }}">
+                            {% endfor %}
+                            {% for reviewer_id in selected_perf_reviewers %}
+                                <input type="hidden" name="perf_reviewers" value="{{ reviewer_id }}">
+                            {% endfor %}
+                            <input type="hidden" name="perf_start" value="{{ perf_filters.start }}">
+                            <input type="hidden" name="perf_end" value="{{ perf_filters.end }}">
+                            <input type="hidden" name="perf_status" value="{{ perf_filters.status }}">
                             {% for filter in assignment_filters %}
                                 <input type="hidden" name="filter_{{ filter.index }}" value="{{ filter.value }}">
                             {% endfor %}

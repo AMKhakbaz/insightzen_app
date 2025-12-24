@@ -1403,7 +1403,7 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         project_qs = project_qs.filter(memberships__user=user, memberships__qc_management=True)
     projects = list(project_qs.distinct().order_by('name'))
 
-    perf_project_ids = _parse_int_param_list(request.GET.get('perf_projects'))
+    perf_project_ids = _parse_int_param_list(request.GET.getlist('perf_projects'))
     selected_perf_projects = [p for p in projects if not perf_project_ids or p.id in perf_project_ids]
     if perf_project_ids and not selected_perf_projects:
         messages.warning(
@@ -1417,6 +1417,10 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
 
     perf_start = _parse_iso_datetime_param(request.GET.get('perf_start'))
     perf_end = _parse_iso_datetime_param(request.GET.get('perf_end'))
+    perf_reviewer_ids = _parse_int_param_list(request.GET.getlist('perf_reviewers'))
+    perf_status = (request.GET.get('perf_status') or 'all').strip().lower()
+    if perf_status not in {'all', 'completed', 'in_progress'}:
+        perf_status = 'all'
 
     perf_tasks_qs = ReviewTask.objects.filter(entry__project__in=selected_perf_projects).select_related(
         'reviewer',
@@ -1426,6 +1430,8 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         perf_tasks_qs = perf_tasks_qs.filter(created_at__gte=perf_start)
     if perf_end:
         perf_tasks_qs = perf_tasks_qs.filter(created_at__lte=perf_end)
+    if perf_reviewer_ids:
+        perf_tasks_qs = perf_tasks_qs.filter(reviewer_id__in=perf_reviewer_ids)
 
     perf_rows_qs = ReviewRow.objects.filter(task__in=perf_tasks_qs).select_related(
         'task__reviewer',
@@ -1435,10 +1441,20 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         perf_rows_qs = perf_rows_qs.filter(created_at__gte=perf_start)
     if perf_end:
         perf_rows_qs = perf_rows_qs.filter(created_at__lte=perf_end)
+    if perf_status == 'completed':
+        perf_rows_qs = perf_rows_qs.filter(completed_at__isnull=False)
+    elif perf_status == 'in_progress':
+        perf_rows_qs = perf_rows_qs.filter(completed_at__isnull=True)
 
     perf_summary, perf_reviewer_rows, perf_project_rows = _aggregate_qc_performance(
         perf_tasks_qs,
         perf_rows_qs,
+    )
+
+    perf_reviewers = (
+        User.objects.filter(review_tasks__entry__project__in=selected_perf_projects)
+        .distinct()
+        .order_by('first_name', 'last_name', 'username')
     )
 
     reviewer_chart_rows = perf_reviewer_rows[:8]
@@ -1730,9 +1746,12 @@ def qc_management_view(request: HttpRequest) -> HttpResponse:
         'qc_assignment_endpoint': reverse('qc_assignment_assign'),
         'perf_projects': projects,
         'selected_perf_projects': [p.id for p in selected_perf_projects],
+        'perf_reviewers': perf_reviewers,
+        'selected_perf_reviewers': perf_reviewer_ids,
         'perf_filters': {
             'start': request.GET.get('perf_start', ''),
             'end': request.GET.get('perf_end', ''),
+            'status': perf_status,
         },
         'perf_summary': perf_summary,
         'perf_reviewer_rows': perf_reviewer_rows,
