@@ -7,7 +7,16 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Interview, Membership, Profile, Project
+from core.models import (
+    DatabaseEntry,
+    Interview,
+    Membership,
+    Profile,
+    Project,
+    ReviewAction,
+    ReviewRow,
+    ReviewTask,
+)
 
 
 class HomeDashboardDataTests(TestCase):
@@ -83,3 +92,66 @@ class HomeDashboardDataTests(TestCase):
         self.assertEqual(data['summary']['failed_calls'], 2)
         self.assertAlmostEqual(data['summary']['success_rate'], 33.3, places=1)
         self.assertIn('project', data['top_summary'].lower())
+
+
+class HomeDashboardVisibilityTests(TestCase):
+    """Ensure the home view only renders the dashboard when data exists."""
+
+    def setUp(self) -> None:
+        today = timezone.now().date()
+        self.project = Project.objects.create(
+            name='Gamma Study',
+            status=True,
+            types=['Tracking'],
+            start_date=today - timedelta(days=7),
+            deadline=today + timedelta(days=14),
+            sample_size=50,
+        )
+
+    def _create_user(self, username: str = 'user@example.com') -> User:
+        user = User.objects.create_user(username, password='secret123')
+        Profile.objects.create(user=user, organization=False, phone='01234567890')
+        return user
+
+    def _record_call(self, user: User) -> None:
+        Interview.objects.create(project=self.project, user=user, status=True, code=200)
+
+    def _record_review(self, user: User) -> None:
+        entry = DatabaseEntry.objects.create(project=self.project, db_name='Main')
+        task = ReviewTask.objects.create(entry=entry, reviewer=user, task_size=1, reviewed_count=0)
+        row = ReviewRow.objects.create(task=task, submission_id='s1', data={})
+        ReviewAction.objects.create(row=row, action=ReviewAction.Action.STARTED, metadata={})
+
+    def test_dashboard_shown_when_user_has_call_and_review_activity(self) -> None:
+        user = self._create_user('caller-reviewer@example.com')
+        self._record_call(user)
+        self._record_review(user)
+        self.client.force_login(user)
+
+        response = self.client.get(reverse('home'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['show_dashboard'])
+        self.assertContains(response, 'data-dashboard-root')
+
+    def test_dashboard_hidden_when_only_call_activity(self) -> None:
+        user = self._create_user('caller-only@example.com')
+        self._record_call(user)
+        self.client.force_login(user)
+
+        response = self.client.get(reverse('home'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context['show_dashboard'])
+        self.assertNotContains(response, 'data-dashboard-root')
+
+    def test_dashboard_hidden_when_only_review_activity(self) -> None:
+        user = self._create_user('reviewer-only@example.com')
+        self._record_review(user)
+        self.client.force_login(user)
+
+        response = self.client.get(reverse('home'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context['show_dashboard'])
+        self.assertNotContains(response, 'data-dashboard-root')

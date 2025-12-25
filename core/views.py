@@ -312,7 +312,7 @@ def home(request: HttpRequest) -> HttpResponse:
     lang = request.session.get('lang', 'en')
     has_call_activity = Interview.objects.filter(user=request.user).exists()
     has_review_activity = ReviewAction.objects.filter(row__task__reviewer=request.user).exists()
-    show_dashboard = has_call_activity or has_review_activity
+    show_dashboard = has_call_activity and has_review_activity
     dashboard_payload = _build_interviewer_dashboard_payload(request.user, lang) if show_dashboard else None
     return render(
         request,
@@ -2182,15 +2182,16 @@ def qc_performance_dashboard(request: HttpRequest) -> HttpResponse:
             messages.error(request, _localise_text(lang, 'No projects available for QC analytics.', 'پروژه‌ای برای تحلیل QC در دسترس نیست.'))
         return redirect('home')
 
-    project_ids = _parse_int_param_list(request.GET.get('projects'))
-    selected_projects = [p for p in accessible_projects if not project_ids or p.id in project_ids]
+    project_ids = _parse_int_param_list(request.GET.getlist('projects') or request.GET.get('projects'))
+    selected_projects = [p for p in accessible_projects if p.id in project_ids]
+    projects_for_query = selected_projects if project_ids else accessible_projects
     if project_ids and not selected_projects:
         messages.warning(request, _localise_text(lang, 'No matching projects for the selected filter.', 'هیچ پروژه‌ای با فیلتر انتخاب‌شده یافت نشد.'))
 
     start = _parse_iso_datetime_param(request.GET.get('start'))
     end = _parse_iso_datetime_param(request.GET.get('end'))
 
-    tasks_qs = ReviewTask.objects.filter(entry__project__in=selected_projects).select_related('reviewer', 'entry__project')
+    tasks_qs = ReviewTask.objects.filter(entry__project__in=projects_for_query).select_related('reviewer', 'entry__project')
     if start:
         tasks_qs = tasks_qs.filter(created_at__gte=start)
     if end:
@@ -4025,13 +4026,19 @@ def membership_edit(request: HttpRequest, membership_id: int) -> HttpResponse:
         form.fields['project'].queryset = Project.objects.filter(pk=membership.project.pk)
         form.fields['emails'].widget = forms.HiddenInput()  # type: ignore
         form.fields['project'].widget = forms.HiddenInput()  # type: ignore
+    lang = request.session.get('lang', 'en')
     return render(
         request,
         'membership_form.html',
         {
             'form': form,
             'title': 'Edit Membership',
-            'lang': request.session.get('lang', 'en'),
+            'lang': lang,
+            'breadcrumbs': _build_breadcrumbs(
+                lang,
+                (_localise_text(lang, 'Memberships', 'عضویت‌ها'), reverse('membership_list')),
+                (_localise_text(lang, 'Edit Membership', 'ویرایش دسترسی کاربر'), ''),
+            ),
         },
     )
 

@@ -238,7 +238,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
         {
             'key': 'management',
             'title': {'en': 'Management', 'fa': 'مدیریت'},
-            'icon': 'folder',
+            'icon': 'settings',
             'collapsible': True,
             'default_open': True,
             'visible': True,
@@ -289,7 +289,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
                     'visible': True,
                 },
                 {
-                    'icon': 'bar-chart-2',
+                    'icon': 'trending-up',
                     'label': {'en': 'Collection Performance', 'fa': 'کارایی گردآوری'},
                     'url': _resolve_url('collection_performance'),
                     'disabled': not panel_active('collection_performance'),
@@ -379,7 +379,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
             'visible': True,
             'items': [
                 {
-                    'icon': 'grid',
+                    'icon': 'table',
                     'label': {'en': 'Tabulation', 'fa': 'جدول‌بندی'},
                     'url': _resolve_url('tabulation'),
                     'disabled': not panel_active('tabulation'),

@@ -79,6 +79,9 @@
                     {% block breadcrumbs %}
                         {% with breadcrumbs|default:'' as breadcrumbs %}
                             {% include 'partials/breadcrumbs.html' with items=breadcrumbs %}
+                            {% if not breadcrumbs or breadcrumbs|length < 2 %}
+                                {% include 'partials/back_button.html' with lang=lang %}
+                            {% endif %}
                         {% endwith %}
                     {% endblock %}
                 <script id="django-messages-data" type="application/json">

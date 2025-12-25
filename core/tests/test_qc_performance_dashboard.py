@@ -82,3 +82,36 @@ class QCPerformanceDashboardTest(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/csv', response['Content-Type'])
+
+    def test_dashboard_accepts_multiple_project_filters(self) -> None:
+        extra_project = Project.objects.create(
+            name='QC Project 2',
+            status=True,
+            types=['survey'],
+            start_date=timezone.now().date(),
+            deadline=timezone.now().date() + timedelta(days=5),
+            sample_size=30,
+        )
+        Membership.objects.create(
+            user=self.owner,
+            project=extra_project,
+            is_owner=True,
+            qc_performance=True,
+            review_data=True,
+        )
+        entry = DatabaseEntry.objects.create(project=extra_project, db_name='Secondary')
+        ReviewTask.objects.create(entry=entry, reviewer=self.reviewer, task_size=1)
+
+        self.client.force_login(self.owner)
+
+        response = self.client.get(reverse('qc_performance_dashboard'), {'projects': [extra_project.id]})
+        self.assertEqual(response.status_code, 200)
+        summary = response.context['summary']
+        self.assertEqual(summary['total_tasks'], 1)
+        self.assertEqual(response.context['selected_projects'], [extra_project.id])
+
+        response = self.client.get(
+            reverse('qc_performance_dashboard'),
+            {'projects': [self.project.id, extra_project.id]},
+        )
+        self.assertEqual(response.context['summary']['total_tasks'], 2)

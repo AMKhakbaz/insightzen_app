@@ -1,0 +1,9 @@
+<nav class="breadcrumb breadcrumb--fallback" aria-label="{% if lang == 'fa' %}بازگشت{% else %}Back navigation{% endif %}">
+  <div class="breadcrumb__inner">
+    {% url 'home' as home_url %}
+    <a class="breadcrumb__back" href="{{ request.META.HTTP_REFERER|default:home_url }}">
+      <span aria-hidden="true" class="breadcrumb__back-icon">←</span>
+      <span class="breadcrumb__back-text">{% if lang == 'fa' %}بازگشت{% else %}Back{% endif %}</span>
+    </a>
+  </div>
+</nav>
