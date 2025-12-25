@@ -1,15 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}{{ title }}{% endblock %}
 
-{% block breadcrumbs %}{% endblock %}
-
 {% block content %}
 <div class="card" style="max-width:900px;margin:2rem auto;">
-    {% if title == 'Add User to Project' %}
-        {% with breadcrumbs|default:'' as breadcrumbs %}
-            {% include 'partials/breadcrumbs.html' with items=breadcrumbs %}
-        {% endwith %}
-    {% endif %}
     <h1>{% if lang == 'fa' %}
         {% if title == 'Add User to Project' %}افزودن کاربر به پروژه{% elif title == 'Edit Membership' %}ویرایش دسترسی کاربر{% else %}دسترسی{% endif %}
     {% else %}

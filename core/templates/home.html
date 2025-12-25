@@ -2,8 +2,6 @@
 {% load static %}
 {% block title %}{% if lang == 'fa' %}خانه{% else %}Home{% endif %}{% endblock %}
 
-{% block breadcrumbs %}{% endblock %}
-
 {% block content %}
 {% if dashboard_payload %}
 <div class="card" data-dashboard-root data-endpoint="{% url 'interviewer_dashboard_data' %}">

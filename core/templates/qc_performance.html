@@ -41,12 +41,17 @@
         gap: 0.35rem;
     }
     .filter-control {
+        --filter-control-size: 3.25rem;
         width: 100%;
-        max-width: 280px;
+        max-width: 320px;
     }
     .filter-control.form-control-sm,
-    .filter-control.form-select-sm {
-        min-height: 2.25rem;
+    .filter-control.form-select-sm,
+    .filter-control[multiple] {
+        min-height: var(--filter-control-size);
+    }
+    .filter-control[multiple] {
+        height: var(--filter-control-size);
     }
     .filter-actions {
         align-items: flex-start;
@@ -123,16 +128,13 @@
         <div class="filter-shell">
             <div class="filter-field">
                 <label class="qc-label" for="projects">{% if lang == 'fa' %}پروژه‌ها{% else %}Projects{% endif %}</label>
-                <select id="projects" name="projects" class="form-select form-select-sm filter-control">
-                    <option value="" {% if not selected_projects %}selected{% endif %}>
-                        {% if lang == 'fa' %}همهٔ پروژه‌های مجاز{% else %}All permitted projects{% endif %}
-                    </option>
+                <select id="projects" name="projects" class="form-select form-select-sm filter-control" multiple size="5" aria-describedby="projects-help">
                     {% for project in projects %}
                         <option value="{{ project.id }}" {% if project.id in selected_projects %}selected{% endif %}>{{ project.name }}</option>
                     {% endfor %}
                 </select>
-                <small class="text-muted">
-                    {% if lang == 'fa' %}خالی بگذارید تا همه پروژه‌های مجاز نمایش داده شوند.{% else %}Leave blank to include all permitted projects.{% endif %}
+                <small id="projects-help" class="text-muted">
+                    {% if lang == 'fa' %}چیزی انتخاب نکنید تا همه پروژه‌های مجاز نمایش داده شوند؛ یا چند پروژه را با نگه‌داشتن Ctrl/Command برگزینید.{% else %}Leave unselected to include all permitted projects, or choose multiple projects with Ctrl/Command.{% endif %}
                 </small>
             </div>
             <div class="filter-field">
