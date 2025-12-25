@@ -145,14 +145,17 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   const passwordToggleButtons = document.querySelectorAll('[data-password-toggle]');
-  const updatePasswordToggleState = (button, input, showIcon, hideIcon) => {
+  const updatePasswordToggleState = (button, input, iconWrapper) => {
     const isVisible = input.type === 'text';
     button.setAttribute('aria-pressed', isVisible.toString());
-    if (showIcon) {
-      showIcon.hidden = isVisible;
-    }
-    if (hideIcon) {
-      hideIcon.hidden = !isVisible;
+    if (iconWrapper) {
+      const icon = iconWrapper.querySelector('img');
+      const showIconSrc = iconWrapper.dataset.iconShow;
+      const hideIconSrc = iconWrapper.dataset.iconHide;
+      iconWrapper.dataset.state = isVisible ? 'visible' : 'hidden';
+      if (icon && showIconSrc && hideIconSrc) {
+        icon.src = isVisible ? hideIconSrc : showIconSrc;
+      }
     }
   };
 
@@ -165,8 +168,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!input) {
       return;
     }
-    const showIcon = button.querySelector('[data-password-toggle-show]');
-    const hideIcon = button.querySelector('[data-password-toggle-hide]');
+    const iconWrapper = button.querySelector('[data-password-toggle-icon]');
 
     button.addEventListener('click', () => {
       const shouldShow = input.type === 'password';
@@ -175,9 +177,9 @@ document.addEventListener('DOMContentLoaded', function () {
       } catch (error) {
         return;
       }
-      updatePasswordToggleState(button, input, showIcon, hideIcon);
+      updatePasswordToggleState(button, input, iconWrapper);
     });
 
-    updatePasswordToggleState(button, input, showIcon, hideIcon);
+    updatePasswordToggleState(button, input, iconWrapper);
   });
 });

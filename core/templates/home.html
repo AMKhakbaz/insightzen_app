@@ -5,6 +5,7 @@
 {% block breadcrumbs %}{% endblock %}
 
 {% block content %}
+{% if dashboard_payload %}
 <div class="card" data-dashboard-root data-endpoint="{% url 'interviewer_dashboard_data' %}">
     <div class="card-header" style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:center;">
         <div>
@@ -95,9 +96,12 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
+{% if dashboard_payload %}
 {{ dashboard_payload|json_script:"dashboard-data" }}
 <script src="{% static 'core/js/home_dashboard.js' %}"></script>
+{% endif %}
 {% endblock %}

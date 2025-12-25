@@ -321,7 +321,7 @@ def render_sidebar(context: Dict[str, Any]) -> Dict[str, Any]:
         {
             'key': 'quality-control',
             'title': {'en': 'Quality Control', 'fa': 'کنترل کیفیت'},
-            'icon': 'check-circle',
+            'icon': 'shield',
             'collapsible': True,
             'default_open': False,
             'visible': True,

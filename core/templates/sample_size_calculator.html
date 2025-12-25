@@ -29,12 +29,24 @@
     }
     .calc-card form {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 0.75rem;
-        margin-top: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        column-gap: 0.75rem;
+        row-gap: 0.9rem;
+        margin-top: 0.65rem;
     }
     .calc-card .form-control, .calc-card .form-select {
         width: 100%;
+        padding: 0.45rem 0.65rem;
+    }
+    .calc-card .btn {
+        padding: 0.35rem 0.9rem;
+    }
+    .calc-card .form-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: flex-end;
+        margin-top: 0.15rem;
     }
     .result-box {
         margin-top: 1rem;
@@ -207,7 +219,7 @@
                 <span>{% if lang == 'fa' %}نسبت برآوردی (٪){% else %}Assumed proportion (%) {% endif %}</span>
                 <input type="number" step="0.01" min="0.01" max="99" class="form-control" name="proportion" value="{{ inputs.proportion_estimate.proportion }}">
             </label>
-            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+            <div class="form-actions">
                 <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
             </div>
         </form>
@@ -265,7 +277,7 @@
                 <span>{% if lang == 'fa' %}انحراف معیار{% else %}Standard deviation{% endif %}</span>
                 <input type="number" step="0.01" min="0.0001" class="form-control" name="stddev" value="{{ inputs.mean_estimate.stddev }}">
             </label>
-            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+            <div class="form-actions">
                 <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
             </div>
         </form>
@@ -326,7 +338,7 @@
                 <span>{% if lang == 'fa' %}نسبت برآوردی (٪){% else %}Assumed proportion (%) {% endif %}</span>
                 <input type="number" step="0.01" min="0.01" max="99" class="form-control" name="proportion" value="{{ inputs.precision_check.proportion }}">
             </label>
-            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+            <div class="form-actions">
                 <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
             </div>
         </form>
@@ -385,7 +397,7 @@
                 <span>{% if lang == 'fa' %}حاشیه اطمینان اضافه (٪){% else %}Reserve buffer (%) {% endif %}</span>
                 <input type="number" step="0.1" min="0" class="form-control" name="reserve" value="{{ inputs.fieldwork_planner.reserve }}">
             </label>
-            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+            <div class="form-actions">
                 <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
             </div>
         </form>
@@ -452,7 +464,7 @@
                 <span>{% if lang == 'fa' %}اثر قابل تشخیص (تفاوت مطلق، ٪){% else %}Min detectable effect (% absolute) {% endif %}</span>
                 <input type="number" step="0.01" min="0.01" max="99" class="form-control" name="mde" value="{{ inputs.ab_proportion.mde }}">
             </label>
-            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+            <div class="form-actions">
                 <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
             </div>
         </form>
@@ -516,7 +528,7 @@
                 <span>{% if lang == 'fa' %}اثر قابل تشخیص (تفاوت مطلق){% else %}Min detectable difference (absolute) {% endif %}</span>
                 <input type="number" step="0.01" min="0.0001" class="form-control" name="mde" value="{{ inputs.ab_mean.mde }}">
             </label>
-            <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+            <div class="form-actions">
                 <button type="submit" class="btn btn-primary">{% if lang == 'fa' %}محاسبه{% else %}Calculate{% endif %}</button>
             </div>
         </form>

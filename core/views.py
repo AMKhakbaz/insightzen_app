@@ -310,13 +310,17 @@ def home(request: HttpRequest) -> HttpResponse:
     """Display a simple dashboard for the logged in user."""
     profile = getattr(request.user, 'profile', None)
     lang = request.session.get('lang', 'en')
-    dashboard_payload = _build_interviewer_dashboard_payload(request.user, lang)
+    has_call_activity = Interview.objects.filter(user=request.user).exists()
+    has_review_activity = ReviewAction.objects.filter(row__task__reviewer=request.user).exists()
+    show_dashboard = has_call_activity or has_review_activity
+    dashboard_payload = _build_interviewer_dashboard_payload(request.user, lang) if show_dashboard else None
     return render(
         request,
         'home.html',
         {
             'profile': profile,
             'dashboard_payload': dashboard_payload,
+            'show_dashboard': show_dashboard,
             'lang': lang,
             'breadcrumbs': _build_breadcrumbs(lang),
         },
@@ -3787,6 +3791,11 @@ def membership_add(request: HttpRequest) -> HttpResponse:
             'lang': lang,
             'workbook_form': workbook_form,
             'workbook_template_url': reverse('membership_export_workbook'),
+            'breadcrumbs': _build_breadcrumbs(
+                lang,
+                (_localise_text(lang, 'Memberships', 'عضویت‌ها'), reverse('membership_list')),
+                (_localise_text(lang, 'Add User to Project', 'افزودن کاربر به پروژه'), ''),
+            ),
         },
     )
 

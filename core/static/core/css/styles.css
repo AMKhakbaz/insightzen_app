@@ -611,10 +611,24 @@ body.rtl .breadcrumb__back-icon {
 
 .qc-management__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    column-gap: 1.1rem;
+    row-gap: 1.1rem;
     width: 100%;
-    align-items: start;
+    align-items: stretch;
+}
+
+.qc-management__panel {
+    width: 100%;
+    min-width: 340px;
+    max-width: 100%;
+    margin: 0;
+}
+
+.qc-management__grid .qc-card {
+    margin: 0;
+    max-width: none;
+    min-width: 0;
 }
 
 .qc-management .card {
@@ -807,14 +821,30 @@ body.rtl .breadcrumb__back-icon {
     font-size: var(--font-size-sm);
 }
 
+@media (max-width: 1024px) {
+    .qc-management__grid {
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        column-gap: 1rem;
+        row-gap: 1rem;
+    }
+
+    .qc-management__panel {
+        min-width: 320px;
+    }
+}
+
 @media (max-width: 720px) {
     .qc-toolbar__field--grow {
         grid-column: span 1;
     }
 
     .qc-management__grid {
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 0.9rem;
+        grid-template-columns: 1fr;
+        row-gap: 0.9rem;
+    }
+
+    .qc-management__panel {
+        min-width: 0;
     }
 }
 
@@ -1090,9 +1120,9 @@ body.rtl .breadcrumb__back-icon {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    padding: 0.55rem 1.3rem;
+    padding: 0.45rem 1rem;
     border: 1px solid transparent;
-    border-radius: 16px;
+    border-radius: 12px;
     cursor: pointer;
     background: var(--color-accent);
     color: var(--color-bg);
@@ -1178,7 +1208,6 @@ body.rtl .breadcrumb__back-icon {
 .btn-secondary {
     background: var(--color-surface);
     color: var(--color-accent);
-    border-radius: 999px;
     border: 1px solid var(--color-accent);
     text-decoration: none;
 }
@@ -2953,7 +2982,6 @@ body.rtl .calendar-panel__layout {
     background: transparent;
     border: 1px solid var(--color-border);
     color: var(--color-text);
-    border-radius: 999px;
     transition: background-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
 }
 
@@ -2964,9 +2992,9 @@ body.rtl .calendar-panel__layout {
 }
 
 .btn-sm {
-    padding: 0.25rem 0.6rem;
-    font-size: 0.85rem;
-    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.9rem;
+    border-radius: 10px;
 }
 
 .qc-review-actions {
@@ -2993,7 +3021,6 @@ body.rtl .calendar-panel__layout {
 .btn-danger {
     background: var(--color-danger);
     color: var(--color-bg);
-    border-radius: 999px;
     border: 1px solid transparent;
 }
 

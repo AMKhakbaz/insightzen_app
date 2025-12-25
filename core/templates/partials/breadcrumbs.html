@@ -6,9 +6,8 @@
       {% if trail %}
         {% with trail|last as back %}
           {% if back.url %}
-            <a href="{{ back.url }}" class="breadcrumb__back">
+            <a href="{{ back.url }}" class="breadcrumb__back" aria-label="{% if lang == 'fa' %}بازگشت{% else %}Back{% endif %}">
               <span aria-hidden="true" class="breadcrumb__back-icon">←</span>
-              <span class="breadcrumb__back-label">{% if lang == 'fa' %}بازگشت{% else %}Back{% endif %}</span>
             </a>
           {% endif %}
         {% endwith %}
