@@ -163,6 +163,12 @@ class Project(models.Model):
     start_date = models.DateField()
     deadline = models.DateField()
     sample_size = models.PositiveIntegerField()
+    survey_link = models.URLField(
+        max_length=500,
+        blank=True,
+        default='',
+        verbose_name='Survey Link',
+    )
     filled_samples = models.PositiveIntegerField(default=0)
     sample_source = models.CharField(
         max_length=20,
