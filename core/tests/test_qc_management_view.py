@@ -29,6 +29,7 @@ class QCManagementViewTests(TestCase):
             start_date=timezone.now().date() - timedelta(days=1),
             deadline=timezone.now().date() + timedelta(days=10),
             sample_size=10,
+            survey_link='https://example.com/survey',
             sample_source=Project.SampleSource.UPLOAD,
         )
         Membership.objects.create(user=self.user, project=self.project, is_owner=True, qc_management=True)

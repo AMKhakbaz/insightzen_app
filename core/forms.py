@@ -107,6 +107,7 @@ class ProjectForm(forms.ModelForm):
             'start_date',
             'deadline',
             'sample_size',
+            'survey_link',
             'sample_source',
             'sample_upload',
             'call_result_source',
@@ -119,6 +120,7 @@ class ProjectForm(forms.ModelForm):
             'start_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'deadline': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'sample_size': forms.NumberInput(attrs={'class': 'form-control'}),
+            'survey_link': forms.URLInput(attrs={'class': 'form-control', 'placeholder': 'https://example.com/survey'}),
             'sample_source': forms.Select(attrs={'class': 'form-select'}),
             'call_result_source': forms.Select(attrs={'class': 'form-select'}),
         }
@@ -129,6 +131,7 @@ class ProjectForm(forms.ModelForm):
         widget = self.fields['sample_upload'].widget
         widget.attrs.setdefault('class', 'form-control')
         widget.attrs.setdefault('accept', '.xlsx,.xls')
+        self.fields['survey_link'].required = True
         self.fields['call_result_upload'].required = False
         call_widget = self.fields['call_result_upload'].widget
         call_widget.attrs.setdefault('class', 'form-control')
