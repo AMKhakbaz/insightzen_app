@@ -33,6 +33,7 @@ class HomeDashboardDataTests(TestCase):
             start_date=today - timedelta(days=10),
             deadline=today + timedelta(days=5),
             sample_size=100,
+            survey_link='https://example.com/survey',
         )
         self.project_two = Project.objects.create(
             name='Beta Study',
@@ -41,6 +42,7 @@ class HomeDashboardDataTests(TestCase):
             start_date=today - timedelta(days=20),
             deadline=today + timedelta(days=3),
             sample_size=60,
+            survey_link='https://example.com/survey',
         )
         Membership.objects.create(
             user=self.user,
@@ -106,6 +108,7 @@ class HomeDashboardVisibilityTests(TestCase):
             start_date=today - timedelta(days=7),
             deadline=today + timedelta(days=14),
             sample_size=50,
+            survey_link='https://example.com/survey',
         )
 
     def _create_user(self, username: str = 'user@example.com') -> User:

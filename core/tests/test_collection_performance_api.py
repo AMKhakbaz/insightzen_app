@@ -22,6 +22,7 @@ class CollectionPerformanceAPITest(TestCase):
             start_date=timezone.now().date(),
             deadline=timezone.now().date() + timedelta(days=30),
             sample_size=100,
+            survey_link='https://example.com/survey',
         )
         Membership.objects.create(
             user=self.owner,

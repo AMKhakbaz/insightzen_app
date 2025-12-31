@@ -23,6 +23,7 @@ class TelephoneInterviewerViewTests(TestCase):
             start_date=timezone.now().date() - timedelta(days=1),
             deadline=timezone.now().date() + timedelta(days=7),
             sample_size=50,
+            survey_link='https://example.com/survey',
         )
         Membership.objects.create(
             user=self.user,
