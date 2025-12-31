@@ -20,6 +20,7 @@ class QCPerformanceDashboardTest(TestCase):
             start_date=timezone.now().date(),
             deadline=timezone.now().date() + timedelta(days=10),
             sample_size=50,
+            survey_link='https://example.com/survey',
         )
         Membership.objects.create(
             user=self.owner,
@@ -91,6 +92,7 @@ class QCPerformanceDashboardTest(TestCase):
             start_date=timezone.now().date(),
             deadline=timezone.now().date() + timedelta(days=5),
             sample_size=30,
+            survey_link='https://example.com/survey',
         )
         Membership.objects.create(
             user=self.owner,

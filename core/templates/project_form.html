@@ -56,6 +56,11 @@
             {{ form.sample_size }}
             {{ form.sample_size.errors }}
         </div>
+        <div>
+            {{ form.survey_link.label_tag }}
+            {{ form.survey_link }}
+            {{ form.survey_link.errors }}
+        </div>
         <div class="sample-config-block">
             <h2>{% if lang == 'fa' %}منبع نمونه پاسخگو{% else %}Respondent Sample Source{% endif %}</h2>
             <div>

@@ -110,6 +110,7 @@ class SampleUploadIngestTests(TestCase):
             start_date=timezone.now().date(),
             deadline=timezone.now().date(),
             sample_size=5,
+            survey_link='https://example.com/survey',
             sample_source=Project.SampleSource.DATABASE,
             call_result_source=Project.CallResultSource.DEFAULT,
         )

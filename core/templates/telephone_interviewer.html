@@ -45,7 +45,12 @@
                 {% endif %}
             <div style="margin-bottom:1rem;">
                 <div style="margin-bottom:0.5rem;"><strong>{% if lang == 'fa' %}نام:{% else %}Name:{% endif %}</strong> {{ person.full_name }}</div>
-                <div style="margin-bottom:0.5rem;"><strong>{% if lang == 'fa' %}شماره تلفن:{% else %}Phone:{% endif %}</strong> {{ mobile }}</div>
+                <div style="margin-bottom:0.5rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+                    <div><strong>{% if lang == 'fa' %}شماره تلفن:{% else %}Phone:{% endif %}</strong> {{ mobile }}</div>
+                    {% if selected_project.survey_link %}
+                        <a class="btn btn-secondary btn-sm" href="{{ selected_project.survey_link }}" target="_blank" rel="noopener noreferrer">Survey</a>
+                    {% endif %}
+                </div>
             </div>
             <div style="margin-bottom:0.5rem;">
                 <label>{% if lang == 'fa' %}کد وضعیت{% else %}Status Code{% endif %}</label>

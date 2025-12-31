@@ -33,6 +33,7 @@ class HomeDashboardDataTests(TestCase):
             start_date=today - timedelta(days=10),
             deadline=today + timedelta(days=5),
             sample_size=100,
+            survey_link='https://example.com/survey',
         )
         self.project_two = Project.objects.create(
             name='Beta Study',
@@ -41,6 +42,7 @@ class HomeDashboardDataTests(TestCase):
             start_date=today - timedelta(days=20),
             deadline=today + timedelta(days=3),
             sample_size=60,
+            survey_link='https://example.com/survey',
         )
         Membership.objects.create(
             user=self.user,
@@ -106,6 +108,7 @@ class HomeDashboardVisibilityTests(TestCase):
             start_date=today - timedelta(days=7),
             deadline=today + timedelta(days=14),
             sample_size=50,
+            survey_link='https://example.com/survey',
         )
 
     def _create_user(self, username: str = 'user@example.com') -> User:
@@ -133,6 +136,8 @@ class HomeDashboardVisibilityTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context['show_dashboard'])
         self.assertContains(response, 'data-dashboard-root')
+        self.assertNotContains(response, 'breadcrumb__back')
+        self.assertNotContains(response, 'breadcrumb--fallback')
 
     def test_dashboard_hidden_when_only_call_activity(self) -> None:
         user = self._create_user('caller-only@example.com')
@@ -144,6 +149,8 @@ class HomeDashboardVisibilityTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context['show_dashboard'])
         self.assertNotContains(response, 'data-dashboard-root')
+        self.assertNotContains(response, 'breadcrumb__back')
+        self.assertNotContains(response, 'breadcrumb--fallback')
 
     def test_dashboard_hidden_when_only_review_activity(self) -> None:
         user = self._create_user('reviewer-only@example.com')
@@ -155,3 +162,5 @@ class HomeDashboardVisibilityTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context['show_dashboard'])
         self.assertNotContains(response, 'data-dashboard-root')
+        self.assertNotContains(response, 'breadcrumb__back')
+        self.assertNotContains(response, 'breadcrumb--fallback')

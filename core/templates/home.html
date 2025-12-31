@@ -97,6 +97,8 @@
 {% endif %}
 {% endblock %}
 
+{% block breadcrumbs %}{# Home intentionally hides breadcrumb/back controls #}{% endblock %}
+
 {% block extra_scripts %}
 {% if dashboard_payload %}
 {{ dashboard_payload|json_script:"dashboard-data" }}

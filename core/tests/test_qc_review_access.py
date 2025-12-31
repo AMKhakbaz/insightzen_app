@@ -28,6 +28,7 @@ class QCReviewAccessTests(TestCase):
             start_date=timezone.now().date() - timedelta(days=1),
             deadline=timezone.now().date() + timedelta(days=10),
             sample_size=5,
+            survey_link='https://example.com/survey',
             sample_source=Project.SampleSource.UPLOAD,
         )
         self.entry = DatabaseEntry.objects.create(
