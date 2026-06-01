@@ -263,8 +263,24 @@ def payment(request: HttpRequest) -> HttpResponse:
     return render(request, 'payment.html', context)
 
 
+def _authenticate_by_email_or_username(request: HttpRequest, identifier: str, password: str) -> Optional[User]:
+    """Authenticate with either a Django username or the user's email address."""
+
+    identifier = identifier.strip()
+    candidates = [identifier]
+    email_match = User.objects.filter(email__iexact=identifier).only('username').first()
+    if email_match and email_match.username not in candidates:
+        candidates.append(email_match.username)
+
+    for username in candidates:
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            return user
+    return None
+
+
 def login_view(request: HttpRequest) -> HttpResponse:
-    """Authenticate a user via email and password."""
+    """Authenticate a user via email/username and password."""
     if request.user.is_authenticated:
         return redirect('home')
     lang = _get_lang(request)
@@ -273,7 +289,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
         if form.is_valid():
             email = form.cleaned_data['email']
             password = form.cleaned_data['password']
-            user = authenticate(username=email, password=password)
+            user = _authenticate_by_email_or_username(request, email, password)
             if user:
                 login(request, user)
                 return redirect('home')

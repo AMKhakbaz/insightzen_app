@@ -65,11 +65,12 @@ class RegistrationForm(forms.Form):
 
 
 class LoginForm(forms.Form):
-    """Simple login form requesting email and password."""
+    """Simple login form requesting an email/username and password."""
 
-    email = forms.EmailField(label='Email', widget=forms.EmailInput(attrs={
+    email = forms.CharField(label='Email or username', max_length=254, widget=forms.TextInput(attrs={
         'class': 'form-control',
         'placeholder': 'you@example.com',
+        'autocomplete': 'username',
     }))
     password = forms.CharField(label='Password', widget=forms.PasswordInput(attrs={
         'class': 'form-control',
