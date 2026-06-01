@@ -29,6 +29,34 @@ environments that need them. During startup Django mirrors canonical `PGHOST`
 values to the legacy `PG_HOST` style names (and vice versa) so settings,
 management commands and ETL scripts all target the same database.
 
+## Local Windows quick start
+
+Use a virtual environment inside the repository so PowerShell activation and
+subsequent package installs target the same Python environment:
+
+```powershell
+git clone git@github.com:AMKhakbaz/insightzen_app.git "$HOME\Desktop\insightzen_app"
+cd "$HOME\Desktop\insightzen_app"
+git fetch --all --prune
+git switch v0.2.17
+git pull --ff-only
+
+python --version
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
+python -m django --version
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+If you prefer to keep the environment outside the repository, create it as
+`..\.venv` and activate it with `..\.venv\Scripts\Activate.ps1`. The create
+and activate paths must match; otherwise PowerShell will keep using the global
+Python installation.
+
 ## Applying migrations on PostgreSQL deployments
 
 Enable the built-in PostgreSQL helpers in Django by ensuring
