@@ -13,9 +13,9 @@ Only new records (based on the `_id` field) are inserted on each run.
 
 Key modifications from the original script:
 
-* Database connection parameters (PG_HOST, PG_PORT, PG_DBNAME,
-  PG_USER, PG_PASSWORD) are obtained from environment variables
-  rather than being hardcoded.  This allows the Django management
+* Database connection parameters are obtained from environment variables
+  using the same PGHOST/PG_HOST aliases as Django settings rather than
+  being hardcoded.  This allows the Django management
   command to pass the application's database credentials through
   the environment prior to calling ``run_once``.
 * The module exposes a function ``run_once`` which executes a single
@@ -43,6 +43,8 @@ from typing import Any, Dict, List, Tuple, Optional, Iterator
 
 import os
 import requests
+
+from insightzen.db_env import env_value, primary_postgres_config
 import pandas as pd  # type: ignore
 import psycopg2  # type: ignore
 from psycopg2 import sql  # type: ignore
@@ -68,12 +70,14 @@ HTTP_TIMEOUT_SEC: int = int(os.getenv('HTTP_TIMEOUT_SEC', '60'))
 # Interval between syncs when running in loop mode (unused here)
 RUN_EVERY_SECONDS: int = int(os.getenv('RUN_EVERY_SECONDS', '600'))
 
-# PostgreSQL connection details (override via environment vars in management command)
-PG_HOST: str = os.getenv('PG_HOST', '127.0.0.1')
-PG_PORT: int = int(os.getenv('PG_PORT', '5432'))
-PG_DBNAME: str = os.getenv('PG_DBNAME', 'Temp_BAP')
-PG_USER: str = os.getenv('PG_USER', 'postgres')
-PG_PASSWORD: str = os.getenv('PG_PASSWORD', '123456789')
+# PostgreSQL connection details (override via environment vars in management command).
+# Keep these names for backward compatibility with callers that import them,
+# but resolve values from the shared alias-aware helpers so they match Django.
+PG_HOST: str = env_value(('PGHOST', 'PG_HOST', 'DB_HOST', 'POSTGRES_HOST'), 'localhost') or 'localhost'
+PG_PORT: int = int(env_value(('PGPORT', 'PG_PORT', 'DB_PORT', 'POSTGRES_PORT'), '5432') or '5432')
+PG_DBNAME: str = env_value(('PGDATABASE', 'PG_DBNAME', 'PG_DB', 'DB_NAME', 'POSTGRES_DB'), '') or ''
+PG_USER: str = env_value(('PGUSER', 'PG_USER', 'DB_USER', 'POSTGRES_USER'), '') or ''
+PG_PASSWORD: str = env_value(('PGPASSWORD', 'PG_PASSWORD', 'DB_PASSWORD', 'POSTGRES_PASSWORD'), '') or ''
 
 # Diagnostics configuration
 RUN_NULL_AUDIT: bool = os.getenv('RUN_NULL_AUDIT', 'True').lower() not in ('false', '0', 'no')
@@ -258,28 +262,26 @@ def parse_xls_full_paths(xls_path: str) -> Tuple[List[Tuple[str, str]], Dict[str
 def pg_connect() -> psycopg2.extensions.connection:
     """Establish a connection to PostgreSQL using the latest environment variables.
 
-    The ETL can run in different contexts.  When called from the Django
-    management command, the command temporarily sets the ``PG_HOST``,
-    ``PG_PORT``, ``PG_DBNAME``, ``PG_USER`` and ``PG_PASSWORD`` environment
-    variables to mirror the settings of the InsightZen application
-    database.  Import‑time constants (``PG_HOST``, ``PG_PORT``, etc.) are
-    therefore *not* reliable if environment variables have been updated
-    after import.  This helper reads the connection parameters from
-    ``os.environ`` at call time so that the most recent values are
-    honoured.  If an environment variable is missing, it falls back to
-    the module‑level default for backward compatibility.
+    The ETL can run in different contexts.  It reads the connection
+    parameters from the same alias-aware environment resolver used by
+    Django settings, so ``PGHOST`` and legacy names such as ``PG_HOST``
+    point to the same application database.  Values are read at call time
+    so updates made after import are honoured.
 
     Returns:
         psycopg2.extensions.connection: A new connection configured with
         the latest environment variables.
     """
-    # Resolve parameters from environment on every call.  Use defaults
-    # defined at module level if the environment variable is unset.
-    host = os.environ.get('PG_HOST', PG_HOST)
-    port = int(os.environ.get('PG_PORT', str(PG_PORT)))
-    dbname = os.environ.get('PG_DBNAME', PG_DBNAME)
-    user = os.environ.get('PG_USER', PG_USER)
-    password = os.environ.get('PG_PASSWORD', PG_PASSWORD)
+    try:
+        db_config = primary_postgres_config()
+    except RuntimeError as exc:
+        raise RuntimeError(f"PostgreSQL ETL database configuration is incomplete: {exc}") from exc
+
+    host = db_config['HOST']
+    port = int(db_config['PORT'])
+    dbname = db_config['NAME']
+    user = db_config['USER']
+    password = db_config['PASSWORD']
     return psycopg2.connect(
         host=host,
         port=port,

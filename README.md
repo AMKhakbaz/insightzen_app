@@ -10,12 +10,12 @@ environment (or a secure secrets store) rather than committing real values.
 | --- | --- | --- |
 | Django secret key | `DJANGO_SECRET_KEY` | Required. Set per-environment; do not commit real values. |
 | Debug mode | `DJANGO_DEBUG` | Defaults to `False`. Set to `True` in `.env` for local development only. |
-| Database backend | `DATABASE_ENGINE` | Leave unset (or any value other than `postgres`) to use SQLite. Set to `postgres` (or set any `PG*` variable) to enable PostgreSQL. |
-| Django DB host | `PGHOST` | Required when using PostgreSQL. |
-| Django DB port | `PGPORT` | Optional; defaults to `5432` when using PostgreSQL. |
-| Django DB user | `PGUSER` | Required when using PostgreSQL. |
-| Django DB password | `PGPASSWORD` | Required when using PostgreSQL. |
-| Django DB name | `PGDATABASE` | Required when using PostgreSQL. |
+| Database backend | `DATABASE_ENGINE` | Leave unset (or any value other than `postgres`) to use SQLite. Set to `postgres` (or set any application DB variable) to enable PostgreSQL. |
+| Django DB host | `PGHOST` | Required when using PostgreSQL. Legacy aliases such as `PG_HOST`, `DB_HOST` and `POSTGRES_HOST` are also accepted. |
+| Django DB port | `PGPORT` | Optional; defaults to `5432` when using PostgreSQL. Legacy aliases such as `PG_PORT`, `DB_PORT` and `POSTGRES_PORT` are also accepted. |
+| Django DB user | `PGUSER` | Required when using PostgreSQL. Legacy aliases such as `PG_USER`, `DB_USER` and `POSTGRES_USER` are also accepted. |
+| Django DB password | `PGPASSWORD` | Required when using PostgreSQL. Legacy aliases such as `PG_PASSWORD`, `DB_PASSWORD` and `POSTGRES_PASSWORD` are also accepted. |
+| Django DB name | `PGDATABASE` | Required when using PostgreSQL. Legacy aliases such as `PG_DBNAME`, `PG_DB`, `DB_NAME` and `POSTGRES_DB` are also accepted. |
 | Respondent DB host | `RESPONDENT_DB_HOST` | Set when syncing the respondent bank. |
 | Respondent DB port | `RESPONDENT_DB_PORT` | Optional; defaults to `5432` for respondent DB connections. |
 | Respondent DB user | `RESPONDENT_DB_USER` | Set when syncing the respondent bank. |
@@ -25,7 +25,9 @@ environment (or a secure secrets store) rather than committing real values.
 Export these variables (for example via `.env` or your process manager) before
 running the Django management commands. Leave `DJANGO_DEBUG` unset (the default
 `False`) in production, and populate PostgreSQL variables only in the
-environments that need them.
+environments that need them. During startup Django mirrors canonical `PGHOST`
+values to the legacy `PG_HOST` style names (and vice versa) so settings,
+management commands and ETL scripts all target the same database.
 
 ## Applying migrations on PostgreSQL deployments
 
@@ -43,11 +45,11 @@ python manage.py migrate
 Run this command against every PostgreSQL-backed environment after deploying
 changes or refreshing dependencies.
 
-To change the primary application database connection, update the values in
-`insightzen/settings.py` (or override them via the matching `PG*` environment
-variables). The respondent bank sync uses separate defaults in
-`core/data_load_utils.py`, which can also be overridden with the corresponding
-`RESPONDENT_DB_*` environment variables.
+To change the primary application database connection, update the matching
+`PG*` environment variables (or their documented aliases). The respondent bank
+sync uses the same application database by default; set the corresponding
+`RESPONDENT_DB_*` environment variables only when that source lives in a
+different PostgreSQL database.
 
 ## Loading the respondent bank
 
@@ -59,9 +61,10 @@ python manage.py import_respondent_bank  # add --no-input to skip confirmation
 ```
 
 Pass `--force` if you need to import even when data already exists.
-Ensure the `RESPONDENT_DB_*` environment variables (or the defaults in
-`core/data_load_utils.py`) are set to the correct source database before running
-`python manage.py import_respondent_bank`.
+Ensure the application `PG*` variables are correct before running
+`python manage.py import_respondent_bank`; if the respondent bank lives in a
+different source database, set `RESPONDENT_DB_*` variables to override the
+application connection for that import only.
 
 ## Deployment sequence
 

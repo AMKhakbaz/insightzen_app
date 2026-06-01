@@ -9,21 +9,17 @@ or interactive prompts.
 
 from __future__ import annotations
 
-import os
 from typing import Dict, Iterable
+
+from django.core.exceptions import ImproperlyConfigured
 
 import psycopg2
 from psycopg2 import sql
 
+from insightzen.db_env import respondent_postgres_config
+
 from .models import Mobile, Person
 from .services.gender_utils import normalize_gender_value
-
-
-DB_HOST = os.environ.get('RESPONDENT_DB_HOST', '185.204.171.78')
-DB_PORT = int(os.environ.get('RESPONDENT_DB_PORT', '5433'))
-DB_NAME = os.environ.get('RESPONDENT_DB_NAME', 'Numbers')
-DB_USER = os.environ.get('RESPONDENT_DB_USER', 'insightzen')
-DB_PASSWORD = os.environ.get('RESPONDENT_DB_PASSWORD', 'K8RwWAPT5F7-?mrMBzR<')
 
 
 def _stream_table(conn, table_name: str) -> Iterable[Dict[str, object]]:
@@ -55,12 +51,17 @@ def _stream_table(conn, table_name: str) -> Iterable[Dict[str, object]]:
 def load_people_and_mobile() -> None:
     """Copy all person and mobile rows from the primary PostgreSQL DB."""
 
+    try:
+        db_config = respondent_postgres_config()
+    except RuntimeError as exc:
+        raise ImproperlyConfigured(str(exc)) from exc
+
     conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        database=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
+        host=db_config['HOST'],
+        port=int(db_config['PORT']),
+        database=db_config['NAME'],
+        user=db_config['USER'],
+        password=db_config['PASSWORD'],
     )
     try:
         _copy_people(conn)

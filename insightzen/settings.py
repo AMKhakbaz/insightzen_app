@@ -15,6 +15,12 @@ from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
 
+from insightzen.db_env import (
+    mirror_pg_env_aliases,
+    postgres_requested,
+    primary_postgres_config,
+)
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -31,7 +37,11 @@ def load_env_file(path: Path) -> None:
             continue
 
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[7:].strip()
+        value = value.strip().strip('\"\'')
+        os.environ.setdefault(key, value)
 
 
 # Prefer a local .env file but fall back to .env.sample for convenience when the
@@ -50,6 +60,10 @@ elif sample_env_path.exists():
         stacklevel=2,
     )
     load_env_file(sample_env_path)
+
+# Keep libpq-style (PGHOST) and legacy script-style (PG_HOST) database
+# variables in sync for Django, management commands and ETL helpers.
+mirror_pg_env_aliases()
 
 
 def env_required(name: str) -> str:
@@ -129,21 +143,22 @@ WSGI_APPLICATION = 'insightzen.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/4.0/ref/settings/#databases
-_postgres_requested = (
-    os.getenv("DATABASE_ENGINE", "").lower() in {"postgres", "postgresql"}
-    or os.getenv("USE_POSTGRES", "").lower() in {"1", "true", "yes"}
-    or any(os.getenv(var) for var in ["PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE"])
-)
+_postgres_requested = postgres_requested()
 
 if _postgres_requested:
+    try:
+        _pg_config = primary_postgres_config()
+    except RuntimeError as exc:
+        raise ImproperlyConfigured(str(exc)) from exc
+
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': env_required('PGDATABASE'),
-            'USER': env_required('PGUSER'),
-            'PASSWORD': env_required('PGPASSWORD'),
-            'HOST': os.getenv('PGHOST', 'localhost'),
-            'PORT': os.getenv('PGPORT', '5432'),
+            'NAME': _pg_config['NAME'],
+            'USER': _pg_config['USER'],
+            'PASSWORD': _pg_config['PASSWORD'],
+            'HOST': _pg_config['HOST'],
+            'PORT': _pg_config['PORT'],
             # Keep connections open for a minute to improve performance for repeated queries
             'CONN_MAX_AGE': 60,
             'OPTIONS': {
